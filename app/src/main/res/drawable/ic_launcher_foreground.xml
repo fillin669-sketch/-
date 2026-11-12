@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- мачта -->
+    <path android:fillColor="#FFECEFF1" android:pathData="M53,30h2v34h-2z" />
+    <!-- парус -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M56,32 L74,60 L56,60 Z" />
+    <path android:fillColor="#FFFFCDD2" android:pathData="M52,38 L38,60 L52,60 Z" />
+    <!-- корпус -->
+    <path android:fillColor="#FFD84315" android:pathData="M32,64 L76,64 L70,74 L38,74 Z" />
+    <!-- волны -->
+    <path android:fillColor="#FF90CAF9" android:pathData="M30,78 q6,-4 12,0 t12,0 t12,0 t12,0 v3 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 z" />
+</vector>
