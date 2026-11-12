@@ -58,7 +58,9 @@ class SeaGame : ApplicationAdapter() {
     lateinit var menus: Menus
     val systems = Systems(this)
     private val env = Environment()
-    private val sunLight = DirectionalLight()
+    private lateinit var sunLight: com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
+    private lateinit var shadowBatch: ModelBatch
+    private val shadowCenter = Vector3()
     private val fillLight = DirectionalLight()
     private val ambient = ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f)
     private val fogAttr = ColorAttribute(ColorAttribute.Fog, 0.5f, 0.7f, 0.9f, 1f)
@@ -78,6 +80,9 @@ class SeaGame : ApplicationAdapter() {
     var safeBottom = 0f
     var loadProgress = 0f
     private var loadStep = 0
+
+    var debugShadow = false
+    var debugNoShadow = false
 
     /** Для автоматических проверок на компьютере. */
     var afterRender: (() -> Unit)? = null
@@ -205,8 +210,18 @@ class SeaGame : ApplicationAdapter() {
                 resize(Gdx.graphics.width, Gdx.graphics.height)
                 modelBatch = ModelBatch()
                 fx = Fx(cam, ui.softDisc, ui.white, ui.streak, ui.gull)
+                val sm = if (highQuality) 2048 else 1024
+                @Suppress("DEPRECATION")
+                sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 600f)
+                // теневой проход со смещением глубины (убирает полосы «теневых акне»)
+                val dsCfg = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.Config()
+                val vs = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.getDefaultVertexShader()
+                val end = vs.lastIndexOf('}')
+                dsCfg.vertexShader = vs.substring(0, end) + "\n    gl_Position.z += 0.006 * gl_Position.w;\n}\n"
+                shadowBatch = ModelBatch(com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider(dsCfg))
                 env.set(ambient)
                 env.add(sunLight)
+                env.shadowMap = sunLight
                 env.add(fillLight)
                 env.set(fogAttr)
                 chestModel = Models.chest().also { models += it }
@@ -222,6 +237,7 @@ class SeaGame : ApplicationAdapter() {
             loadStep <= PORTS.size + 1 + wildCount -> repeat(1) { buildWildIsland() }
             else -> {
                 systems.buildReefsAndWrecks { x, z, m -> isWater(x, z, m) }
+                systems.placeBottles { x, z, m -> isWater(x, z, m) }
                 fx.limit = if (highQuality) 900 else 450
                 spawnPlayer()
                 startX = player!!.x; startZ = player!!.z
@@ -552,8 +568,9 @@ class SeaGame : ApplicationAdapter() {
             }
             if (systems.boardTarget != null) {
                 val (bx, by) = hud.boardPos()
-                if (hypot(x - bx, y - by) < 50) { systems.boardTarget?.let { menus.showBoarding(it) }; return true }
+                if (abs(x - bx) < 95 && abs(y - by) < 30) { systems.boardTarget?.let { systems.throwGrapples(it) }; return true }
             }
+            if (hud.minimapHit(x, y)) { sfx.play("click"); joyActive = false; menus.showMap(); return true }
             if (!joyActive) {
                 joyActive = true; joyPointer = pointer
                 joyOx = x; joyOy = y; joyMag = 0f
@@ -593,7 +610,8 @@ class SeaGame : ApplicationAdapter() {
                 Input.Keys.NUM_4 -> useAbility(3)
                 Input.Keys.NUM_5 -> useAbility(4)
                 Input.Keys.NUM_6 -> useAbility(5)
-                Input.Keys.B -> systems.boardTarget?.let { menus.showBoarding(it) }
+                Input.Keys.B -> systems.boardTarget?.let { systems.throwGrapples(it) }
+                Input.Keys.M -> if (state == State.PLAY) menus.showMap()
             }
             return true
         }
@@ -1656,9 +1674,12 @@ class SeaGame : ApplicationAdapter() {
         val storm = stormLevel
         sky.day = day * (1 - storm * 0.35f)
         sky.storm = storm
-        val sx = cos(ang).toFloat() * 0.8f
-        val sy = if (sunH > -0.05f) max(0.12f, sunH) else max(0.25f, -sunH)
-        sky.sunDir[0] = sx; sky.sunDir[1] = sy; sky.sunDir[2] = 0.35f
+        // солнце не поднимается выше ~40°, чтобы тени были длинными и заметными сверху
+        val sx = cos(ang).toFloat() * 0.85f + 0.25f
+        val sy = clamp(if (sunH > -0.05f) sunH else -sunH, 0.32f, 0.62f)
+        val sz = 0.55f
+        val sl = sqrt(sx * sx + sy * sy + sz * sz)
+        sky.sunDir[0] = sx / sl; sky.sunDir[1] = sy / sl; sky.sunDir[2] = sz / sl
         cSun.set(1f, 0.95f, 0.85f, 1f).lerp(1f, 0.55f, 0.3f, 1f, dusk)
         cLight.set(cMoon).lerp(cSun, day)
         sky.sunCol[0] = cLight.r; sky.sunCol[1] = cLight.g; sky.sunCol[2] = cLight.b
@@ -1761,7 +1782,9 @@ class SeaGame : ApplicationAdapter() {
         fx.update(dt)
         updateCamera(dt)
         applyLighting()
-        sfx.update(dt, combatT > 0 && state == State.PLAY, stormLevel, state != State.PLAY)
+        val ps = player
+        val windy = min(1f, (if (ps != null) abs(ps.speed) / 22f else 0f) + stormLevel * 0.8f)
+        sfx.update(dt, combatT > 0 && state == State.PLAY, stormLevel, windy, systems.wantedShanty(), state != State.PLAY)
         saveTimer += dt
         if (saveTimer > 5) { saveTimer = 0f; save() }
 
@@ -1770,9 +1793,25 @@ class SeaGame : ApplicationAdapter() {
             (if (Gdx.graphics.bufferFormat.coverageSampling) GL20.GL_COVERAGE_BUFFER_BIT_NV else 0))
 
         val lookX = camPos.x; val lookZ = camPos.z - 80
+        // Карта теней от солнца (или луны)
+        shadowCenter.set(lookX, 0f, lookZ + 30)
+        if (highQuality) {
+        sunLight.begin(shadowCenter, sunLight.direction)
+        shadowBatch.begin(sunLight.camera)
+        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 + isl.r) shadowBatch.render(isl.inst)
+        for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 230) shadowBatch.render(s.inst)
+        systems.renderShadows(shadowBatch, lookX, lookZ)
+        shadowBatch.end()
+        sunLight.end()
+        }
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
+        Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         nearIslands.clear()
         islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
-        water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands)
+        val shadows = highQuality && !debugNoShadow
+        env.shadowMap = if (shadows) sunLight else null
+        water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans)
 
         modelBatch.begin(cam)
         for ((i, isl) in islands.withIndex()) {
@@ -1804,7 +1843,7 @@ class SeaGame : ApplicationAdapter() {
         val night = 1f - sky.day
         for (s in ships) {
             if (s.sinking || hypot(s.x - lookX, s.z - lookZ) > 500) continue
-            fx.shadow(s.x + sky.sunDir[0] * 1.5f, s.z + 1.5f, s.width * 1.5f, s.len * 1.1f, -s.h * MathUtils.radiansToDegrees, 0.22f * sky.day + 0.06f)
+            fx.shadow(s.x, s.z, s.width * 1.4f, s.len * 1.05f, -s.h * MathUtils.radiansToDegrees, 0.12f)
             if (night > 0.2f) {
                 val lx = s.x - sin(s.h) * s.len * 0.44f; val lz = s.z + cos(s.h) * s.len * 0.44f
                 fx.glow(lx, s.y + s.deckTop + s.width * 0.62f * 0.72f + 1.2f, lz, 4f, glowCol.set(1f, 0.8f, 0.4f, night * 0.85f))
@@ -1829,6 +1868,7 @@ class SeaGame : ApplicationAdapter() {
             if (hypot(gx - lookX, gz - lookZ) < 300) fx.gull(gx, g.h + sin(now + g.phase) * 2, gz, 0.5f + 0.5f * sin(now * 9 + g.phase))
         }
         systems.renderDecals(lookX, lookZ)
+        systems.renderExtraDecals()
         if (aimActive) {
             val p = player
             if (p != null) {
@@ -1849,6 +1889,12 @@ class SeaGame : ApplicationAdapter() {
         hud.draw(dt)
         batch.end()
 
+        if (debugShadow) {
+            batch.begin()
+            batch.color = Color.WHITE
+            batch.draw(sunLight.depthMap.texture as com.badlogic.gdx.graphics.Texture, 0f, 0f, 220f, 220f)
+            batch.end()
+        }
         stage.act(dt)
         stage.draw()
         afterRender?.invoke()

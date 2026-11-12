@@ -29,6 +29,11 @@ import kotlin.random.Random
 class Geo {
     private val data = com.badlogic.gdx.utils.FloatArray(8192)
     private var packed = Color.WHITE.toFloatBits()
+    private val base = Color(Color.WHITE)
+    private val tmpC = Color()
+    private val vary = Random(1234)
+    /** Насколько сильно меняется яркость соседних треугольников (фактура). */
+    var variation = 0.07f
     val m = Matrix4()
     private val stack = ArrayList<Matrix4>()
 
@@ -40,7 +45,8 @@ class Geo {
     private val t2 = Vector3()
 
     fun color(rgb: Int): Geo {
-        packed = Color((rgb shl 8) or 0xff).toFloatBits()
+        base.set((rgb shl 8) or 0xff)
+        packed = base.toFloatBits()
         return this
     }
 
@@ -65,10 +71,14 @@ class Geo {
         }
         pa.set(a).mul(m); pb.set(b).mul(m); pc.set(c).mul(m)
         n.rot(m).nor()
+        val col = if (variation > 0) {
+            val f = 1f + (vary.nextFloat() * 2 - 1) * variation
+            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), 1f).toFloatBits()
+        } else packed
         for (p in arrayOf(pa, pb, pc)) {
             data.add(p.x, p.y, p.z)
             data.add(n.x, n.y, n.z)
-            data.add(packed)
+            data.add(col)
         }
     }
 
@@ -150,6 +160,8 @@ class Geo {
 
     /** Выгнутый парус в плоскости XY, выпуклостью к -Z. */
     fun sail(w: Float, h: Float, bulge: Float): Geo {
+        val keep = variation
+        variation = 0.025f
         val sx = 6; val sy = 3
         val pts = Array(sy + 1) { j ->
             Array(sx + 1) { i ->
@@ -159,6 +171,7 @@ class Geo {
         }
         val back = Vector3(0f, -h, 50f)
         for (j in 0 until sy) for (i in 0 until sx) quad(pts[j][i], pts[j][i + 1], pts[j + 1][i + 1], pts[j + 1][i], back)
+        variation = keep
         return this
     }
 
@@ -629,6 +642,15 @@ object Models {
         return g.build()
     }
 
+    fun bottle(): Model {
+        val g = Geo()
+        g.color(0x2e7d32).cylinder(0.55f, 0.6f, 1.8f, 7)
+        g.color(0x388e3c).push().at(0f, 1.2f, 0f).cylinder(0.22f, 0.5f, 0.7f, 7).pop()
+        g.color(0x8d6e63).push().at(0f, 1.7f, 0f).cylinder(0.2f, 0.22f, 0.35f, 6).pop()
+        g.color(0xfff3e0).push().at(0f, 0f, 0f).cylinder(0.3f, 0.3f, 1.2f, 6).pop()
+        return g.build()
+    }
+
     fun reefRock(): Model {
         val g = Geo()
         g.color(0x3e4a4f).push().scale(1f, 0.6f, 1f).ico(4f).pop()
@@ -636,9 +658,9 @@ object Models {
         return g.build()
     }
 
-    fun foam(r: Float): Model = Geo().color(0xffffff).flatRing(r * 1.02f, r * 1.2f, 28).build(Geo.transparentMaterial(0.35f))
+    fun foam(r: Float): Model = Geo().also { it.variation = 0f }.color(0xffffff).flatRing(r * 1.02f, r * 1.2f, 28).build(Geo.transparentMaterial(0.35f))
 
-    fun portRing(): Model = Geo().color(0xffffff).flatRing(9f, 10.6f, 40).build(Geo.transparentMaterial(0.75f))
+    fun portRing(): Model = Geo().also { it.variation = 0f }.color(0xffffff).flatRing(9f, 10.6f, 40).build(Geo.transparentMaterial(0.75f))
 
     fun chest(): Model {
         val g = Geo()

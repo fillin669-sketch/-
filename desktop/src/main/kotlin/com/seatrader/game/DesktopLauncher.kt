@@ -111,96 +111,49 @@ class TestScript(private val g: SeaGame, private val out: String) {
         when (f) {
             2 -> shot("00_daily")
             4 -> { press("Забрать") }
-            10 -> { shot("01_journal"); info("journal") }
-            12 -> { press("швартовы") }
-            20 -> { shot("02_start") }
+            10 -> { press("швартовы") }
+            20 -> { shot("01_start_shadows") }
             25 -> { touch("down", 206f, 600f); touch("drag", 206f, 690f) }
-            120 -> { touch("up", 206f, 690f) }
-            // ручной прицел
-            130 -> {
+            140 -> { shot("02_sailing"); info("sailing"); log.append("shanty idx=${g.sfx.shantyIdx} want=${g.systems.wantedShanty()}\n") }
+            141 -> { touch("up", 206f, 690f) }
+            // абордаж: ослабленный пират рядом
+            150 -> {
                 tp(250f, 260f)
                 val p = g.player!!; p.h = 0f
-                val e = g.spawnEnemy("brig", 290f, 260f); e.speed; e.ai = AiState.WANDER
-                g.systems.autoFire = false
-                val (ax, ay) = g.hud.aimPos()
-                touch("down", ax, g.hDp - ay)
+                val e = g.spawnEnemy("sloop", 285f, 260f); e.hp = 25f; e.h = 0f; e.ai = AiState.WANDER
             }
-            132 -> { val (ax, ay) = g.hud.aimPos(); touch("drag", ax + 44f, g.hDp - ay) }
-            150 -> { shot("03_aim") }
-            151 -> { val (ax, ay) = g.hud.aimPos(); touch("up", ax + 44f, g.hDp - ay) }
-            200 -> { shot("04_manual_fire"); info("manual"); g.systems.autoFire = true }
-            // абордаж
-            210 -> {
-                tp(250f, 260f)
-                val p = g.player!!; p.h = 0f
-                val e = g.spawnEnemy("sloop", 262f, 260f); e.hp = 10f; e.h = 0f
-            }
-            230 -> { shot("05_board_button"); log.append("boardTarget=${g.systems.boardTarget?.type}\n") }
-            231 -> { g.systems.boardTarget?.let { g.menus.showBoarding(it) } }
-            240 -> shot("06_boarding")
-            241 -> press("Удар")
-            250 -> press("Удар")
-            260 -> press("Удар")
-            300 -> { shot("07_board_result") }
-            301 -> { if (findButton("Захватить") != null) press("Захватить") else if (findButton("Разграбить") != null) press("Разграбить") else press("Продолжить") }
-            310 -> info("after board")
-            // мортира, ракеты, мины
-            320 -> {
-                tp(250f, 260f)
-                g.systems.ownedWeapons += listOf(3, 4, 5)
-                val p = g.player!!; p.h = 0f
-                g.spawnEnemy("brig", 250f, 200f).ai = AiState.WANDER
-                g.spawnEnemy("sloop", 290f, 230f).ai = AiState.WANDER
-                g.useAbility(3); g.useAbility(4); g.useAbility(5)
-            }
-            345 -> { shot("08_weapons"); info("weapons") }
-            // крепость
-            400 -> { tp(-1250f, 690f); g.player!!.h = 0f }
-            460 -> { shot("09_fortress"); info("fortress") }
-            461 -> { g.abilityCd[3] = 0f; g.useAbility(3) }
-            // риф
-            560 -> { tp(-1400f, -100f) }
-            640 -> { shot("10_reef"); info("reef") }
-            // лёд
-            650 -> { tp(60f, -1350f) }
-            730 -> { shot("11_ice") }
-            // огонь
-            740 -> { tp(1350f, 60f) }
-            820 -> { shot("12_fire") }
-            // бездна и кракен
-            830 -> { tp(40f, 1300f); g.systems.spawnKraken(70f, 1240f) }
-            960 -> { shot("13_kraken"); info("kraken") }
-            970 -> { g.systems.kraken = null; tp(300f, 300f); val fl = g.spawnEnemy("flagship", 330f, 220f); repeat(3) { k -> g.spawnEnemy("brig", 310f + k * 18f, 245f).leader = fl } }
-            1060 -> { shot("14_flotilla"); info("flotilla") }
-            1070 -> {
-                tp(100f, 200f)
-                val m = g.spawnNeutral("merchant", 140f, 150f); m.wx = 0f; m.wz = 0f
-                g.spawnEnemy("sloop", 180f, 140f).also { it.ai = AiState.ATTACK; it.target = m }
-            }
-            1180 -> { shot("15_protect"); info("protect") }
-            1190 -> { g.coins = 20000; g.gems = 50; g.openPort(1) }
-            1200 -> { press("Рынок") }
-            1210 -> shot("16_market")
-            1215 -> { press("+5") }
-            1220 -> { press("Арсенал") }
-            1230 -> shot("17_arsenal")
-            1240 -> { g.menus.close(); g.systems.skillPts = 3; g.openPause() }
-            1250 -> shot("18_pause")
-            1255 -> press("Капитан")
-            1265 -> shot("19_captain")
-            1270 -> press("Назад")
-            1275 -> press("Достижения")
-            1285 -> shot("20_achievements")
-            1290 -> press("Назад")
-            1295 -> press("Карта мира")
-            1305 -> shot("21_map")
-            1310 -> press("Назад")
-            1315 -> press("Настройки")
-            1325 -> shot("22_settings")
-            1330 -> {
-                val code = g.exportSave()
-                log.append("save code length=${code.length} import=${g.importSave(code)}\n")
-                log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0}\n")
+            175 -> { shot("03_board_ready"); log.append("boardTarget=${g.systems.boardTarget?.type}\n") }
+            176 -> { val (bx, by) = g.hud.boardPos(); touch("down", bx, g.hDp - by); touch("up", bx, g.hDp - by) }
+            190 -> shot("04_grapple")
+            260 -> { shot("05_boarding"); log.append("state after grapple=${g.state}\n") }
+            261 -> press("Удар")
+            270 -> press("Удар")
+            280 -> press("Удар")
+            320 -> shot("06_board_result")
+            321 -> { if (findButton("Захватить") != null) press("Захватить") else if (findButton("Разграбить") != null) press("Разграбить") else press("Продолжить") }
+            // бутылка с песней
+            330 -> { val bt = g.systems.bottles.firstOrNull(); if (bt != null) tp(bt.x + 4f, bt.z) }
+            345 -> { shot("07_bottle"); log.append("shanties=${g.systems.shanties}\n") }
+            // ночь и тени
+            360 -> { tp(30f, 120f); g.dayTime = 0.24f }
+            420 -> shot("08_morning_shadows")
+            // карта мира через мини-карту
+            430 -> { val (mx, my) = Pair(g.wDp - 12 - 62f, g.hDp - 112f - 70f - 16 - 62f); log.append("minimap hit=${g.hud.minimapHit(mx, my)}\n"); g.menus.showMap() }
+            445 -> shot("09_world_map")
+            450 -> { g.systems.waypoint = floatArrayOf(400f, -300f); g.menus.close() }
+            470 -> shot("10_waypoint")
+            480 -> { g.openPause() }
+            490 -> shot("11_pause")
+            495 -> press("Песни")
+            505 -> shot("12_songs")
+            510 -> press("Назад")
+            515 -> press("Как играть")
+            525 -> shot("13_help")
+            530 -> press("Назад")
+            535 -> { g.menus.close(); g.stormTarget = 1f; g.stormLevel = 1f; tp(-300f, 300f) }
+            620 -> { shot("14_storm"); info("storm") }
+            630 -> {
+                log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0} explored=${g.systems.explored.percent()}%\n")
                 Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
                 Gdx.app.exit()
             }

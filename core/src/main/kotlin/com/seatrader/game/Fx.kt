@@ -2,6 +2,7 @@ package com.seatrader.game
 
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.g3d.decals.CameraGroupStrategy
 import com.badlogic.gdx.graphics.g3d.decals.Decal
@@ -56,6 +57,8 @@ class Fx(
         if (list.size > limit) return
         val p = if (pool.isEmpty()) P().also { it.decal = Decal.newDecal(1f, 1f, disc, true) } else pool.removeAt(pool.size - 1)
         p.decal.textureRegion = when { mode == Mode.STREAK -> streak; sq -> square; else -> disc }
+        if (c === FIRE || c === FIRE2) p.decal.setBlending(GL20.GL_SRC_ALPHA, GL20.GL_ONE)
+        else p.decal.setBlending(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         p.decal.setColor(c.r, c.g, c.b, c.a)
         p.alpha = c.a
         p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz
@@ -85,9 +88,10 @@ class Fx(
 
     /** Спрайт только на этот кадр. flat — лежит на воде с поворотом yawDeg. */
     fun frame(region: TextureRegion, x: Float, y: Float, z: Float, w: Float, h: Float, c: Color,
-              flat: Boolean = false, yawDeg: Float = 0f) {
+              flat: Boolean = false, yawDeg: Float = 0f, additive: Boolean = false) {
         if (frameCount >= frameDecals.size) frameDecals.add(Decal.newDecal(1f, 1f, region, true))
         val d = frameDecals[frameCount++]
+        if (additive) d.setBlending(GL20.GL_SRC_ALPHA, GL20.GL_ONE) else d.setBlending(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         d.textureRegion = region
         d.setPosition(x, y, z)
         d.setDimensions(w, h)
@@ -102,7 +106,7 @@ class Fx(
     private val ballColor = Color(0.08f, 0.08f, 0.08f, 1f)
     fun ball(x: Float, y: Float, z: Float, c: Color = ballColor) = frame(disc, x, y, z, 1.1f, 1.1f, c)
 
-    fun glow(x: Float, y: Float, z: Float, size: Float, c: Color) = frame(disc, x, y, z, size, size, c)
+    fun glow(x: Float, y: Float, z: Float, size: Float, c: Color) = frame(disc, x, y, z, size, size, c, additive = true)
 
     fun shadow(x: Float, z: Float, w: Float, l: Float, yawDeg: Float, a: Float) =
         frame(disc, x, waveHeight(x, z, time) + 0.45f, z, w, l, shadowColor.set(0f, 0.05f, 0.12f, a), true, yawDeg)

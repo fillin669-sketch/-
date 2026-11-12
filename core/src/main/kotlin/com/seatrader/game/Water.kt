@@ -57,7 +57,8 @@ class Water : Disposable {
     }
 
     /** [islands] — ближайшие острова: x, z, r (до 12 штук). */
-    fun render(cam: Camera, cx: Float, cz: Float, time: Float, sky: Sky, islands: List<FloatArray>) {
+    fun render(cam: Camera, cx: Float, cz: Float, time: Float, sky: Sky, islands: List<FloatArray>,
+               shadowTex: com.badlogic.gdx.graphics.GLTexture? = null, shadowPV: com.badlogic.gdx.math.Matrix4? = null) {
         val ox = Math.round(cx / 10f) * 10f
         val oz = Math.round(cz / 10f) * 10f
         islandBuf.fill(0f)
@@ -85,6 +86,13 @@ class Water : Disposable {
         shader.setUniformf("u_deep", sky.deep[0], sky.deep[1], sky.deep[2])
         shader.setUniformf("u_mid", sky.mid[0], sky.mid[1], sky.mid[2])
         shader.setUniform3fv("u_isl", islandBuf, 0, islandBuf.size)
+        if (shadowTex != null && shadowPV != null) {
+            shadowTex.bind(1)
+            shader.setUniformi("u_shadowTex", 1)
+            shader.setUniformMatrix("u_shadowPV", shadowPV)
+            shader.setUniformf("u_shadowOn", 1f)
+            Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
+        } else shader.setUniformf("u_shadowOn", 0f)
         mesh.render(shader, GL20.GL_TRIANGLES)
     }
 
@@ -101,10 +109,12 @@ uniform vec2 u_offset;
 uniform float u_time;
 uniform float u_amp;
 uniform vec3 u_isl[12];
+uniform mat4 u_shadowPV;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_h;
 varying float v_shoreD;
+varying vec3 v_shadowUv;
 void main() {
     vec3 w = a_position + vec3(u_offset.x, 0.0, u_offset.y);
     float a1 = w.x * 0.08 + u_time * 1.1;
@@ -124,6 +134,8 @@ void main() {
         sd = min(sd, length(w.xz - isl.xy) - isl.z);
     }
     v_shoreD = sd;
+    vec4 sp = u_shadowPV * vec4(w, 1.0);
+    v_shadowUv = (sp.xyz / sp.w) * 0.5 + 0.5;
     gl_Position = u_projTrans * vec4(w, 1.0);
 }
 """
@@ -145,10 +157,26 @@ uniform float u_day;
 uniform float u_storm;
 uniform vec3 u_deep;
 uniform vec3 u_mid;
+uniform sampler2D u_shadowTex;
+uniform float u_shadowOn;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_h;
 varying float v_shoreD;
+varying vec3 v_shadowUv;
+float shadowAt(vec2 uv, float z) {
+    vec4 p = texture2D(u_shadowTex, uv);
+    float d = dot(p, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+    return step(z, d + 0.002);
+}
+float shadow() {
+    if (u_shadowOn < 0.5) return 1.0;
+    vec3 s = v_shadowUv;
+    if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
+    float o = 1.0 / 1024.0;
+    return (shadowAt(s.xy, s.z) + shadowAt(s.xy + vec2(o, 0.0), s.z) + shadowAt(s.xy - vec2(o, 0.0), s.z)
+          + shadowAt(s.xy + vec2(0.0, o), s.z) + shadowAt(s.xy - vec2(0.0, o), s.z)) / 5.0;
+}
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
     vec2 i = floor(p);
@@ -161,7 +189,8 @@ void main() {
     float tn = u_time;
     // мелкая рябь в нормали
     float rn = noise(p * 0.35 + vec2(tn * 0.6, tn * 0.4));
-    vec3 n = normalize(v_normal + vec3(rn - 0.5, 0.0, 0.5 - rn) * 0.3);
+    float rn2 = noise(p * 1.1 - vec2(tn * 0.9, tn * 0.3));
+    vec3 n = normalize(v_normal + vec3(rn - 0.5 + (rn2 - 0.5) * 0.6, 0.0, 0.5 - rn + (0.5 - rn2) * 0.4) * 0.32);
     vec3 sun = normalize(u_sunDir);
 
     // Мелководье и прибой возле островов (расстояние до берега — из вершинного шейдера)
@@ -177,10 +206,13 @@ void main() {
     vec3 col = mix(deep, mid, smoothstep(0.35, 0.8, patches));
     col = mix(col, shallow, shore * 0.85);
 
-    // Отражение неба (Френель)
+    // Отражение неба (Френель): у горизонта небо светлее
     vec3 v = normalize(u_cam - v_world);
     float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-    col = mix(col, u_fog * 1.05, fres * 0.55);
+    vec3 skyc = mix(u_fog * 1.08, vec3(0.62, 0.78, 0.95) * (0.3 + 0.7 * u_day), 0.35 * (1.0 - u_storm));
+    col = mix(col, skyc, fres * 0.6);
+    // подсветка гребней: свет проходит сквозь тонкую воду
+    col += vec3(0.02, 0.22, 0.20) * smoothstep(0.1, 1.2, v_h) * 0.45 * u_day * (1.0 - shore * 0.5);
 
     // Освещение
     float l = clamp(dot(n, sun), 0.0, 1.0);
@@ -190,9 +222,13 @@ void main() {
     float cloud = smoothstep(0.45, 0.75, noise(p * 0.006 + vec2(tn * 0.012, tn * 0.006)));
     col *= 1.0 - cloud * (0.18 + 0.25 * u_storm);
 
+    // Тени кораблей и островов
+    float sh = shadow();
+    col *= 0.62 + 0.38 * sh;
+
     // Солнечные блики
     float spec = pow(max(dot(reflect(-sun, n), v), 0.0), 60.0);
-    col += u_sunCol * spec * (0.45 * u_day) * (1.0 - u_storm * 0.8);
+    col += u_sunCol * spec * (0.45 * u_day) * (1.0 - u_storm * 0.8) * sh;
     col += vec3(smoothstep(0.93, 0.99, rn) * 0.15 * u_day);
 
     // Пена на гребнях волн и у берега

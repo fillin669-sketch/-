@@ -50,6 +50,35 @@ class Kraken(var x: Float, var z: Float, val head: ModelInstance, val tentacles:
 }
 
 class Mine(var x: Float, var z: Float, val inst: ModelInstance) { var t = 0f }
+class Bottle(val song: Int, val x: Float, val z: Float, val inst: ModelInstance) { var t = 0f }
+
+/** Туман войны: какие клетки карты капитан уже видел. */
+class Explored(val n: Int = 80) {
+    val bits = java.util.BitSet(n * n)
+    val cell get() = WORLD * 2 / n
+    fun idx(x: Float, z: Float): Int {
+        val i = ((x + WORLD) / cell).toInt().coerceIn(0, n - 1)
+        val j = ((z + WORLD) / cell).toInt().coerceIn(0, n - 1)
+        return j * n + i
+    }
+    fun seen(x: Float, z: Float) = bits[idx(x, z)]
+    fun reveal(x: Float, z: Float, r: Float) {
+        val c = cell
+        val i0 = ((x - r + WORLD) / c).toInt().coerceIn(0, n - 1); val i1 = ((x + r + WORLD) / c).toInt().coerceIn(0, n - 1)
+        val j0 = ((z - r + WORLD) / c).toInt().coerceIn(0, n - 1); val j1 = ((z + r + WORLD) / c).toInt().coerceIn(0, n - 1)
+        for (j in j0..j1) for (i in i0..i1) {
+            val cx = -WORLD + (i + 0.5f) * c; val cz = -WORLD + (j + 0.5f) * c
+            if (hypot(cx - x, cz - z) < r) bits.set(j * n + i)
+        }
+    }
+    fun percent() = bits.cardinality() * 100 / (n * n)
+    fun encode(): String = java.util.Base64.getEncoder().encodeToString(bits.toByteArray())
+    fun decode(s: String) {
+        bits.clear()
+        if (s.isEmpty()) return
+        try { bits.or(java.util.BitSet.valueOf(java.util.Base64.getDecoder().decode(s))) } catch (_: Exception) { }
+    }
+}
 class Wreck(var x: Float, var z: Float, val inst: ModelInstance) { var searchT = 0f; var bubbleT = 0f }
 class ReefRock(val x: Float, val z: Float, val r: Float, val inst: ModelInstance)
 
@@ -77,6 +106,25 @@ class Systems(private val g: SeaGame) {
     var autoFire = true
     var vibrate = true
     var shownIntro = -1
+
+    // ---------- Песни, карта ----------
+    val shanties = HashSet<Int>().also { it += 0 }
+    var shantiesOn = true
+    var shantyCur = 0
+    var shantyBanner = 0f
+    private var lastShanty = -1
+    val bottles = ArrayList<Bottle>()
+    lateinit var bottleModel: Model
+    val explored = Explored()
+    private var revealT = 0f
+    var waypoint: FloatArray? = null
+    private var gullT = 5f
+    private var creakT = 8f
+    private var farThunderT = 12f
+    // абордажные крюки
+    var grappleTarget: Ship? = null
+    var grappleT = 0f
+    private var boardHintShown = false
 
     // ---------- Мир ----------
     val fortresses = ArrayList<Fortress>()
@@ -110,6 +158,18 @@ class Systems(private val g: SeaGame) {
         reefModel = Models.reefRock().also { models += it }
         krakenHeadModel = Models.krakenHead().also { models += it }
         tentacleModel = Models.tentacleSeg().also { models += it }
+        bottleModel = Models.bottle().also { models += it }
+    }
+
+    /** Бутылки с песнями в открытом море. */
+    fun placeBottles(isWater: (Float, Float, Float) -> Boolean) {
+        val spots = listOf(1 to floatArrayOf(-1150f, -520f), 2 to floatArrayOf(1180f, 560f))
+        for ((song, pos) in spots) {
+            var x = pos[0]; var z = pos[1]
+            var k = 0
+            while (!isWater(x, z, 20f) && k++ < 50) { x += rand(-60f, 60f); z += rand(-60f, 60f) }
+            if (song !in shanties) bottles += Bottle(song, x, z, ModelInstance(bottleModel))
+        }
     }
 
     // ===================== Сохранение =====================
@@ -131,6 +191,12 @@ class Systems(private val g: SeaGame) {
         autoFire = p.getBoolean("autoFire", true)
         vibrate = p.getBoolean("vibrate", true)
         shownIntro = p.getInteger("shownIntro", -1)
+        shanties.clear(); shanties += 0
+        shanties += p.getString("shanties", "").split(",").mapNotNull { it.toIntOrNull() }.filter { it in SHANTIES.indices }
+        shantiesOn = p.getBoolean("shantiesOn", true)
+        explored.decode(p.getString("explored", ""))
+        val wp = p.getString("waypoint", "").split(",").mapNotNull { it.toFloatOrNull() }
+        waypoint = if (wp.size == 2) floatArrayOf(wp[0], wp[1]) else null
     }
 
     fun save(p: Preferences) {
@@ -146,6 +212,10 @@ class Systems(private val g: SeaGame) {
         p.putBoolean("autoFire", autoFire)
         p.putBoolean("vibrate", vibrate)
         p.putInteger("shownIntro", shownIntro)
+        p.putString("shanties", shanties.joinToString(","))
+        p.putBoolean("shantiesOn", shantiesOn)
+        p.putString("explored", explored.encode())
+        p.putString("waypoint", waypoint?.joinToString(",") ?: "")
     }
 
     // ===================== Капитан =====================
@@ -287,7 +357,12 @@ class Systems(private val g: SeaGame) {
         updateMerchants(dt, p)
         updateFlotillas(dt, p)
         updateProtect(dt, p)
-        updateBoarding(p)
+        updateBoarding(p, dt)
+        updateBottles(dt, p)
+        updateAmbience(dt, p)
+        revealT -= dt
+        if (revealT <= 0) { revealT = 0.3f; explored.reveal(p.x, p.z, 260f) }
+        waypoint?.let { w -> if (hypot(w[0] - p.x, w[1] - p.z) < 40) { waypoint = null; g.toast("Вы прибыли к отметке", 1.4f) } }
         fluctT -= dt
         if (fluctT <= 0) {
             fluctT = 240f
@@ -708,19 +783,52 @@ class Systems(private val g: SeaGame) {
     }
 
     // ---------- Абордаж ----------
-    private fun updateBoarding(p: Ship) {
+    /** Можно ли взять корабль на абордаж (без учёта расстояния). */
+    fun boardable(s: Ship) = s.faction == Faction.PIRATE && !s.sinking && s.type != "admiral" && s.hp <= s.maxHp * 0.5f
+
+    private fun updateBoarding(p: Ship, dt: Float) {
+        // крюки уже летят: стягиваем корабли
+        val gt = grappleTarget
+        if (gt != null) {
+            grappleT += dt
+            val dx = gt.x - p.x; val dz = gt.z - p.z; val d = hypot(dx, dz).coerceAtLeast(0.1f)
+            val want = p.radius + gt.radius + 2f
+            if (d > want) {
+                val pull = min(18f, (d - want) * 2.5f)
+                gt.vx = -dx / d * pull * 0.7f; gt.vz = -dz / d * pull * 0.7f
+                p.vx = dx / d * pull * 0.3f; p.vz = dz / d * pull * 0.3f
+            } else { gt.vx *= 0.8f; gt.vz *= 0.8f; p.vx *= 0.8f; p.vz *= 0.8f }
+            if (gt.sinking || !g.ships.contains(gt)) { grappleTarget = null; return }
+            if (grappleT > 1.4f && d < want + 4f || grappleT > 3f) {
+                grappleTarget = null
+                g.menus.showBoarding(gt)
+            }
+            return
+        }
         boardTarget = null
         if (p.sinking) return
         var best: Ship? = null; var bd = Float.MAX_VALUE
         for (s in g.ships) {
-            if (s.faction != Faction.PIRATE || s.sinking || s.type == "admiral") continue
-            if (s.hp > s.maxHp * 0.35f) continue
+            if (!boardable(s)) continue
             val d = hypot(s.x - p.x, s.z - p.z)
-            if (d > p.radius + s.radius + 8) continue
-            if (hypot(s.vx - p.vx, s.vz - p.vz) > 9) continue
+            if (!boardHintShown && d < 160) {
+                boardHintShown = true
+                g.toast("Враг ослаблен — его можно взять на абордаж!\nПодплывите ближе 30 м и жмите «Абордаж!»", 3.5f)
+            }
+            if (d > p.radius + s.radius + 30) continue
+            if (hypot(s.vx - p.vx, s.vz - p.vz) > 14) continue
             if (d < bd) { bd = d; best = s }
         }
         boardTarget = best
+    }
+
+    /** Бросить абордажные крюки: корабли стягиваются, затем начинается схватка. */
+    fun throwGrapples(t: Ship) {
+        if (grappleTarget != null) return
+        grappleTarget = t
+        grappleT = 0f
+        boardTarget = null
+        g.sfx.play("chain")
     }
 
     /** Сила абордажной команды игрока относительно врага (≈1 — равные силы). */
@@ -729,6 +837,63 @@ class Systems(private val g: SeaGame) {
         val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp)
         val theirs = t.stats.mass * 10 * (0.35f + t.hp / t.maxHp)
         return mine / theirs
+    }
+
+    private fun updateBottles(dt: Float, p: Ship) {
+        val it = bottles.iterator()
+        while (it.hasNext()) {
+            val bt = it.next()
+            bt.t += dt
+            bt.inst.transform.setToTranslation(bt.x, waveHeight(bt.x, bt.z, g.now) + 0.4f + sin(bt.t * 2) * 0.2f, bt.z)
+                .rotate(Vector3.Z, 70f + sin(bt.t * 1.3f) * 10f).rotate(Vector3.X, bt.t * 15f)
+            if (hypot(bt.x - p.x, bt.z - p.z) < p.radius * 0.6f + 6f && !p.sinking) {
+                shanties += bt.song
+                shantyCur = bt.song
+                lastShanty = -2
+                g.sfx.play("treasure")
+                g.toast("Бутылка с песней!\nКоманда выучила «${SHANTIES[bt.song].title}»", 3f)
+                gainXp(80, bt.x, bt.z)
+                it.remove()
+                g.save()
+            }
+        }
+    }
+
+    /** Какую песню должна петь команда сейчас (или -1). */
+    fun wantedShanty(): Int {
+        val p = g.player ?: return -1
+        if (!shantiesOn || g.state != SeaGame.State.PLAY) return -1
+        if (g.combatT > 0 || g.stormLevel > 0.55f || abs(p.speed) < 4f || p.sinking) return -1
+        return shantyCur
+    }
+
+    private fun updateAmbience(dt: Float, p: Ship) {
+        // песни: по окончании — следующая из выученных
+        if (g.sfx.shantyFinished) {
+            val list = shanties.sorted()
+            shantyCur = list[(list.indexOf(shantyCur) + 1) % list.size]
+        }
+        if (g.sfx.shantyIdx >= 0 && g.sfx.shantyIdx != lastShanty) { lastShanty = g.sfx.shantyIdx; shantyBanner = 5f }
+        if (g.sfx.shantyIdx < 0 && lastShanty >= 0) lastShanty = -1
+        if (shantyBanner > 0) shantyBanner -= dt
+        // чайки у берега днём
+        gullT -= dt
+        if (gullT <= 0) {
+            gullT = rand(5f, 12f)
+            val near = g.islands.minOfOrNull { hypot(it.x - p.x, it.z - p.z) - it.r } ?: 999f
+            if (near < 200 && g.sky.day > 0.5f && g.stormLevel < 0.4f) g.sfx.play(if (Random.nextBoolean()) "gull1" else "gull2", clamp(1f - near / 220f, 0.1f, 0.7f), 0.25f)
+        }
+        // скрип корпуса
+        creakT -= dt
+        if (creakT <= 0) {
+            creakT = rand(7f, 16f)
+            if (abs(p.speed) > 3 || g.stormLevel > 0.3f) g.sfx.play("creak", 0.35f + g.stormLevel * 0.4f, 0.3f)
+        }
+        // далёкий гром перед и во время шторма
+        if (g.stormLevel > 0.12f) {
+            farThunderT -= dt
+            if (farThunderT <= 0) { farThunderT = rand(9f, 20f); g.sfx.play("thunder_far", 0.4f + g.stormLevel * 0.4f, 0.2f) }
+        }
     }
 
     fun luckMul() = 1f + 0.08f * skill("luck")
@@ -741,12 +906,18 @@ class Systems(private val g: SeaGame) {
         val p = g.player
         for (r in reefs) if (p != null && hypot(r.x - p.x, r.z - p.z) < 170) batch.render(r.inst, env)
         for (w in wrecks) if (hypot(w.x - lookX, w.z - lookZ) < 500) batch.render(w.inst, env)
+        for (bt in bottles) if (hypot(bt.x - lookX, bt.z - lookZ) < 500) batch.render(bt.inst, env)
         kraken?.let { k ->
             if (hypot(k.x - lookX, k.z - lookZ) < 600) {
                 batch.render(k.head, env)
                 for (t in k.tentacles) for (s in t) batch.render(s, env)
             }
         }
+    }
+
+    fun renderShadows(batch: ModelBatch, lookX: Float, lookZ: Float) {
+        for (f in fortresses) if (hypot(f.x - lookX, f.z - lookZ) < 260) batch.render(if (f.alive) f.inst else f.ruins)
+        kraken?.let { k -> if (!k.dead && hypot(k.x - lookX, k.z - lookZ) < 260) { batch.render(k.head); for (t in k.tentacles) for (sg in t) batch.render(sg) } }
     }
 
     private val ringCol = Color(1f, 1f, 1f, 0.5f)
@@ -774,6 +945,34 @@ class Systems(private val g: SeaGame) {
     }
 
     private val holeCol = Color(0.08f, 0.05f, 0.03f, 0.9f)
+    private val ropeCol = Color(0.35f, 0.24f, 0.12f, 1f)
+    private val sparkCol = Color(1f, 0.9f, 0.4f, 0.8f)
+
+    fun renderExtraDecals() {
+        // абордажные канаты
+        val p = g.player
+        val t = grappleTarget
+        if (p != null && t != null) {
+            for (k in 0 until 3) {
+                val ox = (k - 1) * p.len * 0.25f
+                val ax = p.x + sin(p.h) * ox; val az = p.z - cos(p.h) * ox
+                val bx = t.x + sin(t.h) * ox; val bz = t.z - cos(t.h) * ox
+                val prog = min(1f, grappleT / 0.5f)
+                for (i in 0..24) {
+                    val f = i / 24f * prog
+                    val x = ax + (bx - ax) * f; val z = az + (bz - az) * f
+                    val y = p.y + p.deckTop + 2f + sin(f * PI.toFloat()) * 4f * (1 - min(1f, grappleT / 1.4f))
+                    g.fx.frame(g.ui.softDisc, x, y, z, 0.9f, 0.9f, ropeCol)
+                }
+            }
+        }
+        for (bt in bottles) {
+            if (p != null && hypot(bt.x - p.x, bt.z - p.z) < 300) {
+                val pulse = 0.5f + 0.5f * sin(g.now * 4 + bt.song)
+                g.fx.glow(bt.x, 2f, bt.z, 4f + pulse * 2f, sparkCol.set(1f, 0.9f, 0.4f, 0.4f + 0.4f * pulse))
+            }
+        }
+    }
 
     fun vibrate(ms: Int) {
         if (vibrate) try { Gdx.input.vibrate(ms) } catch (_: Exception) { }

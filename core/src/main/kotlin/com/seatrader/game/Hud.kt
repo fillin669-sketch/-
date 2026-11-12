@@ -50,6 +50,11 @@ class Hud(private val g: SeaGame) {
 
     fun boardPos(): Pair<Float, Float> = (g.wDp / 2) to (g.safeBottom + 175f)
 
+    fun minimapHit(x: Float, y: Float): Boolean {
+        val (cx, cy) = minimapCenter()
+        return hypot(x - cx, y - cy) < 66f
+    }
+
     private var questHeight = 60f
 
     private fun minimapCenter(): Pair<Float, Float> {
@@ -106,6 +111,11 @@ class Hud(private val g: SeaGame) {
             if (s.boss) ui.text(b, ui.small, s.name, sc.x - 120, sc.y + 30, Align.center, 240f, c = rgb(0xffcdd2))
             if (s.burnT > 0) ui.icon(b, ui.fireIcon, sc.x + w / 2 + 10, sc.y + hh / 2, 16f, 16f)
             if (s.slowT > 0) ui.icon(b, ui.chainIcon, sc.x - w / 2 - 10, sc.y + hh / 2, 16f, 16f)
+            if (g.systems.boardable(s)) {
+                val pulse = 1f + sin(g.now * 6) * 0.12f
+                ui.icon(b, ui.disc, sc.x, sc.y + 30, 34f * pulse, 34f * pulse, 0f, c(0xd32f2f, 0.9f))
+                ui.icon(b, ui.swordsIcon, sc.x, sc.y + 30, 26f * pulse, 26f * pulse)
+            }
             if (s === g.systems.protect) ui.text(b, ui.small, "Защитите купца!", sc.x - 80, sc.y + 30, Align.center, 160f, c = rgb(0xfff176))
         }
         // Боссы и крепости
@@ -182,6 +192,30 @@ class Hud(private val g: SeaGame) {
             questIcon(q, wDp / 2, by + 52, 24f)
         }
 
+        // Путевая точка с карты
+        val wp = g.systems.waypoint
+        if (wp != null && p != null && !p.sinking && g.state == SeaGame.State.PLAY) {
+            val ps = g.toScreen(p.x, 0f, p.z)?.let { Vector3(it) }
+            if (ps != null) {
+                val ts = g.toScreen(wp[0], 0f, wp[1])
+                var ax: Float; var ay: Float
+                if (ts != null) { ax = ts.x - ps.x; ay = ts.y - ps.y } else { ax = wp[0] - p.x; ay = -(wp[1] - p.z) }
+                val al = hypot(ax, ay).coerceAtLeast(0.001f)
+                val r = 95 + p.len * 1.5f
+                val ang = atan2(ay, ax) * MathUtils.radiansToDegrees - 90f
+                ui.icon(b, ui.triangle, ps.x + ax / al * r, ps.y + ay / al * r, 22f, 22f, ang, c(0x4dd0e1))
+                val d = hypot(wp[0] - p.x, wp[1] - p.z)
+                ui.text(b, ui.small, "Отметка: ${d.roundToInt()} м", ps.x + ax / al * (r + 26) - 60, ps.y + ay / al * (r + 26) + 6, Align.center, 120f, c = rgb(0x4dd0e1))
+            }
+        }
+
+        // Песня команды
+        if (g.systems.shantyBanner > 0 && g.sfx.shantyIdx >= 0) {
+            val a = min(1f, g.systems.shantyBanner)
+            val title = SHANTIES[g.sfx.shantyIdx].title
+            ui.text(b, ui.small, "♪ Команда поёт: «$title» ♪", 0f, g.safeBottom + 92f, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
+        }
+
         // Джойстик
         if (g.joyActive && g.state == SeaGame.State.PLAY) {
             val jr = g.joySens
@@ -250,11 +284,13 @@ class Hud(private val g: SeaGame) {
         g.systems.boardTarget?.let {
             val (px, py) = boardPos()
             val pulse = 1f + sin(g.now * 6) * 0.06f
-            ui.round(b, px - 90 * pulse, py - 26 * pulse, 180 * pulse, 52 * pulse, c(0x7f1d1d))
-            ui.round(b, px - 88 * pulse, py - 23 * pulse, 176 * pulse, 48 * pulse, c(0xd32f2f))
-            ui.icon(b, ui.swordsIcon, px - 60, py, 34f, 34f)
-            ui.text(b, ui.big, "Абордаж!", px - 40, py + 12, Align.left, 140f)
+            ui.round(b, px - 95 * pulse, py - 28 * pulse, 190 * pulse, 56 * pulse, c(0x7f1d1d))
+            ui.round(b, px - 93 * pulse, py - 25 * pulse, 186 * pulse, 50 * pulse, c(0xd32f2f))
+            ui.icon(b, ui.swordsIcon, px - 64, py, 36f, 36f)
+            ui.text(b, ui.big, "Абордаж!", px - 42, py + 12, Align.left, 150f)
+            ui.text(b, ui.small, "нажмите — команда бросит крюки", px - 120, py - 34, Align.center, 240f, c = rgb(0xffcdd2))
         }
+        if (g.systems.grappleTarget != null) ui.text(b, ui.big, "Крюки летят — сближаемся…", 0f, hDp * 0.55f, Align.center, wDp, c = rgb(0xffe0b2))
 
         // Монеты и кристаллы
         for ((i, pair) in listOf(fmt(g.coins) to ui.coin, fmt(g.gems) to ui.gem).withIndex()) {
@@ -296,7 +332,7 @@ class Hud(private val g: SeaGame) {
             layout.setText(ui.mid, text, Color.WHITE, tw - 70, Align.left, true)
             val th = layout.height + 28
             val tx = if (g.leftHanded) wDp - tw - 16 else 16f
-            val ty = 110 + g.safeBottom
+            val ty = 118 + g.safeBottom
             ui.round(b, tx, ty - 3, tw, th, c(0x0a141e, 0.5f))
             ui.round(b, tx, ty, tw, th, c(0x1b3a57, 0.92f))
             ui.mid.draw(b, layout, tx + 58, ty + th - 14)
@@ -307,7 +343,8 @@ class Hud(private val g: SeaGame) {
         if (g.toastT > 0) {
             g.toastT -= dt
             val a = min(1f, g.toastT * 3)
-            ui.text(b, ui.huge, g.toastText, 10f, hDp * 0.62f, Align.center, wDp - 20, true, Color(1f, 1f, 1f, a))
+            val font = if (g.toastText.length > 34) ui.big else ui.huge
+            ui.text(b, font, g.toastText, 10f, hDp * 0.62f, Align.center, wDp - 20, true, Color(1f, 1f, 1f, a))
         }
         b.color = Color.WHITE
     }
@@ -331,58 +368,67 @@ class Hud(private val g: SeaGame) {
         ui.text(b, ui.big, glyph, x - 30, y + 13, Align.center, 60f)
     }
 
-    /** Мини-карта: север вверху, радиус обзора 420 м. */
+    /** Мини-карта: север вверху, радиус обзора 420 м. Нажатие открывает карту мира. */
     private fun drawMinimap() {
         val b = g.batch
         val p = g.player ?: return
         val (cx, cy) = minimapCenter()
         val r = 62f
         val range = 420f
-        ui.icon(b, ui.disc, cx, cy, r * 2 + 6, r * 2 + 6, 0f, c(0x0a141e, 0.55f))
-        val waterCol = when (g.systems.region) { Region.ICE -> 0x5d8fb0; Region.FIRE -> 0x3d5566; Region.REEF -> 0x2f7f7c; Region.ABYSS -> 0x163a63; else -> 0x1f6fb0 }
-        ui.icon(b, ui.disc, cx, cy, r * 2, r * 2, 0f, c(waterCol, 0.88f))
+        ui.icon(b, ui.disc, cx, cy, r * 2 + 8, r * 2 + 8, 0f, c(0x3e2723, 0.85f))
+        val waterCol = when (g.systems.region) { Region.ICE -> 0x5d8fb0; Region.FIRE -> 0x3d5566; Region.REEF -> 0x2f7f7c; Region.ABYSS -> 0x163a63; else -> 0x2a7fc0 }
+        ui.icon(b, ui.disc, cx, cy, r * 2, r * 2, 0f, c(waterCol, 0.92f))
         fun pt(wx: Float, wz: Float, clampEdge: Boolean = false): Pair<Float, Float>? {
             var dx = (wx - p.x) / range * r
             var dy = -(wz - p.z) / range * r
             val d = hypot(dx, dy)
             if (d > r - 4) {
                 if (!clampEdge) return null
-                dx *= (r - 6) / d; dy *= (r - 6) / d
+                dx *= (r - 7) / d; dy *= (r - 7) / d
             }
             return (cx + dx) to (cy + dy)
         }
         for (isl in g.islands) {
             val s = isl.r / range * r * 2
-            val col = when {
-                isl.port >= 0 -> 0xe6d3a3
-                else -> when (regionAt(isl.x, isl.z)) { Region.ICE -> 0xf0f8ff; Region.FIRE -> 0x4e4038; Region.REEF -> 0x9ccc65; else -> 0x7cb342 }
+            val col = when (regionAt(isl.x, isl.z)) { Region.ICE -> 0xf0f8ff; Region.FIRE -> 0x5d4b42; Region.REEF -> 0xd9cfa8; else -> 0xe6d3a3 }
+            pt(isl.x, isl.z)?.let { (x, y) ->
+                ui.icon(b, ui.disc, x, y, max(5f, s), max(5f, s), 0f, c(col))
+                if (s > 8) ui.icon(b, ui.disc, x, y, s * 0.7f, s * 0.7f, 0f, c(if (regionAt(isl.x, isl.z) == Region.ICE) 0xdbe9f3 else 0x6fa84a))
             }
-            pt(isl.x, isl.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, max(4f, s), max(4f, s), 0f, c(col)) }
         }
-        for (rk in g.systems.reefs) if (hypot(rk.x - p.x, rk.z - p.z) < 130) pt(rk.x, rk.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 5f, 5f, 0f, c(0x263238)) }
-        for (port in g.ports) pt(port.rx, port.rz)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 7f, 7f, 0f, c(0xffffff)) }
-        for (f in g.systems.fortresses) pt(f.x, f.z)?.let { (x, y) -> ui.icon(b, ui.squareIcon, x, y, 9f, 9f, 0f, if (f.alive) c(0xd84315) else c(0x757575)) }
-        for (w in g.systems.wrecks) if (hypot(w.x - p.x, w.z - p.z) < 300) pt(w.x, w.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 6f, 6f, 0f, c(0xb3e5fc)) }
+        for (rk in g.systems.reefs) if (hypot(rk.x - p.x, rk.z - p.z) < 160) pt(rk.x, rk.z)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 7f, 7f, 0f, c(0x263238)) }
+        for (port in g.ports) pt(port.rx, port.rz)?.let { (x, y) -> ui.text(b, ui.small, "⚓", x - 10, y + 7, Align.center, 20f) }
+        for (f in g.systems.fortresses) pt(f.x, f.z)?.let { (x, y) -> ui.icon(b, ui.squareIcon, x, y, 10f, 10f, 0f, if (f.alive) c(0xd84315) else c(0x757575)) }
+        for (w in g.systems.wrecks) if (hypot(w.x - p.x, w.z - p.z) < 300) pt(w.x, w.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 7f, 7f, 0f, c(0xb3e5fc)) }
+        for (bt in g.systems.bottles) if (hypot(bt.x - p.x, bt.z - p.z) < 500) pt(bt.x, bt.z, true)?.let { (x, y) -> ui.text(b, ui.small, "♪", x - 10, y + 7, Align.center, 20f, c = rgb(0xffe082)) }
         for (s in g.ships) {
             if (s === p || s.sinking) continue
-            val col = when { s.ally -> c(0x4fc3f7); s.faction == Faction.NEUTRAL -> c(0xfff176); s.boss -> c(0xb388ff); else -> c(0xff5a5f) }
-            val sz = if (s.boss) 9f else if (s.type == "fisher") 4f else 6f
-            pt(s.x, s.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, sz, sz, 0f, col) }
+            val col = when { s.ally -> c(0x4fc3f7); s.faction == Faction.NEUTRAL -> c(0xfff176); s.boss -> c(0xb388ff); else -> c(0xff5252) }
+            val sz = if (s.boss) 13f else if (s.type == "fisher") 6f else 9f
+            pt(s.x, s.z)?.let { (x, y) -> ui.icon(b, ui.arrowIcon, x, y, sz * 0.8f, sz, -s.h * MathUtils.radiansToDegrees, col) }
         }
-        g.serpent?.let { sp -> if (!sp.dead) pt(sp.x, sp.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 10f, 10f, 0f, c(0x26a69a)) } }
-        g.systems.kraken?.let { k -> if (!k.dead) pt(k.x, k.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 13f, 13f, 0f, c(0xd81b60)) } }
+        g.serpent?.let { sp -> if (!sp.dead) pt(sp.x, sp.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 11f, 11f, 0f, c(0x26a69a)) } }
+        g.systems.kraken?.let { k -> if (!k.dead) pt(k.x, k.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 14f, 14f, 0f, c(0xd81b60)) } }
         g.treasure?.let { t -> pt(t.x, t.z, true)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 14f, 14f) } }
-        g.questTarget()?.let { t -> pt(t.first, t.second, true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 9f, 9f, 0f, c(0xffc93c)) } }
-        ui.icon(b, ui.arrowIcon, cx, cy, 12f, 14f, -p.h * MathUtils.radiansToDegrees, c(0xffffff))
-        ui.icon(b, ui.ring, cx, cy, r * 2 + 6, r * 2 + 6, 0f, c(0xffffff, 0.7f))
-        val wx = cx + kotlin.math.sin(g.windA) * (r + 12)
-        val wy = cy + kotlin.math.cos(g.windA) * (r + 12)
-        ui.icon(b, ui.arrowIcon, wx, wy, 14f, 16f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
+        g.systems.waypoint?.let { w -> pt(w[0], w[1], true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 10f, 10f, 0f, c(0x4dd0e1)) } }
+        g.questTarget()?.let { t ->
+            val pulse = 1f + sin(g.now * 5) * 0.2f
+            pt(t.first, t.second, true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 11f * pulse, 11f * pulse, 0f, c(0xffc93c)) }
+        }
+        // игрок
+        ui.icon(b, ui.arrowIcon, cx, cy, 13f, 16f, -p.h * MathUtils.radiansToDegrees, c(0xffffff))
+        ui.icon(b, ui.ring, cx, cy, r * 2 + 8, r * 2 + 8, 0f, c(0xd7b98e, 0.95f))
+        // север и ветер
+        ui.text(b, ui.small, "С", cx - 10, cy + r + 18, Align.center, 20f, c = rgb(0xffcdd2))
+        val wx = cx + sin(g.windA) * (r + 14)
+        val wy = cy + kotlin.math.cos(g.windA) * (r + 14)
+        ui.icon(b, ui.arrowIcon, wx, wy, 14f, 18f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
         val tags = ArrayList<String>()
         tags += g.systems.region.title
         if (g.stormLevel > 0.3f) tags += "шторм"
         if (1f - g.sky.day > 0.5f) tags += "ночь"
         val tx = (cx - 110).coerceAtMost(g.wDp - 224)
-        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 8, Align.center, 220f, c = rgb(0xb3e5fc))
+        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 10, Align.center, 220f, c = rgb(0xb3e5fc))
+        ui.text(b, ui.small, "нажмите — карта", tx, cy - r - 26, Align.center, 220f, c = rgb(0x90a4ae))
     }
 }

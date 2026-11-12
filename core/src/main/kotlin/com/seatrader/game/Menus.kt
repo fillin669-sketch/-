@@ -17,6 +17,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** Меню на Scene2D: порт, пауза, настройки, гибель, ежедневная награда. */
 class Menus(private val g: SeaGame) {
@@ -356,6 +357,8 @@ class Menus(private val g: SeaGame) {
         val captain = ui.blue("★  Капитан" + if (g.systems.skillPts > 0) " (+${g.systems.skillPts})" else "").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }
         val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
         val map = ui.blue("⚓  Карта мира").also { it.onClick { current = { buildMap() }; buildMap() } }
+        val songs = ui.blue("♪  Песни команды").also { it.onClick { current = { buildSongs() }; buildSongs() } }
+        val help = ui.blue("?  Как играть").also { it.onClick { current = { buildHelp() }; buildHelp() } }
         val settings = ui.blue("⚙  Настройки").also { it.onClick { current = { buildSettings() }; buildSettings() } }
         val reset = ui.gray(if (resetArmed) "Нажмите ещё раз для сброса" else "↺  Начать заново").also {
             it.onClick {
@@ -363,7 +366,7 @@ class Menus(private val g: SeaGame) {
             }
         }
         val list = Table()
-        for (bt in listOf(resume, captain, ach, map, settings, reset)) list.add(bt).growX().height(50f).padTop(7f).row()
+        for (bt in listOf(resume, captain, ach, map, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
     }
 
@@ -594,7 +597,10 @@ class Menus(private val g: SeaGame) {
         val root = overlay()
         val panel = panelTable()
         panel.add(ui.label("Абордаж!", ui.huge, align = Align.center)).growX().row()
-        panel.add(ui.label("${target.name}. Ваша команда ${if (ratio >= 1) "сильнее" else "слабее"} противника. Жмите «Удар!», когда маркер в зелёной зоне. Нужно 2 удачных удара из 3.",
+        val mine = (20 * ratio).roundToInt().coerceIn(4, 60)
+        panel.add(ui.label("${target.name}", ui.mid, rgb(0xffcdd2), align = Align.center)).growX().padTop(4f).row()
+        panel.add(ui.label("Ваши бойцы: $mine  ·  Пираты: 20", ui.mid, if (ratio >= 1) rgb(0x3ddc84) else rgb(0xff8a65), align = Align.center)).growX().padTop(4f).row()
+        panel.add(ui.label("Жмите «Удар!», когда жёлтый маркер внутри зелёной зоны. Чем сильнее команда, тем шире зона. Нужно 2 удачных удара из 3.",
             ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(6f, 0f, 12f, 0f).row()
         val bar = BoardBar(ui, zone)
         panel.add(bar).growX().height(30f).padBottom(10f).row()
@@ -732,47 +738,239 @@ class Menus(private val g: SeaGame) {
     }
 
     // ===================== Карта мира =====================
-    private class WorldMap(val g: SeaGame) : Actor() {
+    /** Интерактивная карта: перетаскивание, масштаб, туман войны, выбор объектов и путевая точка. */
+    private inner class WorldMap : Actor() {
+        var zoom = 1f
+        var cx = 0f
+        var cz = 0f
+        var selX = Float.NaN
+        var selZ = Float.NaN
+        var onSelect: ((String, Boolean) -> Unit)? = null
+
+        init {
+            g.player?.let { cx = it.x * 0.5f; cz = it.z * 0.5f }
+            addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ActorGestureListener() {
+                var startZoom = 1f
+                override fun pan(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, deltaX: Float, deltaY: Float) {
+                    val k = scaleK()
+                    cx -= deltaX / k; cz += deltaY / k
+                    clampView()
+                }
+                override fun touchDown(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int, button: Int) { startZoom = zoom }
+                override fun zoom(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, initialDistance: Float, distance: Float) {
+                    zoom = (startZoom * distance / initialDistance).coerceIn(1f, 6f); clampView()
+                }
+                override fun tap(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, count: Int, button: Int) {
+                    if (count >= 2) { zoom = 1f; cx = 0f; cz = 0f; return }
+                    select(x, y)
+                }
+            })
+            addListener(object : com.badlogic.gdx.scenes.scene2d.InputListener() {
+                override fun scrolled(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, amountX: Float, amountY: Float): Boolean {
+                    zoom = (zoom * (if (amountY > 0) 0.85f else 1.18f)).coerceIn(1f, 6f); clampView(); return true
+                }
+            })
+        }
+
+        fun scaleK() = min(width, height) / (WORLD * 2) * zoom
+        private fun clampView() {
+            val lim = WORLD * (1 - 1 / zoom)
+            cx = cx.coerceIn(-lim, lim); cz = cz.coerceIn(-lim, lim)
+        }
+        fun sx(wx: Float) = x + width / 2 + (wx - cx) * scaleK()
+        fun sy(wz: Float) = y + height / 2 - (wz - cz) * scaleK()
+
+        private fun select(lx: Float, ly: Float) {
+            val k = scaleK()
+            val wx = cx + (lx - width / 2) / k
+            val wz = cz - (ly - height / 2) / k
+            val ex = g.systems.explored
+            data class F(val x: Float, val z: Float, val text: String)
+            val feats = ArrayList<F>()
+            for (pt in g.ports) feats += F(pt.rx, pt.rz, "Порт «${pt.def.name}»: ремонт, верфь, рынок")
+            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) feats += F(f.x, f.z, if (f.alive) "Пиратская крепость: стреляет по всем, кто рядом" else "Руины крепости (отстроят позже)")
+            for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) feats += F(w.x, w.z, "Затонувший корабль: остановитесь у пузырей")
+            for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) feats += F(bt.x, bt.z, "Бутылка с песней для команды")
+            g.treasure?.let { feats += F(it.x, it.z, "Сокровище на острове") }
+            val near = feats.minByOrNull { hypot(it.x - wx, it.z - wz) }
+            selX = wx; selZ = wz
+            var text = "Точка на карте. Можно проложить курс."
+            if (near != null && hypot(near.x - wx, near.z - wz) * k < 26) { selX = near.x; selZ = near.z; text = near.text }
+            if (!ex.seen(selX, selZ) && near == null) text = "Неизведанные воды. Можно проложить курс."
+            val reg = regionAt(selX, selZ).title
+            onSelect?.invoke("$text\n$reg · ${hypot(selX - (g.player?.x ?: 0f), selZ - (g.player?.z ?: 0f)).roundToInt()} м от вас", true)
+        }
+
         override fun draw(batch: Batch, parentAlpha: Float) {
             val ui = g.ui
-            val cx = x + width / 2; val cy = y + height / 2
-            val r = min(width, height) / 2
-            val k = r / WORLD
-            ui.round(batch, x, y, width, height, rgb(0x1f6fb0))
-            // регионы: цветные квадранты по краям и центр
-            fun dot(wx: Float, wz: Float, size: Float, col: Int) { ui.icon(batch, ui.disc, cx + wx * k, cy - wz * k, size, size, 0f, rgb(col)) }
-            for (gx in -12..12) for (gz in -12..12) {
-                val wx = gx * WORLD / 12f; val wz = gz * WORLD / 12f
-                val col = when (regionAt(wx, wz)) { Region.ICE -> 0x7fa8c4; Region.FIRE -> 0x4b5e6b; Region.REEF -> 0x2f8f88; Region.ABYSS -> 0x163a63; else -> 0x2a82c4 }
-                ui.rect(batch, cx + wx * k - r / 24f, cy - wz * k - r / 24f, r / 12f + 1, r / 12f + 1, rgb(col, 0.9f))
+            batch.flush()
+            if (!clipBegin()) return
+            ui.rect(batch, x, y, width, height, rgb(0xe8d5a8))
+            val k = scaleK()
+            val n = 36
+            val cs = WORLD * 2 / n
+            for (gx in 0 until n) for (gz in 0 until n) {
+                val wx = -WORLD + (gx + 0.5f) * cs; val wz = -WORLD + (gz + 0.5f) * cs
+                val px = sx(wx); val py = sy(wz)
+                if (px < x - cs * k || px > x + width + cs * k || py < y - cs * k || py > y + height + cs * k) continue
+                val col = when (regionAt(wx, wz)) { Region.ICE -> 0x8fb6cf; Region.FIRE -> 0x5f7280; Region.REEF -> 0x4aa39b; Region.ABYSS -> 0x23507e; else -> 0x4f9fd6 }
+                ui.rect(batch, px - cs * k / 2, py - cs * k / 2, cs * k + 1, cs * k + 1, rgb(col))
             }
-            for (isl in g.islands) dot(isl.x, isl.z, max(3f, isl.r * k * 2), if (isl.port >= 0) 0xe6d3a3 else 0x7cb342)
-            for (f in g.systems.fortresses) ui.icon(batch, ui.squareIcon, cx + f.x * k, cy - f.z * k, 8f, 8f, 0f, rgb(if (f.alive) 0xd84315 else 0x757575))
-            for (port in g.ports) {
-                dot(port.rx, port.rz, 8f, 0xffffff)
-                val lx = (cx + port.rx * k - 80).coerceIn(x + 2, x + width - 162)
-                ui.text(batch, ui.small, port.def.name, lx, cy - port.rz * k - 6, Align.center, 160f)
+            val ex = g.systems.explored
+            for (isl in g.islands) {
+                if (!ex.seen(isl.x, isl.z) && isl.port < 0) continue
+                val r = max(3f, isl.r * k * 2.1f)
+                val reg = regionAt(isl.x, isl.z)
+                ui.icon(batch, ui.disc, sx(isl.x), sy(isl.z), r, r, 0f, rgb(when (reg) { Region.ICE -> 0xf4fafd; Region.FIRE -> 0x4e4038; else -> 0xe6d3a3 }))
+                ui.icon(batch, ui.disc, sx(isl.x), sy(isl.z), r * 0.72f, r * 0.72f, 0f, rgb(when (reg) { Region.ICE -> 0xdbe9f3; Region.FIRE -> 0x2b2523; else -> 0x6fa84a }))
             }
-            g.questTarget()?.let { dot(it.first, it.second, 10f, 0xffc93c) }
-            g.player?.let { p -> ui.icon(batch, ui.arrowIcon, cx + p.x * k, cy - p.z * k, 14f, 16f, -p.h * MathUtils.radiansToDegrees, Color.WHITE) }
-            ui.text(batch, ui.mid, "ЛЕДЯНОЕ МОРЕ", cx - 100, y + height - 6, Align.center, 200f, c = rgb(0xe1f5fe))
-            ui.text(batch, ui.mid, "БЕЗДНА", cx - 100, y + 24, Align.center, 200f, c = rgb(0xbbdefb))
-            ui.text(batch, ui.small, "ТУМАННЫЙ\nРИФ", x + 4, y + height * 0.82f, Align.left, 110f, c = rgb(0xb2dfdb))
-            ui.text(batch, ui.small, "ОГНЕННЫЕ\nОСТРОВА", x + width - 114, y + height * 0.82f, Align.right, 110f, c = rgb(0xffccbc))
+            // туман войны
+            val fn = ex.n
+            val fc = WORLD * 2 / fn
+            for (j in 0 until fn) for (i in 0 until fn) {
+                if (ex.bits[j * fn + i]) continue
+                val wx = -WORLD + (i + 0.5f) * fc; val wz = -WORLD + (j + 0.5f) * fc
+                val px = sx(wx); val py = sy(wz)
+                val sz = fc * k * 2.3f
+                if (px < x - sz || px > x + width + sz || py < y - sz || py > y + height + sz) continue
+                ui.icon(batch, ui.softDisc, px, py, sz * 1.2f, sz * 1.2f, 0f, rgb(0x3b3127, 0.8f))
+            }
+            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) ui.icon(batch, ui.squareIcon, sx(f.x), sy(f.z), 10f, 10f, 0f, rgb(if (f.alive) 0xd84315 else 0x757575))
+            for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) ui.icon(batch, ui.disc, sx(w.x), sy(w.z), 8f, 8f, 0f, rgb(0xb3e5fc))
+            for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) ui.text(batch, ui.mid, "♪", sx(bt.x) - 10, sy(bt.z) + 8, Align.center, 20f, c = rgb(0xffe082))
+            g.treasure?.let { ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 14f, 14f) }
+            for (pt in g.ports) {
+                ui.text(batch, ui.mid, "⚓", sx(pt.rx) - 12, sy(pt.rz) + 9, Align.center, 24f, c = rgb(0x3e2723))
+                if (zoom > 1.6f || ex.seen(pt.rx, pt.rz)) ui.text(batch, ui.small, pt.def.name, sx(pt.rx) - 80, sy(pt.rz) - 8, Align.center, 160f, c = rgb(0x3e2723))
+            }
+            g.questTarget()?.let {
+                val pulse = 1f + sin(g.now * 5) * 0.2f
+                ui.icon(batch, ui.disc, sx(it.first), sy(it.second), 14f * pulse, 14f * pulse, 0f, rgb(0xffc93c))
+            }
+            g.systems.waypoint?.let { ui.icon(batch, ui.disc, sx(it[0]), sy(it[1]), 12f, 12f, 0f, rgb(0x00acc1)) }
+            if (!selX.isNaN()) ui.icon(batch, ui.ring, sx(selX), sy(selZ), 30f, 30f, 0f, rgb(0xd32f2f))
+            g.player?.let { p -> ui.icon(batch, ui.arrowIcon, sx(p.x), sy(p.z), 16f, 20f, -p.h * MathUtils.radiansToDegrees, rgb(0xffffff)) }
+            // роза ветров
+            val rx = x + width - 34; val ry = y + 40
+            ui.icon(batch, ui.disc, rx, ry, 50f, 50f, 0f, rgb(0x3e2723, 0.6f))
+            ui.text(batch, ui.small, "С", rx - 10, ry + 22, Align.center, 20f, c = rgb(0xffcdd2))
+            ui.text(batch, ui.small, "Ю", rx - 10, ry - 12, Align.center, 20f)
+            ui.text(batch, ui.small, "З", rx - 30, ry + 5, Align.center, 20f)
+            ui.text(batch, ui.small, "В", rx + 10, ry + 5, Align.center, 20f)
+            ui.text(batch, ui.small, "Исследовано ${ex.percent()}%", x + 6, y + height - 6, Align.left, 200f, c = rgb(0x3e2723))
+            batch.flush()
+            clipEnd()
+            ui.icon(batch, ui.white, x, y, 0f, 0f)
             batch.color = Color.WHITE
         }
     }
+
+    fun showMap() = open(SeaGame.State.DIALOG) { buildMap() }
 
     private fun buildMap() {
         stage.clear()
         val root = overlay()
         val panel = panelTable()
+        panel.pad(10f)
         panel.add(ui.label("Карта мира", ui.big, align = Align.center)).growX().row()
-        val side = min(g.wDp - 48, g.hDp - g.safeTop - g.safeBottom - 170)
-        panel.add(WorldMap(g)).size(side).pad(8f).row()
-        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
-        panel.add(back).growX().height(50f).row()
+        panel.add(ui.label("Тяните — двигать, щипок или колесо — масштаб, касание — выбрать место", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(6f).row()
+        val landscape = g.wDp > g.hDp
+        val side = if (landscape) min(g.hDp - g.safeTop - g.safeBottom - 120, g.wDp - 300) else min(g.wDp - 40, g.hDp - g.safeTop - g.safeBottom - 300)
+        val map = WorldMap()
+        val info = ui.label("Выберите место на карте", ui.small, wrap = true)
+        val route = ui.green("Проложить курс сюда")
+        route.isDisabled = true
+        map.onSelect = { text, can -> info.setText(text); route.isDisabled = !can }
+        route.onClick {
+            if (!map.selX.isNaN()) {
+                g.systems.waypoint = floatArrayOf(map.selX, map.selZ)
+                g.toast("Курс проложен", 1.2f); g.save(); close()
+            }
+        }
+        val clear = ui.gray("Убрать отметку").also { it.onClick { g.systems.waypoint = null; g.save(); info.setText("Отметка убрана") } }
+        val back = ui.blue("Назад").also { it.onClick { close() } }
+        val legend = Table()
+        fun leg(icon: com.badlogic.gdx.graphics.g2d.TextureRegion?, glyph: String?, col: Int, text: String) {
+            if (icon != null) legend.add(Image(icon).also { it.color = rgb(col) }).size(12f).padRight(3f)
+            else legend.add(ui.label(glyph ?: "", ui.small, rgb(col))).padRight(3f)
+            legend.add(ui.label(text, ui.small, rgb(0xcfd8dc))).padRight(9f)
+        }
+        leg(null, "⚓", 0xffffff, "порт"); leg(ui.squareIcon, null, 0xd84315, "крепость"); leg(ui.disc, null, 0xffc93c, "цель")
+        legend.row()
+        leg(ui.disc, null, 0x00acc1, "курс"); leg(ui.disc, null, 0xb3e5fc, "клад под водой"); leg(null, "♪", 0xffe082, "песня")
+        val side2 = Table()
+        side2.add(info).growX().padBottom(6f).row()
+        side2.add(route).growX().height(44f).padBottom(4f).row()
+        side2.add(clear).growX().height(40f).padBottom(4f).row()
+        side2.add(back).growX().height(44f).padBottom(6f).row()
+        side2.add(legend).left().row()
+        if (landscape) {
+            val row = Table()
+            row.add(map).size(side).padRight(10f)
+            row.add(side2).width(260f).top()
+            panel.add(row).row()
+        } else {
+            panel.add(map).size(side).padBottom(8f).row()
+            panel.add(side2).growX().row()
+        }
         root.add(panel)
+    }
+
+    // ===================== Песни и справка =====================
+    private fun buildSongs() {
+        stage.clear()
+        val sy = g.systems
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Песни команды", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label("Пока корабль идёт по морю без боя, матросы поют. Новые песни лежат в бутылках в открытом море (значок ♪ на карте).",
+            ui.small, rgb(0xb9d6f2), wrap = true)).growX().pad(6f, 0f, 8f, 0f).row()
+        val list = Table()
+        for ((i, sh) in SHANTIES.withIndex()) {
+            val c = card(if (i == sy.shantyCur && i in sy.shanties) 0x1d5a46 else 0x164266)
+            if (i in sy.shanties) {
+                val info = Table()
+                info.add(ui.label("♪ " + sh.title, ui.mid)).left().row()
+                info.add(ui.label(sh.desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+                c.add(info).growX()
+                val pick = if (i == sy.shantyCur) ui.gray("Поют").also { it.isDisabled = true } else ui.blue("Петь").also { it.onClick { sy.shantyCur = i; g.save(); buildSongs() } }
+                c.add(pick).width(100f).height(44f)
+            } else {
+                c.add(ui.label("??? — найдите бутылку с этой песней", ui.small, rgb(0x90a4ae))).growX().left()
+            }
+            list.add(c).growX().padBottom(8f).row()
+        }
+        val toggle = ui.blue(if (sy.shantiesOn) "Пение команды: вкл" else "Пение команды: выкл").also { it.onClick { sy.shantiesOn = !sy.shantiesOn; g.save(); buildSongs() } }
+        list.add(toggle).growX().height(46f).padTop(4f).row()
+        list.add(ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }).growX().height(46f).padTop(6f).row()
+        fitPanel(root, panel, list, 440f)
+    }
+
+    private fun buildHelp() {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Как играть", ui.big, align = Align.center)).growX().padBottom(6f).row()
+        val content = Table().top()
+        val sections = listOf(
+            "Управление" to "Коснитесь экрана в любом месте и тяните палец: корабль поплывёт туда. Кнопка с парусами слева вверху — рывок. По ветру (стрелка у мини-карты) корабль идёт быстрее.",
+            "Бой" to "Пушки стреляют сами, когда враг сбоку от корабля. Кнопка с прицелом: зажмите и тяните к цели, отпустите — прицельный залп (сильнее на 25%). Кнопки справа — особые ядра, ремонт и купленное оружие.",
+            "Абордаж" to "1) Повредите пирата до половины здоровья: над ним появятся красные скрещённые сабли.\n2) Подплывите ближе 30 м — внизу загорится кнопка «Абордаж!».\n3) Нажмите её: команда бросит крюки и стянет корабли.\n4) В схватке жмите «Удар!», когда жёлтый маркер в зелёной зоне. 2 удачных удара из 3 — победа: корабль можно забрать во флот или разграбить.",
+            "Карта" to "Нажмите на мини-карту, чтобы открыть карту мира. Тёмные облака — места, где вы ещё не были. Коснитесь места и выберите «Проложить курс» — на экране появится голубая стрелка.",
+            "Порты" to "Заплывите в белый круг у причала. В порту: ремонт, новые корабли, улучшения, арсенал, рынок, наёмники и покраска.",
+            "Торговля" to "На рынке покупайте товар там, где он «дёшево», и продавайте там, где «дорого». Трюм зависит от корабля.",
+            "Песни" to "Пока вы плывёте без боя, команда поёт шанти. Новые песни — в бутылках в море (♪ на карте).",
+        )
+        for ((t, d) in sections) {
+            val c = card()
+            c.add(ui.label(t, ui.mid, rgb(0xffc93c))).left().row()
+            c.add(ui.label(d, ui.small, Color.WHITE, wrap = true)).growX().padTop(4f).row()
+            content.add(c).growX().padBottom(8f).row()
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        panel.add(ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }).growX().height(48f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 16, 480f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
     }
 
     // ===================== Сохранение =====================
