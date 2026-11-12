@@ -4,6 +4,11 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        id("com.android.application") version "8.7.3"
+        id("org.jetbrains.kotlin.android") version "2.0.21"
+        id("org.jetbrains.kotlin.jvm") version "2.0.21"
+    }
 }
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
@@ -12,5 +17,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "SeaTrader"
-include(":app")
+rootProject.name = "SeaWolves"
+include(":core")
+// Десктопная версия нужна только для проверки игры на компьютере: ./gradlew :desktop:run -Pdesktop
+if (providers.gradleProperty("desktop").isPresent) include(":desktop") else include(":app")
