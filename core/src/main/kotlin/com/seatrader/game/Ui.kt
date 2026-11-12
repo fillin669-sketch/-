@@ -50,6 +50,12 @@ class Ui(val scale: Float) : Disposable {
     val arrowIcon: TextureRegion
     val xmark: TextureRegion
     val hand: TextureRegion
+    val mortarIcon: TextureRegion
+    val rocketIcon: TextureRegion
+    val mineIcon: TextureRegion
+    val aimIcon: TextureRegion
+    val swordsIcon: TextureRegion
+    val squareIcon: TextureRegion
     val roundPatch: NinePatch
     val pillPatch: NinePatch
 
@@ -164,6 +170,36 @@ class Ui(val scale: Float) : Disposable {
             p.setColor(Color.WHITE); p.fillCircle(30, 40, 16); p.fillRectangle(24, 6, 10, 34); p.fillCircle(29, 8, 5)
             p.setColor(rgb(0x1b2a3a)); p.drawCircle(30, 40, 16)
         })
+        mortarIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x37474f)); p.fillRectangle(14, 36, 36, 20); p.fillCircle(32, 36, 16)
+            p.setColor(rgb(0x212121)); p.fillCircle(32, 30, 9)
+            p.setColor(rgb(0xffc400)); p.fillCircle(44, 12, 5); p.setColor(rgb(0xff6d00)); p.fillCircle(44, 12, 2)
+            p.setColor(rgb(0x8d6e63)); p.drawLine(36, 24, 44, 14)
+        })
+        rocketIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0xd32f2f)); p.fillTriangle(32, 4, 22, 22, 42, 22)
+            p.setColor(rgb(0xeeeeee)); p.fillRectangle(24, 22, 16, 22)
+            p.setColor(rgb(0xd32f2f)); p.fillTriangle(24, 36, 14, 50, 24, 46); p.fillTriangle(40, 36, 50, 50, 40, 46)
+            p.setColor(rgb(0xffa000)); p.fillTriangle(26, 44, 38, 44, 32, 62)
+        })
+        mineIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x90a4ae)); p.fillRectangle(29, 4, 6, 56); p.fillRectangle(4, 29, 56, 6)
+            p.setColor(rgb(0x263238)); p.fillCircle(32, 32, 17)
+            p.setColor(rgb(0xe53935)); p.fillCircle(32, 32, 5)
+        })
+        aimIcon = region(pix(64, 64) { p ->
+            p.setColor(Color.WHITE)
+            for (k in 0..2) p.drawCircle(32, 32, 20 + k)
+            p.fillRectangle(30, 2, 4, 18); p.fillRectangle(30, 44, 4, 18); p.fillRectangle(2, 30, 18, 4); p.fillRectangle(44, 30, 18, 4)
+            p.setColor(rgb(0xff5252)); p.fillCircle(32, 32, 4)
+        })
+        swordsIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0xcfd8dc))
+            for (k in -2..2) { p.drawLine(10 + k, 8, 50 + k, 48); p.drawLine(54 + k, 8, 14 + k, 48) }
+            p.setColor(rgb(0x8d6e63)); p.fillCircle(52, 52, 6); p.fillCircle(12, 52, 6)
+            p.setColor(rgb(0xffc93c)); p.fillRectangle(40, 40, 12, 4); p.fillRectangle(12, 40, 12, 4)
+        })
+        squareIcon = region(pix(16, 16) { p -> p.setColor(Color.WHITE); p.fillRectangle(1, 1, 14, 14) })
         val rt = pix(64, 64) { p ->
             p.setColor(Color.WHITE)
             p.fillRectangle(16, 0, 32, 64); p.fillRectangle(0, 16, 64, 32)

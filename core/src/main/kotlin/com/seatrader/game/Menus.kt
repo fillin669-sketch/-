@@ -1,6 +1,8 @@
 package com.seatrader.game
 
+import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Touchable
@@ -32,6 +34,7 @@ class Menus(private val g: SeaGame) {
         stage.clear()
         current = null
         g.state = SeaGame.State.PLAY
+        g.checkJournal()
     }
 
     fun relayout() { current?.invoke() }
@@ -130,19 +133,22 @@ class Menus(private val g: SeaGame) {
         }).padTop(4f).padBottom(10f).row()
 
         val tabs = Table()
-        listOf("Верфь", "Улучш.", "Флот", "Вид").forEachIndexed { i, name ->
+        listOf("Верфь", "Улучшения", "Арсенал", "Рынок", "Флот", "Вид").forEachIndexed { i, name ->
             val b = if (portTab == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
-            b.pad(8f, 4f, 8f, 4f)
+            b.pad(6f, 4f, 6f, 4f)
             b.onClick { portTab = i; portScroll = 0f; buildPort() }
-            tabs.add(b).growX().uniformX().height(42f).pad(0f, 3f, 0f, 3f)
+            tabs.add(b).growX().uniformX().height(38f).pad(3f, 3f, 3f, 3f)
+            if (i == 2) tabs.row()
         }
-        panel.add(tabs).growX().padBottom(10f).row()
+        panel.add(tabs).growX().padBottom(8f).row()
 
         val content = Table().top()
         when (portTab) {
             0 -> shipCards(content)
             1 -> upgradeCards(content)
-            2 -> fleetCards(content)
+            2 -> arsenalCards(content)
+            3 -> marketCards(content)
+            4 -> fleetCards(content)
             else -> paintCards(content)
         }
         val scroll = ScrollPane(content, ui.scrollStyle)
@@ -347,14 +353,18 @@ class Menus(private val g: SeaGame) {
         panel.add(ui.label("Потоплено пиратов: ${g.kills} · Заданий выполнено: ${g.questIdx}", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center))
             .growX().padTop(6f).padBottom(12f).row()
         val resume = ui.green("▶  Продолжить").also { it.onClick { close() } }
+        val captain = ui.blue("★  Капитан" + if (g.systems.skillPts > 0) " (+${g.systems.skillPts})" else "").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }
+        val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
+        val map = ui.blue("⚓  Карта мира").also { it.onClick { current = { buildMap() }; buildMap() } }
         val settings = ui.blue("⚙  Настройки").also { it.onClick { current = { buildSettings() }; buildSettings() } }
         val reset = ui.gray(if (resetArmed) "Нажмите ещё раз для сброса" else "↺  Начать заново").also {
             it.onClick {
                 if (!resetArmed) { resetArmed = true; buildPause() } else { resetArmed = false; g.resetProgress() }
             }
         }
-        for (bt in listOf(resume, settings, reset)) panel.add(bt).growX().height(54f).padTop(8f).row()
-        root.add(panel).width(min(g.wDp - 32, 420f))
+        val list = Table()
+        for (bt in listOf(resume, captain, ach, map, settings, reset)) list.add(bt).growX().height(50f).padTop(7f).row()
+        fitPanel(root, panel, list, 420f)
     }
 
     private fun sliderRow(panel: Table, name: String, min: Float, max: Float, value: Float, onChange: (Float) -> Unit) {
@@ -386,12 +396,33 @@ class Menus(private val g: SeaGame) {
                 g.save(); buildSettings()
             }
         }
+        val auto = ui.blue(if (g.systems.autoFire) "Автострельба: вкл" else "Автострельба: выкл (только прицел)").also {
+            it.onClick { g.systems.autoFire = !g.systems.autoFire; g.save(); buildSettings() }
+        }
+        val vib = ui.blue(if (g.systems.vibrate) "Вибрация: вкл" else "Вибрация: выкл").also {
+            it.onClick { g.systems.vibrate = !g.systems.vibrate; g.save(); buildSettings() }
+        }
+        val saveBtn = ui.blue("Сохранение и перенос").also { it.onClick { current = { buildSaveMenu() }; buildSaveMenu() } }
         val tut = ui.blue("Показать обучение снова").also {
             it.onClick { g.tutorial = 0; g.tutorialT = 0f; g.save(); g.toast("Обучение начнётся заново") }
         }
         val back = ui.green("Готово").also { it.onClick { g.save(); current = { buildPause() }; buildPause() } }
-        for (bt in listOf(hand, quality, tut, back)) panel.add(bt).growX().height(50f).padTop(8f).row()
-        root.add(panel).width(min(g.wDp - 32, 420f))
+        val list = Table()
+        for (bt in listOf(hand, quality, auto, vib, saveBtn, tut, back)) list.add(bt).growX().height(44f).padTop(6f).row()
+        fitPanel(root, panel, list, 420f)
+    }
+
+    /** Кладёт список кнопок в панель; если по высоте не помещается (альбомная ориентация) — с прокруткой. */
+    private fun fitPanel(root: Table, panel: Table, list: Table, maxW: Float) {
+        val landscape = g.wDp > g.hDp
+        if (landscape) {
+            val scroll = ScrollPane(list, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+            panel.add(scroll).grow().row()
+            root.add(panel).width(min(g.wDp - 32, maxW)).height(g.hDp - g.safeTop - g.safeBottom - 16)
+        } else {
+            panel.add(list).growX().row()
+            root.add(panel).width(min(g.wDp - 32, maxW))
+        }
     }
 
     // ===================== Гибель =====================
@@ -447,5 +478,323 @@ class Menus(private val g: SeaGame) {
         btn.onClick { g.claimDaily(dailyIdx); close() }
         panel.add(btn).growX().height(54f).padTop(10f).row()
         root.add(panel).width(min(g.wDp - 16, 420f))
+    }
+
+    // ===================== Арсенал =====================
+    private val weaponIcons get() = listOf(ui.mortarIcon, ui.rocketIcon, ui.mineIcon)
+
+    private fun arsenalCards(content: Table) {
+        val head = card()
+        head.add(ui.label("Арсенал", ui.big)).left().row()
+        head.add(ui.label("Дополнительное оружие появляется кнопкой рядом со способностями.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        content.add(head).growX().padBottom(10f).row()
+        for ((k, entry) in WEAPON_PRICES.entries.withIndex()) {
+            val i = entry.key
+            val (price, gemsPrice) = entry.value
+            val a = ABILITIES[i]
+            val c = card(if (i in g.systems.ownedWeapons) 0x1d5a46 else 0x164266)
+            c.add(Image(weaponIcons[k])).size(48f).padRight(10f)
+            val info = Table()
+            info.add(ui.label(a.name, ui.big)).left().row()
+            info.add(ui.label(a.desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            info.add(ui.label("Перезарядка ${a.cooldown.toInt()} с", ui.small, rgb(0xffc93c))).left().row()
+            c.add(info).growX().row()
+            val btn = if (i in g.systems.ownedWeapons) ui.gray("✓ Куплено").also { it.isDisabled = true }
+            else priceButton("Купить ${fmt(price)}", gemsPrice, g.coins >= price && g.gems >= gemsPrice).also {
+                it.onClick {
+                    if (g.coins < price || g.gems < gemsPrice) { g.toast("Не хватает средств"); return@onClick }
+                    g.coins -= price; g.gems -= gemsPrice
+                    g.systems.ownedWeapons += i
+                    g.sfx.play("quest"); g.save(); refreshPort()
+                }
+            }
+            c.add(btn).colspan(2).growX().height(48f).padTop(8f).row()
+            content.add(c).growX().padBottom(10f).row()
+        }
+    }
+
+    // ===================== Рынок =====================
+    private fun marketCards(content: Table) {
+        val sy = g.systems
+        val head = card()
+        head.add(ui.label("Рынок", ui.big)).left().row()
+        head.add(ui.label("Трюм: ${sy.cargoUsed()} из ${sy.capacity()}. Покупайте там, где дёшево, и продавайте там, где дорого.",
+            ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        val q = g.quest()
+        if (q.type == QType.DELIVER) head.add(ui.label("Заказ: ${q.text} (${g.qprog}/${q.n})", ui.small, rgb(0xffc93c), wrap = true)).growX().padTop(4f).row()
+        content.add(head).growX().padBottom(10f).row()
+        for ((gi, good) in GOODS.withIndex()) {
+            val buy = sy.buyPrice(portIndex, gi)
+            val sell = sy.sellPrice(portIndex, gi)
+            val mult = PORT_PRICES[portIndex][gi]
+            val tag = when { mult < 0.85f -> "дёшево" to 0x3ddc84; mult > 1.25f -> "дорого" to 0xff8a65; else -> "" to 0xffffff }
+            val c = card()
+            val top = Table()
+            top.add(ui.label(good.name, ui.big)).left()
+            if (tag.first.isNotEmpty()) top.add(ui.label("  ${tag.first}", ui.small, rgb(tag.second))).left()
+            top.add().growX()
+            top.add(ui.label("в трюме: ${sy.cargo[gi]}", ui.small, rgb(0xd7ccc8))).right()
+            c.add(top).growX().row()
+            val avg = if (sy.cargo[gi] > 0) " · куплено по ${(sy.cargoCost[gi] / sy.cargo[gi]).roundToInt()}" else ""
+            c.add(ui.label("Купить: $buy · Продать: $sell$avg", ui.small, rgb(0xb9d6f2))).left().padTop(2f).row()
+            val row = Table()
+            val b1 = ui.button("+1", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 1) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
+            val b5 = ui.button("+5", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 5) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
+            val s1 = ui.button("Продать 1", 0xb9761e, 0x99611a, ui.small).also { it.onClick { sy.sell(portIndex, gi, 1); g.sfx.play("coin"); g.save(); refreshPort() } }
+            val sa = ui.button("Продать всё", 0xb9761e, 0x99611a, ui.small).also { it.onClick { if (sy.sell(portIndex, gi, sy.cargo[gi]) > 0) g.sfx.play("coin"); g.save(); refreshPort() } }
+            for (bt in listOf(b1, b5, s1, sa)) row.add(bt).growX().height(40f).pad(2f)
+            c.add(row).growX().padTop(6f).row()
+            content.add(c).growX().padBottom(8f).row()
+        }
+    }
+
+    // ===================== Бортовой журнал =====================
+    fun showJournal(q: Quest) = open(SeaGame.State.DIALOG) { buildJournal(q) }
+
+    private fun buildJournal(q: Quest) {
+        stage.clear()
+        val root = overlay()
+        val panel = Table().also { it.background = ui.panel(0x3e2a1a); it.pad(18f) }
+        panel.add(ui.label(q.chapter ?: "Бортовой журнал", ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
+        panel.add(ui.label(q.intro ?: "", ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(12f, 0f, 12f, 0f).row()
+        panel.add(ui.label("Задание: ${q.text}", ui.small, rgb(0xffc93c), wrap = true)).growX().padBottom(10f).row()
+        val btn = ui.green("⚓  Отдать швартовы")
+        btn.onClick { close() }
+        panel.add(btn).growX().height(52f).row()
+        root.add(panel).width(min(g.wDp - 24, 440f))
+    }
+
+    // ===================== Абордаж =====================
+    private class BoardBar(val ui: Ui, val zone: Float) : Actor() {
+        var pos = 0f
+        var dir = 1f
+        var speed = 0.9f
+        var frozen = false
+        override fun act(delta: Float) {
+            super.act(delta)
+            if (frozen) return
+            pos += dir * speed * delta
+            if (pos > 1f) { pos = 1f; dir = -1f }
+            if (pos < 0f) { pos = 0f; dir = 1f }
+        }
+        override fun draw(batch: Batch, parentAlpha: Float) {
+            ui.round(batch, x, y, width, height, rgb(0x0b2238))
+            ui.round(batch, x + width * (0.5f - zone / 2), y + 3, width * zone, height - 6, rgb(0x2e7d32))
+            ui.round(batch, x + width * pos - 5, y - 6, 10f, height + 12, rgb(0xffc93c))
+            batch.color = Color.WHITE
+        }
+    }
+
+    fun showBoarding(target: Ship) = open(SeaGame.State.DIALOG) { buildBoarding(target) }
+
+    private fun buildBoarding(target: Ship) {
+        stage.clear()
+        val ratio = g.systems.boardingRatio(target)
+        val zone = (0.2f * ratio).coerceIn(0.08f, 0.42f)
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Абордаж!", ui.huge, align = Align.center)).growX().row()
+        panel.add(ui.label("${target.name}. Ваша команда ${if (ratio >= 1) "сильнее" else "слабее"} противника. Жмите «Удар!», когда маркер в зелёной зоне. Нужно 2 удачных удара из 3.",
+            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(6f, 0f, 12f, 0f).row()
+        val bar = BoardBar(ui, zone)
+        panel.add(bar).growX().height(30f).padBottom(10f).row()
+        val status = ui.label("Удар 1 из 3", ui.mid, align = Align.center)
+        panel.add(status).growX().padBottom(10f).row()
+        var round = 0
+        var hits = 0
+        val strike = ui.button("⚔  Удар!", 0xd32f2f, 0xb71c1c, ui.big)
+        strike.onClick {
+            if (round >= 3) return@onClick
+            val ok = kotlin.math.abs(bar.pos - 0.5f) < zone / 2
+            if (ok) hits++
+            round++
+            g.sfx.play(if (ok) "hit" else "splash")
+            g.systems.vibrate(if (ok) 60 else 20)
+            bar.speed *= 1.3f
+            status.setText((if (ok) "Попали!" else "Промах!") + "   $hits из $round" + if (round < 3) " · удар ${round + 1} из 3" else "")
+            if (round >= 3) {
+                bar.frozen = true
+                stage.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.delay(0.6f, com.badlogic.gdx.scenes.scene2d.actions.Actions.run { boardingResult(target, hits >= 2) }))
+            }
+        }
+        panel.add(strike).growX().height(64f).row()
+        root.add(panel).width(min(g.wDp - 24, 440f))
+    }
+
+    private fun boardingResult(target: Ship, win: Boolean) {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        val p = g.player
+        if (!win) {
+            if (p != null) p.hp = max(1f, p.hp - p.maxHp * 0.25f)
+            target.hp = min(target.maxHp, target.hp + target.maxHp * 0.15f)
+            if (p != null) { target.vx += (target.x - p.x) * 0.5f; target.vz += (target.z - p.z) * 0.5f }
+            panel.add(ui.label("Абордаж отбит!", ui.big, align = Align.center)).growX().row()
+            panel.add(ui.label("Команда отступила с потерями. Корабль повреждён.", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 12f, 0f).row()
+            val ok = ui.blue("Продолжить бой").also { it.onClick { close() } }
+            panel.add(ok).growX().height(52f).row()
+        } else {
+            g.systems.addStat("boards")
+            g.systems.gainXp(70, target.x, target.z)
+            g.questEvent(QType.BOARD, "", false)
+            panel.add(ui.label("Корабль взят!", ui.big, align = Align.center)).growX().row()
+            val mercId = when (target.type) { "sloop" -> "merc_sloop"; "brig" -> "merc_brig"; "frigate" -> "merc_frigate"; else -> null }
+            val canCapture = mercId != null && g.allies.size < MAX_ALLIES
+            panel.add(ui.label(if (canCapture) "Можно забрать корабль во флот или разграбить трюм." else "Разграбьте трюм: во флоте нет места или корабль слишком велик.",
+                ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 12f, 0f).row()
+            if (canCapture) {
+                val cap = ui.blue("Захватить во флот").also {
+                    it.onClick {
+                        g.ships.remove(target)
+                        g.allies += mercId!!
+                        g.spawnAllies()
+                        g.toast("${target.name} теперь в вашем флоте!", 2f)
+                        g.save(); close()
+                    }
+                }
+                panel.add(cap).growX().height(52f).padBottom(8f).row()
+            }
+            val loot = ui.green("Разграбить").also {
+                it.onClick {
+                    val coins = (target.coinsMax * 1.5f * g.systems.luckMul()).roundToInt()
+                    g.coins += coins
+                    val gi = kotlin.random.Random.nextInt(GOODS.size)
+                    val got = g.systems.addCargo(gi, kotlin.random.Random.nextInt(4, 12))
+                    if (kotlin.random.Random.nextFloat() < 0.4f) g.gems += 1
+                    target.sinkT = 0.001f
+                    g.sfx.play("treasure")
+                    g.toast("+$coins монет" + if (got > 0) "\n${GOODS[gi].name} ×$got" else "", 2f)
+                    g.save(); close()
+                }
+            }
+            panel.add(loot).growX().height(52f).row()
+        }
+        root.add(panel).width(min(g.wDp - 24, 420f))
+    }
+
+    // ===================== Капитан =====================
+    private fun buildCaptain() {
+        stage.clear()
+        val sy = g.systems
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Капитан · уровень ${sy.level}", ui.big, align = Align.center)).growX().row()
+        panel.add(Bar(ui, sy.xp / xpForLevel(sy.level).toFloat(), 0x81d4fa)).growX().height(16f).pad(6f, 0f, 2f, 0f).row()
+        panel.add(ui.label("Опыт ${sy.xp} / ${xpForLevel(sy.level)} · очков навыков: ${sy.skillPts}", ui.small, rgb(0xb9d6f2), align = Align.center)).growX().padBottom(8f).row()
+        val content = Table().top()
+        for ((i, sk) in SKILLS.withIndex()) {
+            val c = card()
+            val info = Table()
+            info.add(ui.label(sk.name, ui.mid)).left().row()
+            info.add(Pips(ui, sy.skills[i])).width(130f).height(12f).left().pad(3f, 0f, 3f, 0f).row()
+            info.add(ui.label(sk.desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            c.add(info).growX()
+            val can = sy.skillPts > 0 && sy.skills[i] < MAX_SKILL
+            val btn = if (can) ui.green("+") else ui.gray(if (sy.skills[i] >= MAX_SKILL) "МАКС" else "+")
+            btn.isDisabled = !can
+            btn.onClick { if (sy.buySkill(i)) { g.sfx.play("coin"); g.save(); buildCaptain() } }
+            c.add(btn).width(72f).height(46f).padLeft(8f)
+            content.add(c).growX().padBottom(8f).row()
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
+        panel.add(back).growX().height(50f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 16, 460f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+    }
+
+    // ===================== Достижения =====================
+    private fun buildAchievements() {
+        stage.clear()
+        val sy = g.systems
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Достижения ${sy.unlocked.size}/${ACHIEVEMENTS.size}", ui.big, align = Align.center)).growX().row()
+        val st = sy.stats
+        panel.add(ui.label("Потоплено: ${st["kills"] ?: 0} · тараном: ${st["rams"] ?: 0} · абордажей: ${st["boards"] ?: 0}\nПройдено: ${st["distance"] ?: 0} м · прибыль торговли: ${st["profit"] ?: 0}",
+            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(6f, 0f, 8f, 0f).row()
+        val content = Table().top()
+        for (a in ACHIEVEMENTS) {
+            val done = a.id in sy.unlocked
+            val c = card(if (done) 0x1d5a46 else 0x164266)
+            c.add(ui.label((if (done) "✓ " else "") + a.name, ui.mid, if (done) rgb(0x3ddc84) else Color.WHITE)).left().row()
+            c.add(ui.label(a.desc + "  ·  +${a.gems}", ui.small, rgb(0xb9d6f2))).left().row()
+            val v = min(st[a.stat] ?: 0, a.goal)
+            c.add(Bar(ui, v / a.goal.toFloat(), if (done) 0x3ddc84 else 0xffc93c)).growX().height(12f).padTop(4f).row()
+            content.add(c).growX().padBottom(8f).row()
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
+        panel.add(back).growX().height(50f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 16, 460f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+    }
+
+    // ===================== Карта мира =====================
+    private class WorldMap(val g: SeaGame) : Actor() {
+        override fun draw(batch: Batch, parentAlpha: Float) {
+            val ui = g.ui
+            val cx = x + width / 2; val cy = y + height / 2
+            val r = min(width, height) / 2
+            val k = r / WORLD
+            ui.round(batch, x, y, width, height, rgb(0x1f6fb0))
+            // регионы: цветные квадранты по краям и центр
+            fun dot(wx: Float, wz: Float, size: Float, col: Int) { ui.icon(batch, ui.disc, cx + wx * k, cy - wz * k, size, size, 0f, rgb(col)) }
+            for (gx in -12..12) for (gz in -12..12) {
+                val wx = gx * WORLD / 12f; val wz = gz * WORLD / 12f
+                val col = when (regionAt(wx, wz)) { Region.ICE -> 0x7fa8c4; Region.FIRE -> 0x4b5e6b; Region.REEF -> 0x2f8f88; Region.ABYSS -> 0x163a63; else -> 0x2a82c4 }
+                ui.rect(batch, cx + wx * k - r / 24f, cy - wz * k - r / 24f, r / 12f + 1, r / 12f + 1, rgb(col, 0.9f))
+            }
+            for (isl in g.islands) dot(isl.x, isl.z, max(3f, isl.r * k * 2), if (isl.port >= 0) 0xe6d3a3 else 0x7cb342)
+            for (f in g.systems.fortresses) ui.icon(batch, ui.squareIcon, cx + f.x * k, cy - f.z * k, 8f, 8f, 0f, rgb(if (f.alive) 0xd84315 else 0x757575))
+            for (port in g.ports) {
+                dot(port.rx, port.rz, 8f, 0xffffff)
+                val lx = (cx + port.rx * k - 80).coerceIn(x + 2, x + width - 162)
+                ui.text(batch, ui.small, port.def.name, lx, cy - port.rz * k - 6, Align.center, 160f)
+            }
+            g.questTarget()?.let { dot(it.first, it.second, 10f, 0xffc93c) }
+            g.player?.let { p -> ui.icon(batch, ui.arrowIcon, cx + p.x * k, cy - p.z * k, 14f, 16f, -p.h * MathUtils.radiansToDegrees, Color.WHITE) }
+            ui.text(batch, ui.mid, "ЛЕДЯНОЕ МОРЕ", cx - 100, y + height - 6, Align.center, 200f, c = rgb(0xe1f5fe))
+            ui.text(batch, ui.mid, "БЕЗДНА", cx - 100, y + 24, Align.center, 200f, c = rgb(0xbbdefb))
+            ui.text(batch, ui.small, "ТУМАННЫЙ\nРИФ", x + 4, y + height * 0.82f, Align.left, 110f, c = rgb(0xb2dfdb))
+            ui.text(batch, ui.small, "ОГНЕННЫЕ\nОСТРОВА", x + width - 114, y + height * 0.82f, Align.right, 110f, c = rgb(0xffccbc))
+            batch.color = Color.WHITE
+        }
+    }
+
+    private fun buildMap() {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Карта мира", ui.big, align = Align.center)).growX().row()
+        val side = min(g.wDp - 48, g.hDp - g.safeTop - g.safeBottom - 170)
+        panel.add(WorldMap(g)).size(side).pad(8f).row()
+        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
+        panel.add(back).growX().height(50f).row()
+        root.add(panel)
+    }
+
+    // ===================== Сохранение =====================
+    private fun buildSaveMenu() {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Сохранение", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label("Прогресс сохраняется автоматически, а Android делает резервную копию в аккаунт Google. Чтобы перенести игру на другой телефон, скопируйте код сохранения и вставьте его там.",
+            ui.small, rgb(0xb9d6f2), wrap = true)).growX().pad(6f, 0f, 10f, 0f).row()
+        val exp = ui.blue("Скопировать код сохранения").also {
+            it.onClick { Gdx.app.clipboard.contents = g.exportSave(); g.toast("Код скопирован в буфер обмена", 1.8f) }
+        }
+        val imp = ui.green("Загрузить код из буфера").also {
+            it.onClick {
+                val ok = g.importSave(Gdx.app.clipboard.contents ?: "")
+                g.toast(if (ok) "Сохранение загружено!" else "Неверный код сохранения", 1.8f)
+                if (ok) close()
+            }
+        }
+        val back = ui.gray("Назад").also { it.onClick { current = { buildSettings() }; buildSettings() } }
+        for (b in listOf(exp, imp, back)) panel.add(b).growX().height(50f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 32, 420f))
     }
 }

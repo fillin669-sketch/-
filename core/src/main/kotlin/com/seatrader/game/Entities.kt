@@ -15,9 +15,9 @@ internal fun wrapAngle(x: Float): Float {
     return a
 }
 
-enum class Faction { PLAYER, PIRATE }
+enum class Faction { PLAYER, PIRATE, NEUTRAL }
 enum class AiState { WANDER, ATTACK, FOLLOW }
-enum class Ammo { NORMAL, FIRE, CHAIN }
+enum class Ammo { NORMAL, FIRE, CHAIN, MORTAR, ROCKET }
 
 class Ship(
     val id: Int, val name: String, var stats: Stats, val faction: Faction, val look: Look,
@@ -63,6 +63,11 @@ class Ship(
     var allyIdx = 0
     var mercId = ""
     var target: Ship? = null
+    var leader: Ship? = null
+    /** Пробоины: x — вдоль корпуса, y — высота, z — поперёк. */
+    val holes = ArrayList<Vector3>()
+    val mastHp = FloatArray(look.masts) { stats.hp * 0.18f }
+    var brokenMasts = 0
     val sails: List<Node> = (0 until Models.sailCount(look)).mapNotNull { inst.getNode("sail$it") }
     val sinking get() = sinkT > 0
     /** Скорость вдоль курса. */
@@ -79,7 +84,7 @@ class Ball(
     var fired = false
 }
 
-class Island(val x: Float, val z: Float, val r: Float, val port: Int, val inst: ModelInstance, val foam: ModelInstance, val lights: List<Vector3>)
+class Island(val x: Float, val z: Float, val r: Float, val port: Int, val inst: ModelInstance, val foam: ModelInstance, val lights: List<Vector3>, val glows: List<Vector3> = emptyList())
 class Port(val def: PortDef, val i: Int, val rx: Float, val rz: Float, val ring: ModelInstance)
 class Loot(val gem: Boolean, val value: Int, var x: Float, var z: Float, val inst: ModelInstance, var t: Float) { var age = 0f }
 class FloatText(val text: String, val x: Float, var y: Float, val color: com.badlogic.gdx.graphics.Color, val font: com.badlogic.gdx.graphics.g2d.BitmapFont) { var age = 0f }

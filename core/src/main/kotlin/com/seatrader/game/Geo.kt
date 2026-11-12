@@ -418,19 +418,41 @@ object Models {
         g.pop()
     }
 
-    /** Модель острова и точки ночных огней (окна, маяк). */
-    fun island(r: Float, seed: Int, port: Boolean, lighthouse: Boolean, lights: MutableList<Vector3>): Model {
+    /**
+     * Модель острова. [style]: регион (вид берега, растительности и скал).
+     * [lights] — ночные огни (окна, маяк), [glows] — всегда светящиеся точки (лава).
+     */
+    fun island(r: Float, seed: Int, port: Boolean, lighthouse: Boolean, lights: MutableList<Vector3>,
+               style: Region = Region.CENTER, glows: MutableList<Vector3>? = null): Model {
         val rnd = Random(seed)
         val g = Geo()
-        g.color(0xe6d3a3).push().at(0f, -1.2f, 0f).cylinder(r * 0.98f, r * 1.08f, 5f, 14, jitter(14, rnd, 0.22f)).pop()
-        g.color(0x67a83d).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.9f, 3f, 14, jitter(14, rnd, 0.2f)).pop()
-        if (!port || rnd.nextFloat() < 0.5f) {
-            g.color(0x5b9634).push()
+        val sand = when (style) { Region.ICE -> 0xe3eef5; Region.FIRE -> 0x4e4038; Region.REEF -> 0xd9cfa8; Region.ABYSS -> 0x9e9a8a; else -> 0xe6d3a3 }
+        val grass = when (style) { Region.ICE -> 0xf4fafd; Region.FIRE -> 0x3a3330; Region.REEF -> 0x7fae5c; Region.ABYSS -> 0x556b4f; else -> 0x67a83d }
+        val hill = when (style) { Region.ICE -> 0xdbe9f3; Region.FIRE -> 0x2b2523; Region.REEF -> 0x6f9a4f; Region.ABYSS -> 0x4a5a45; else -> 0x5b9634 }
+        g.color(sand).push().at(0f, -1.2f, 0f).cylinder(r * 0.98f, r * 1.08f, 5f, 14, jitter(14, rnd, 0.22f)).pop()
+        g.color(grass).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.9f, 3f, 14, jitter(14, rnd, 0.2f)).pop()
+        val occupied = ArrayList<FloatArray>()
+        fun free(px: Float, pz: Float, rad: Float) = occupied.all { hypot(it[0] - px, it[1] - pz) > it[2] + rad }
+
+        if (style == Region.FIRE && !port) {
+            // Вулкан с лавой в кратере
+            val h = 8f + r * 0.35f
+            g.color(0x2b2523).push().at(0f, 3.7f + h / 2, 0f).cylinder(r * 0.18f, r * 0.62f, h, 10, jitter(10, rnd, 0.25f)).pop()
+            g.color(0xff5722).push().at(0f, 3.75f + h, 0f).cylinder(r * 0.15f, r * 0.15f, 0.3f, 10).pop()
+            g.color(0xffab40).push().at(0f, 3.8f + h, 0f).cylinder(r * 0.08f, r * 0.08f, 0.35f, 8).pop()
+            // потоки лавы по склону
+            g.color(0xe64a19)
+            for (k in 0..2) {
+                val a = rnd.nextFloat() * 6.28f
+                g.beam(Vector3(cos(a) * r * 0.15f, 3.7f + h, sin(a) * r * 0.15f), Vector3(cos(a) * r * 0.55f, 4.2f, sin(a) * r * 0.55f), 0.9f)
+            }
+            glows?.add(Vector3(0f, 4f + h, 0f))
+            occupied += floatArrayOf(0f, 0f, r * 0.6f)
+        } else if (!port || rnd.nextFloat() < 0.5f) {
+            g.color(hill).push()
                 .at((rnd.nextFloat() - 0.5f) * r * 0.3f, 3.7f + r * 0.12f, if (port) -r * 0.4f else (rnd.nextFloat() - 0.5f) * r * 0.3f)
                 .cylinder(r * 0.35f, r * 0.55f, r * 0.25f, 9, jitter(9, rnd, 0.3f)).pop()
         }
-        val occupied = ArrayList<FloatArray>()
-        fun free(px: Float, pz: Float, rad: Float) = occupied.all { hypot(it[0] - px, it[1] - pz) > it[2] + rad }
 
         if (port) {
             // Причал на южном берегу
@@ -468,25 +490,149 @@ object Models {
             lights += Vector3(0f, 4.5f, r * 0.72f + r * 0.45f)
         }
 
-        val trees = (r / 4).toInt() + 3
+        val trees = when (style) { Region.FIRE -> (r / 10).toInt(); Region.ICE -> (r / 6).toInt() + 2; else -> (r / 4).toInt() + 3 }
         for (i in 0 until trees * 3) {
             val a = rnd.nextFloat() * 2 * PI
             val d = r * (0.15f + rnd.nextFloat() * 0.62f)
             val px = (cos(a) * d).toFloat(); val pz = (sin(a) * d).toFloat()
             if (!free(px, pz, 2.5f)) continue
-            if (rnd.nextFloat() < 0.4f) palm(g, px, 3.7f, pz, rnd) else tree(g, px, 3.7f, pz, rnd)
+            when (style) {
+                Region.ICE -> snowPine(g, px, 3.7f, pz, rnd)
+                Region.FIRE -> deadTree(g, px, 3.7f, pz, rnd)
+                else -> if (rnd.nextFloat() < (if (style == Region.REEF) 0.75f else 0.4f)) palm(g, px, 3.7f, pz, rnd) else tree(g, px, 3.7f, pz, rnd)
+            }
             occupied += floatArrayOf(px, pz, 2.5f)
         }
-        val rocks = 4 + rnd.nextInt(5)
+        val rocks = (if (style == Region.REEF) 9 else 4) + rnd.nextInt(5)
+        val rockColors = when (style) {
+            Region.ICE -> intArrayOf(0xb3e5fc, 0x9fd3ef, 0xd6f0fb)
+            Region.FIRE -> intArrayOf(0x262120, 0x3b302c, 0x1d1918)
+            else -> intArrayOf(0x6d6d6d, 0x5a5a5a, 0x7b7b7b)
+        }
         for (i in 0 until rocks) {
             val a = rnd.nextFloat() * 2 * PI
             if (port && Math.abs(sin(a) - 1) < 0.25) continue
             val d = r * (0.95f + rnd.nextFloat() * 0.15f)
-            val s = 1.5f + rnd.nextFloat() * 3
-            g.color(intArrayOf(0x6d6d6d, 0x5a5a5a, 0x7b7b7b)[rnd.nextInt(3)])
+            val s = 1.5f + rnd.nextFloat() * 3 * (if (style == Region.ICE) 1.6f else 1f)
+            g.color(rockColors[rnd.nextInt(3)])
                 .push().at((cos(a) * d).toFloat(), 0.5f, (sin(a) * d).toFloat())
                 .rotX(rnd.nextFloat() * 180).rotY(rnd.nextFloat() * 180).scale(1f, 0.7f + rnd.nextFloat() * 0.5f, 1f).ico(s).pop()
         }
+        if (style == Region.REEF && !port) {
+            // разбитый корабль на мели
+            val a = rnd.nextFloat() * 6.28f
+            g.push().at(cos(a) * r * 0.9f, 1.2f, sin(a) * r * 0.9f).rotY(rnd.nextFloat() * 360).rotZ(25f)
+            g.color(0x5d4037).box(3.5f, 2.2f, 10f)
+            g.color(0x4e342e).push().at(0f, 4f, 0f).rotX(20f).cylinder(0.25f, 0.3f, 7f, 5).pop()
+            g.pop()
+        }
+        return g.build()
+    }
+
+    private fun snowPine(g: Geo, x: Float, y: Float, z: Float, rnd: Random) {
+        val s = 0.8f + rnd.nextFloat() * 0.6f
+        g.push().at(x, y, z).scale(s, s, s)
+        g.color(0x5d4037).push().at(0f, 1.2f, 0f).cylinder(0.3f, 0.4f, 2.4f, 5).pop()
+        for (k in 0..2) {
+            g.color(0x1b5e20).push().at(0f, 3f + k * 1.6f, 0f).cone(2.3f - k * 0.6f, 2.6f, 6).pop()
+            g.color(0xf5fbff).push().at(0f, 3.9f + k * 1.6f, 0f).cone(1.3f - k * 0.35f, 1.0f, 6).pop()
+        }
+        g.pop()
+    }
+
+    private fun deadTree(g: Geo, x: Float, y: Float, z: Float, rnd: Random) {
+        g.color(0x2e2522)
+        g.push().at(x, y, z)
+        g.push().at(0f, 2f, 0f).cylinder(0.2f, 0.35f, 4f, 5).pop()
+        g.beam(Vector3(0f, 3f, 0f), Vector3(1.2f, 4.5f, 0.3f), 0.15f)
+        g.beam(Vector3(0f, 3.4f, 0f), Vector3(-1f, 4.8f, -0.4f), 0.15f)
+        g.pop()
+    }
+
+    /** Пиратская крепость: стены по кругу, башни, пушки и чёрный флаг. */
+    fun fortress(r: Float): Model {
+        val g = Geo()
+        val wall = 0x8d8478; val dark = 0x5d574f
+        val n = 12
+        for (i in 0 until n) {
+            val a0 = 2 * PI.toFloat() * i / n; val a1 = 2 * PI.toFloat() * (i + 1) / n
+            val p0 = Vector3(cos(a0) * r, 3.7f + 2.5f, sin(a0) * r); val p1 = Vector3(cos(a1) * r, 3.7f + 2.5f, sin(a1) * r)
+            g.color(wall).beam(p0, p1, 5f)
+            g.color(dark).push().at((p0.x + p1.x) / 2, 9f, (p0.z + p1.z) / 2).box(1.4f, 1.2f, 1.4f).pop()
+        }
+        for (k in 0 until 4) {
+            val a = 2 * PI.toFloat() * k / 4 + 0.4f
+            val tx = cos(a) * r; val tz = sin(a) * r
+            g.color(wall).push().at(tx, 3.7f + 5f, tz).cylinder(3f, 3.4f, 10f, 8).pop()
+            g.color(0x6d1f1f).push().at(tx, 3.7f + 11.5f, tz).cone(3.6f, 3.4f, 8).pop()
+            g.color(0x222222).push().at(tx + cos(a) * 3.4f, 3.7f + 7f, tz + sin(a) * 3.4f).rotY(-Math.toDegrees(a.toDouble()).toFloat()).rotZ(90f).cylinder(0.45f, 0.55f, 2.4f, 6).pop()
+        }
+        g.color(0x7a7166).push().at(0f, 3.7f + 4f, 0f).box(r * 0.8f, 8f, r * 0.8f).pop()
+        g.color(0x5d574f).push().at(0f, 3.7f + 8.6f, 0f).box(r * 0.85f, 1.2f, r * 0.85f).pop()
+        g.color(0x3e2723).push().at(0f, 3.7f + 14f, 0f).cylinder(0.25f, 0.3f, 12f, 5).pop()
+        g.color(0x111111).push().at(1.6f, 3.7f + 18.5f, 0f).box(3.2f, 2f, 0.1f).pop()
+        g.color(0xeeeeee).push().at(1.6f, 3.7f + 18.5f, 0.08f).box(0.8f, 0.8f, 0.05f).pop()
+        return g.build()
+    }
+
+    fun ruins(r: Float): Model {
+        val g = Geo()
+        val rnd = Random(7)
+        for (i in 0 until 14) {
+            val a = rnd.nextFloat() * 6.28f; val d = r * (0.3f + rnd.nextFloat() * 0.8f)
+            g.color(if (i % 2 == 0) 0x6d665e else 0x3e3a35).push().at(cos(a) * d, 4.5f, sin(a) * d)
+                .rotY(rnd.nextFloat() * 180).rotX(rnd.nextFloat() * 40).box(2f + rnd.nextFloat() * 3, 1.5f + rnd.nextFloat() * 2, 2f + rnd.nextFloat() * 2).pop()
+        }
+        return g.build()
+    }
+
+    fun krakenHead(): Model {
+        val g = Geo()
+        g.color(0x8e2453).push().scale(1f, 0.85f, 1.1f).ico(7f).pop()
+        g.color(0xb4446f)
+        for (i in 0 until 6) {
+            val a = i * 1.05f
+            g.push().at(cos(a) * 4.5f, 3.5f, sin(a) * 4.5f).ico(1.2f).pop()
+        }
+        g.color(0xffeb3b)
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * 3f, 1.5f, -5.6f).ico(1.4f).pop()
+        g.color(0x111111)
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * 3f, 1.5f, -6.6f).scale(0.4f, 1f, 0.4f).ico(0.9f).pop()
+        return g.build()
+    }
+
+    fun tentacleSeg(): Model {
+        val g = Geo()
+        g.color(0x9c2a5c).ico(1.6f)
+        g.color(0xf8bbd0).push().at(0f, -1.2f, 0f).scale(1f, 0.35f, 1f).ico(1.1f).pop()
+        return g.build()
+    }
+
+    fun mine(): Model {
+        val g = Geo()
+        g.color(0x263238).ico(1.1f)
+        g.color(0x546e7a)
+        for (v in listOf(Vector3.X, Vector3.Y, Vector3.Z)) {
+            g.beam(Vector3(v).scl(-1.6f), Vector3(v).scl(1.6f), 0.25f)
+        }
+        g.color(0xe53935).push().at(0f, 1.2f, 0f).box(0.4f, 0.3f, 0.4f).pop()
+        return g.build()
+    }
+
+    fun wreck(): Model {
+        val g = Geo()
+        g.color(0x4e342e).push().at(0f, 2f, 0f).rotZ(18f).cylinder(0.3f, 0.35f, 8f, 5).pop()
+        g.color(0x3e2723).push().at(0.8f, 5f, 0f).rotZ(18f).rotY(70f).box(0.15f, 0.15f, 4f).pop()
+        g.color(0xd7ccc8).push().at(1.3f, 4.2f, 0.2f).rotZ(15f).box(0.08f, 2.4f, 2.6f).pop()
+        g.color(0x5d4037)
+        for (i in 0 until 4) g.push().at(-3f + i * 2f, 0.3f, (i % 2) * 2f - 1f).rotY(i * 40f).box(2.2f, 0.3f, 0.6f).pop()
+        return g.build()
+    }
+
+    fun reefRock(): Model {
+        val g = Geo()
+        g.color(0x3e4a4f).push().scale(1f, 0.6f, 1f).ico(4f).pop()
+        g.color(0x546a6e).push().at(1.5f, 1f, 0.5f).ico(1.8f).pop()
         return g.build()
     }
 

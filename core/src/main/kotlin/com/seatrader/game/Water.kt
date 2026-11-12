@@ -17,6 +17,8 @@ class Sky {
     var storm = 0f      // 0..1
     var fogNear = 300f
     var fogFar = 560f
+    val deep = floatArrayOf(0.11f, 0.42f, 0.70f)
+    val mid = floatArrayOf(0.19f, 0.57f, 0.83f)
 }
 
 /** Море: сетка едет за камерой; волны, пена, мелководье и свет считаются в шейдере. */
@@ -80,6 +82,8 @@ class Water : Disposable {
         shader.setUniformf("u_sunCol", sky.sunCol[0], sky.sunCol[1], sky.sunCol[2])
         shader.setUniformf("u_day", sky.day)
         shader.setUniformf("u_storm", sky.storm)
+        shader.setUniformf("u_deep", sky.deep[0], sky.deep[1], sky.deep[2])
+        shader.setUniformf("u_mid", sky.mid[0], sky.mid[1], sky.mid[2])
         shader.setUniform3fv("u_isl", islandBuf, 0, islandBuf.size)
         mesh.render(shader, GL20.GL_TRIANGLES)
     }
@@ -139,6 +143,8 @@ uniform vec3 u_sunDir;
 uniform vec3 u_sunCol;
 uniform float u_day;
 uniform float u_storm;
+uniform vec3 u_deep;
+uniform vec3 u_mid;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_h;
@@ -165,8 +171,8 @@ void main() {
     float wave = sin(d0 * 0.6 - tn * 2.2 + patches * 5.0);
     float surf = smoothstep(9.0, 0.0, d0) * smoothstep(0.4, 1.0, wave) * 0.8 + smoothstep(2.5, -1.0, d0);
 
-    vec3 deep = mix(vec3(0.11, 0.42, 0.70), vec3(0.20, 0.30, 0.38), u_storm);
-    vec3 mid = mix(vec3(0.19, 0.57, 0.83), vec3(0.26, 0.36, 0.44), u_storm);
+    vec3 deep = mix(u_deep, vec3(0.20, 0.30, 0.38), u_storm);
+    vec3 mid = mix(u_mid, vec3(0.26, 0.36, 0.44), u_storm);
     vec3 shallow = vec3(0.25, 0.80, 0.82);
     vec3 col = mix(deep, mid, smoothstep(0.35, 0.8, patches));
     col = mix(col, shallow, shore * 0.85);

@@ -2,12 +2,12 @@ package com.seatrader.game
 
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.g2d.GlyphLayout
+import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import kotlin.math.PI
 import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -20,22 +20,44 @@ class Hud(private val g: SeaGame) {
     private val cTmp = Color()
     private fun c(hex: Int, a: Float = 1f): Color = cTmp.set(rgb(hex, a))
     private val layout = GlyphLayout()
+    private val landscape get() = g.wDp > g.hDp
+
+    /** Индексы способностей, которые есть у игрока. */
+    fun visibleAbilities(): List<Int> = ABILITIES.indices.filter { it < 3 || it in g.systems.ownedWeapons }
 
     /** Центр кнопки способности i. */
     fun abilityPos(i: Int): Pair<Float, Float> {
-        val x = if (g.leftHanded) 46f else g.wDp - 46f
-        val y = g.safeBottom + 250f + i * 84f
-        return x to y
+        val vis = visibleAbilities()
+        val k = vis.indexOf(i).coerceAtLeast(0)
+        val right = !g.leftHanded
+        val colX = if (right) g.wDp - 42f else 42f
+        val step = 70f
+        return if (landscape) {
+            // в альбомной ориентации — ряд внизу, левее кнопки прицела
+            val x = if (right) g.wDp - 125f - k * 66f else 125f + k * 66f
+            x to (g.safeBottom + 42f)
+        } else {
+            val col = k / 3; val row = k % 3
+            val x = if (right) colX - col * step else colX + col * step
+            x to (g.safeBottom + 230f + row * step)
+        }
     }
+
+    fun aimPos(): Pair<Float, Float> {
+        val right = !g.leftHanded
+        return (if (right) g.wDp - 50f else 50f) to (g.safeBottom + 135f)
+    }
+
+    fun boardPos(): Pair<Float, Float> = (g.wDp / 2) to (g.safeBottom + 175f)
+
+    private var questHeight = 60f
 
     private fun minimapCenter(): Pair<Float, Float> {
         val r = 62f
-        val x = g.wDp - 12 - r
-        val y = g.hDp - g.safeTop - 112 - questHeight - 16 - r
-        return x to y
+        val top = g.hDp - g.safeTop
+        return if (landscape) (g.wDp - 12 - 140 - 12 - r) to (top - 12 - r)
+        else (g.wDp - 12 - r) to (top - 112 - questHeight - 16 - r)
     }
-
-    private var questHeight = 60f
 
     fun drawLoading() {
         val b = g.batch
@@ -49,17 +71,20 @@ class Hud(private val g: SeaGame) {
         b.color = Color.WHITE
     }
 
+    private fun bar(x: Float, y: Float, w: Float, h: Float, frac: Float, color: Int) {
+        val b = g.batch
+        ui.pill(b, x - w / 2 - 1, y - 1, w + 2, h + 2, c(0x000000, 0.6f))
+        ui.rect(b, x - w / 2 + 1, y + 1, (w - 2) * frac.coerceIn(0f, 1f), h - 2, c(color))
+    }
+
     fun draw(dt: Float) {
         val b = g.batch
         val p = g.player
         val top = g.hDp - g.safeTop
         val wDp = g.wDp; val hDp = g.hDp
 
-        // Лёгкое затемнение краёв для глубины
         b.color = Color.WHITE
         b.draw(ui.dark, 0f, 0f, wDp, hDp)
-
-        // Красная вспышка при попадании и молния
         if (g.flash > 0) {
             g.flash -= dt
             b.color = Color(1f, 1f, 1f, min(1f, g.flash / 0.25f))
@@ -70,25 +95,42 @@ class Hud(private val g: SeaGame) {
         // HP-полоски кораблей
         for (s in g.ships) {
             if (s.sinking) continue
-            if (!(s === p || s.ally || s.hp < s.maxHp || s.ai == AiState.ATTACK)) continue
+            val neutralShow = s.faction == Faction.NEUTRAL && (s === g.systems.protect || s.hp < s.maxHp)
+            if (!(s === p || s.ally || neutralShow || (s.faction == Faction.PIRATE && (s.hp < s.maxHp || s.ai == AiState.ATTACK)))) continue
             val sc = g.toScreen(s.x, s.y + 6 + s.len * 0.75f, s.z) ?: continue
             if (sc.x < -60 || sc.x > wDp + 60 || sc.y < -20 || sc.y > hDp + 20) continue
             val w = if (s.boss) 110f else 64f
             val hh = if (s.boss) 12f else 9f
-            val fill = when { s === p -> 0x3ddc84; s.ally -> 0x4fc3f7; s.boss -> 0xb388ff; else -> 0xff5a5f }
-            ui.pill(b, sc.x - w / 2 - 1, sc.y - 1, w + 2, hh + 2, c(0x000000, 0.6f))
-            ui.rect(b, sc.x - w / 2 + 1, sc.y + 1, (w - 2) * (s.hp / s.maxHp), hh - 2, c(fill))
+            val fill = when { s === p -> 0x3ddc84; s.ally -> 0x4fc3f7; s.faction == Faction.NEUTRAL -> 0xfff176; s.boss -> 0xb388ff; else -> 0xff5a5f }
+            bar(sc.x, sc.y, w, hh, s.hp / s.maxHp, fill)
+            if (s.boss) ui.text(b, ui.small, s.name, sc.x - 120, sc.y + 30, Align.center, 240f, c = rgb(0xffcdd2))
             if (s.burnT > 0) ui.icon(b, ui.fireIcon, sc.x + w / 2 + 10, sc.y + hh / 2, 16f, 16f)
             if (s.slowT > 0) ui.icon(b, ui.chainIcon, sc.x - w / 2 - 10, sc.y + hh / 2, 16f, 16f)
+            if (s === g.systems.protect) ui.text(b, ui.small, "Защитите купца!", sc.x - 80, sc.y + 30, Align.center, 160f, c = rgb(0xfff176))
         }
-        // Полоса здоровья змея
+        // Боссы и крепости
         g.serpent?.let { sp ->
-            if (!sp.dead) {
-                val sc = g.toScreen(sp.x, 10f, sp.z)
-                if (sc != null && sc.x > -60 && sc.x < wDp + 60 && sc.y > 0 && sc.y < hDp) {
-                    ui.pill(b, sc.x - 61, sc.y - 1, 122f, 14f, c(0x000000, 0.6f))
-                    ui.rect(b, sc.x - 59, sc.y + 1, 118f * (sp.hp / sp.maxHp), 10f, c(0x26a69a))
+            if (!sp.dead) g.toScreen(sp.x, 10f, sp.z)?.let { sc ->
+                if (sc.x > -60 && sc.x < wDp + 60 && sc.y > 0 && sc.y < hDp) {
+                    bar(sc.x, sc.y, 120f, 12f, sp.hp / sp.maxHp, 0x26a69a)
                     ui.text(b, ui.small, "Морской змей", sc.x - 80, sc.y + 30, Align.center, 160f)
+                }
+            }
+        }
+        g.systems.kraken?.let { k ->
+            if (!k.dead) g.toScreen(k.x, 14f, k.z)?.let { sc ->
+                if (sc.x > -60 && sc.x < wDp + 60 && sc.y > 0 && sc.y < hDp) {
+                    bar(sc.x, sc.y, 140f, 13f, k.hp / k.maxHp, 0xd81b60)
+                    ui.text(b, ui.small, "Кракен", sc.x - 80, sc.y + 30, Align.center, 160f)
+                }
+            }
+        }
+        for (f in g.systems.fortresses) {
+            if (!f.alive || p == null || hypot(f.x - p.x, f.z - p.z) > 220) continue
+            g.toScreen(f.x, 26f, f.z)?.let { sc ->
+                if (sc.x > -60 && sc.x < wDp + 60 && sc.y > 0 && sc.y < hDp) {
+                    bar(sc.x, sc.y, 110f, 12f, f.hp / f.maxHp, 0xff7043)
+                    ui.text(b, ui.small, "Пиратская крепость", sc.x - 100, sc.y + 30, Align.center, 200f)
                 }
             }
         }
@@ -98,7 +140,16 @@ class Hud(private val g: SeaGame) {
             if (p == null || hypot(port.rx - p.x, port.rz - p.z) > 300) continue
             val sc = g.toScreen(port.rx, 8f, port.rz) ?: continue
             if (sc.x < -100 || sc.x > wDp + 100 || sc.y < 0 || sc.y > hDp) continue
-            ui.text(b, ui.small, "⚓ " + port.def.name, sc.x - 100, sc.y + 14, Align.center, 200f)
+            ui.text(b, ui.small, "⚓ " + port.def.name, sc.x - 110, sc.y + 14, Align.center, 220f)
+        }
+        // Затонувший корабль: подсказка
+        if (p != null) for (w in g.systems.wrecks) {
+            val d = hypot(w.x - p.x, w.z - p.z)
+            if (d > 60) continue
+            g.toScreen(w.x, 3f, w.z)?.let { sc ->
+                val txt = if (w.searchT > 0) "Ныряльщики ищут… ${(w.searchT / 1.6f * 100).roundToInt()}%" else "Затонувший корабль: остановитесь рядом"
+                ui.text(b, ui.small, txt, sc.x - 130, sc.y + 20, Align.center, 260f, c = rgb(0xb3e5fc))
+            }
         }
 
         // Всплывающие числа
@@ -108,12 +159,11 @@ class Hud(private val g: SeaGame) {
             f.age += dt
             if (f.age > 1f) { fit.remove(); continue }
             val col = Color(f.color).also { it.a = 1 - f.age }
-            ui.text(b, f.font, f.text, f.x - 60, f.y + f.age * 60, Align.center, 120f, c = col)
+            ui.text(b, f.font, f.text, f.x - 80, f.y + f.age * 60, Align.center, 160f, c = col)
         }
 
         val q = g.quest()
         val target = if (g.state == SeaGame.State.PLAY) g.questTarget() else null
-        // Стрелка к цели задания и расстояние
         if (target != null && p != null && !p.sinking) {
             val d = hypot(target.first - p.x, target.second - p.z)
             val ps = g.toScreen(p.x, 0f, p.z)?.let { Vector3(it) }
@@ -161,20 +211,49 @@ class Hud(private val g: SeaGame) {
         ui.icon(b, ui.sails, bx, by2 + 2, 66f, 66f, 0f, c(0xffffff, 0.92f))
         if (p != null && p.boostCd > 0) ui.pie(b, bx, by2, 42f, p.boostCd / 7f, c(0x0a1e32, 0.6f))
 
+        // Уровень капитана
+        val sy = g.systems
+        val lvTxt = "Ур. ${sy.level}" + if (sy.skillPts > 0) "  +${sy.skillPts}" else ""
+        ui.text(b, ui.small, lvTxt, 14f, top - 196, Align.left, 120f, c = if (sy.skillPts > 0) rgb(0xffc93c) else Color.WHITE)
+        ui.pill(b, 14f, top - 216, 96f, 8f, c(0x0b2238, 0.8f))
+        ui.pill(b, 14f, top - 216, max(8f, 96f * sy.xp / xpForLevel(sy.level).toFloat()), 8f, c(0x81d4fa))
+        // Трюм
+        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", 14f, top - 226, Align.left, 140f, c = rgb(0xd7ccc8))
+
         // Способности
-        val icons = listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon)
-        for (i in ABILITIES.indices) {
+        val icons = listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon)
+        for (i in visibleAbilities()) {
             val (ax, ay) = abilityPos(i)
             val cd = g.abilityCd[i]
             val on = (i == 0 && g.ammo == Ammo.FIRE) || (i == 1 && g.ammo == Ammo.CHAIN) || (i == 2 && p != null && p.repairT > 0)
-            ui.icon(b, ui.disc, ax, ay, 68f, 68f, 0f, c(0x0a1e32, 0.55f))
-            ui.icon(b, ui.ring, ax, ay, 72f, 72f, 0f, if (on) c(0xffc93c) else c(0xffffff, 0.55f))
-            ui.icon(b, icons[i], ax, ay, 44f, 44f, 0f, if (cd > 0) c(0xffffff, 0.45f) else Color.WHITE)
+            ui.icon(b, ui.disc, ax, ay, 60f, 60f, 0f, c(0x0a1e32, 0.55f))
+            ui.icon(b, ui.ring, ax, ay, 64f, 64f, 0f, if (on) c(0xffc93c) else c(0xffffff, 0.55f))
+            ui.icon(b, icons[i], ax, ay, 38f, 38f, 0f, if (cd > 0) c(0xffffff, 0.45f) else Color.WHITE)
             if (cd > 0) {
-                ui.pie(b, ax, ay, 32f, cd / ABILITIES[i].cooldown, c(0x0a1e32, 0.55f))
+                ui.pie(b, ax, ay, 28f, cd / ABILITIES[i].cooldown, c(0x0a1e32, 0.55f))
                 ui.text(b, ui.mid, "${kotlin.math.ceil(cd).toInt()}", ax - 30, ay + 9, Align.center, 60f)
             }
-            if (on && i < 2) ui.text(b, ui.small, "${kotlin.math.ceil(g.ammoT).toInt()} с", ax - 30, ay - 40, Align.center, 60f, c = rgb(0xffc93c))
+            if (on && i < 2) ui.text(b, ui.small, "${kotlin.math.ceil(g.ammoT).toInt()} с", ax - 30, ay - 36, Align.center, 60f, c = rgb(0xffc93c))
+        }
+        // Прицел
+        val (axx, ayy) = aimPos()
+        ui.icon(b, ui.disc, axx, ayy, 74f, 74f, 0f, c(0x0a1e32, if (g.aimActive) 0.75f else 0.5f))
+        ui.icon(b, ui.ring, axx, ayy, 78f, 78f, 0f, if (g.aimActive) c(0xffc93c) else c(0xffffff, 0.6f))
+        ui.icon(b, ui.aimIcon, axx, ayy, 46f, 46f, 0f, Color.WHITE)
+        if (!g.systems.autoFire) ui.text(b, ui.small, "ручной огонь", (axx - 60).coerceIn(4f, wDp - 124), ayy - 44, Align.center, 120f, c = rgb(0xffc93c))
+        if (g.aimActive) {
+            val reloadL = p?.reload?.get(0) ?: 0f; val reloadR = p?.reload?.get(1) ?: 0f
+            ui.text(b, ui.small, "Левый борт: ${if (reloadL > 0) "%.1f с".format(reloadL) else "готов"}   Правый: ${if (reloadR > 0) "%.1f с".format(reloadR) else "готов"}",
+                0f, ayy + 70, Align.center, wDp, c = rgb(0xffe082))
+        }
+        // Абордаж
+        g.systems.boardTarget?.let {
+            val (px, py) = boardPos()
+            val pulse = 1f + sin(g.now * 6) * 0.06f
+            ui.round(b, px - 90 * pulse, py - 26 * pulse, 180 * pulse, 52 * pulse, c(0x7f1d1d))
+            ui.round(b, px - 88 * pulse, py - 23 * pulse, 176 * pulse, 48 * pulse, c(0xd32f2f))
+            ui.icon(b, ui.swordsIcon, px - 60, py, 34f, 34f)
+            ui.text(b, ui.big, "Абордаж!", px - 40, py + 12, Align.left, 140f)
         }
 
         // Монеты и кристаллы
@@ -189,17 +268,17 @@ class Hud(private val g: SeaGame) {
 
         // Баннер задания
         val qx = 116f
-        val qw = min(wDp - 128f, 440f)
+        val qw = if (landscape) min(wDp - 116 - 300f, 440f) else min(wDp - 128f, 440f)
         val textW = qw - 58
         layout.setText(ui.mid, q.text, Color.WHITE, textW, Align.center, true)
         val qh = layout.height + 34
         questHeight = qh
-        val qy = top - 112 - qh
+        val qy = if (landscape) top - 16 - qh else top - 112 - qh
         val pop = if (g.questPop > 0) { g.questPop -= dt; 1 + sin(g.questPop / 0.6f * PI.toFloat()) * 0.08f } else 1f
         val cx = qx + qw / 2; val cy = qy + qh / 2
         val sw = qw * pop; val sh = qh * pop
         ui.round(b, cx - sw / 2, cy - sh / 2 - 3, sw, sh, c(0x0d3f7a))
-        ui.round(b, cx - sw / 2, cy - sh / 2, sw, sh, c(0x2f8ff0))
+        ui.round(b, cx - sw / 2, cy - sh / 2, sw, sh, c(if (g.questIdx < STORY_LENGTH) 0x2f8ff0 else 0x5e35b1))
         questIcon(q, cx - sw / 2 + 26, cy, 28f)
         ui.mid.color = Color.WHITE
         ui.mid.draw(b, layout, cx - sw / 2 + 50, cy + sh / 2 - 7)
@@ -213,10 +292,10 @@ class Hud(private val g: SeaGame) {
         // Обучение
         if (g.tutorial < g.tutorialTexts.size && g.state == SeaGame.State.PLAY) {
             val text = g.tutorialTexts[g.tutorial]
-            val tw = min(wDp - 40, 360f)
+            val tw = min(wDp - 150, 320f)
             layout.setText(ui.mid, text, Color.WHITE, tw - 70, Align.left, true)
             val th = layout.height + 28
-            val tx = wDp / 2 - tw / 2
+            val tx = if (g.leftHanded) wDp - tw - 16 else 16f
             val ty = 110 + g.safeBottom
             ui.round(b, tx, ty - 3, tw, th, c(0x0a141e, 0.5f))
             ui.round(b, tx, ty, tw, th, c(0x1b3a57, 0.92f))
@@ -225,7 +304,6 @@ class Hud(private val g: SeaGame) {
             ui.icon(b, ui.hand, tx + 30, ty + th / 2 + bob, 36f, 36f, 0f, c(0xffffff))
         }
 
-        // Сообщение по центру
         if (g.toastT > 0) {
             g.toastT -= dt
             val a = min(1f, g.toastT * 3)
@@ -236,18 +314,21 @@ class Hud(private val g: SeaGame) {
 
     private fun questIcon(q: Quest, x: Float, y: Float, size: Float) {
         val b = g.batch
-        when (q.type) {
-            QType.COLLECT -> ui.icon(b, ui.coin, x, y, size, size)
-            QType.TREASURE -> ui.icon(b, ui.xmark, x, y, size, size)
-            QType.ABILITY -> ui.icon(b, ui.fireIcon, x, y, size * 1.2f, size * 1.2f)
-            else -> {
-                val glyph = when (q.type) {
-                    QType.KILL -> "☠"; QType.RAM -> "⚔"; QType.REACH -> "⚓"; QType.UPGRADE -> "⚙"; QType.BUY -> "★"
-                    QType.HIRE -> "⚓"; QType.SERPENT -> "☠"; else -> "★"
-                }
-                ui.text(b, ui.big, glyph, x - 30, y + 13, Align.center, 60f)
-            }
+        val icon: TextureRegion? = when (q.type) {
+            QType.COLLECT, QType.DELIVER -> ui.coin
+            QType.TREASURE, QType.WRECK -> ui.xmark
+            QType.ABILITY -> ui.fireIcon
+            QType.BOARD -> ui.swordsIcon
+            QType.FORTRESS -> ui.mortarIcon
+            else -> null
         }
+        if (icon != null) { ui.icon(b, icon, x, y, size * 1.1f, size * 1.1f); return }
+        val glyph = when (q.type) {
+            QType.KILL, QType.SERPENT, QType.KRAKEN, QType.ADMIRAL, QType.FLAGSHIP -> "☠"
+            QType.RAM -> "⚔"; QType.REACH, QType.HIRE, QType.ZONE -> "⚓"; QType.UPGRADE -> "⚙"; QType.LEVEL -> "★"
+            QType.PROTECT -> "❤"; else -> "★"
+        }
+        ui.text(b, ui.big, glyph, x - 30, y + 13, Align.center, 60f)
     }
 
     /** Мини-карта: север вверху, радиус обзора 420 м. */
@@ -258,7 +339,8 @@ class Hud(private val g: SeaGame) {
         val r = 62f
         val range = 420f
         ui.icon(b, ui.disc, cx, cy, r * 2 + 6, r * 2 + 6, 0f, c(0x0a141e, 0.55f))
-        ui.icon(b, ui.disc, cx, cy, r * 2, r * 2, 0f, c(0x1f6fb0, 0.85f))
+        val waterCol = when (g.systems.region) { Region.ICE -> 0x5d8fb0; Region.FIRE -> 0x3d5566; Region.REEF -> 0x2f7f7c; Region.ABYSS -> 0x163a63; else -> 0x1f6fb0 }
+        ui.icon(b, ui.disc, cx, cy, r * 2, r * 2, 0f, c(waterCol, 0.88f))
         fun pt(wx: Float, wz: Float, clampEdge: Boolean = false): Pair<Float, Float>? {
             var dx = (wx - p.x) / range * r
             var dy = -(wz - p.z) / range * r
@@ -271,28 +353,36 @@ class Hud(private val g: SeaGame) {
         }
         for (isl in g.islands) {
             val s = isl.r / range * r * 2
-            pt(isl.x, isl.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, max(4f, s), max(4f, s), 0f, if (isl.port >= 0) c(0xe6d3a3) else c(0x7cb342)) }
+            val col = when {
+                isl.port >= 0 -> 0xe6d3a3
+                else -> when (regionAt(isl.x, isl.z)) { Region.ICE -> 0xf0f8ff; Region.FIRE -> 0x4e4038; Region.REEF -> 0x9ccc65; else -> 0x7cb342 }
+            }
+            pt(isl.x, isl.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, max(4f, s), max(4f, s), 0f, c(col)) }
         }
+        for (rk in g.systems.reefs) if (hypot(rk.x - p.x, rk.z - p.z) < 130) pt(rk.x, rk.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 5f, 5f, 0f, c(0x263238)) }
         for (port in g.ports) pt(port.rx, port.rz)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 7f, 7f, 0f, c(0xffffff)) }
+        for (f in g.systems.fortresses) pt(f.x, f.z)?.let { (x, y) -> ui.icon(b, ui.squareIcon, x, y, 9f, 9f, 0f, if (f.alive) c(0xd84315) else c(0x757575)) }
+        for (w in g.systems.wrecks) if (hypot(w.x - p.x, w.z - p.z) < 300) pt(w.x, w.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 6f, 6f, 0f, c(0xb3e5fc)) }
         for (s in g.ships) {
             if (s === p || s.sinking) continue
-            val col = if (s.ally) c(0x4fc3f7) else if (s.boss) c(0xb388ff) else c(0xff5a5f)
-            pt(s.x, s.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, if (s.boss) 9f else 6f, if (s.boss) 9f else 6f, 0f, col) }
+            val col = when { s.ally -> c(0x4fc3f7); s.faction == Faction.NEUTRAL -> c(0xfff176); s.boss -> c(0xb388ff); else -> c(0xff5a5f) }
+            val sz = if (s.boss) 9f else if (s.type == "fisher") 4f else 6f
+            pt(s.x, s.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, sz, sz, 0f, col) }
         }
         g.serpent?.let { sp -> if (!sp.dead) pt(sp.x, sp.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 10f, 10f, 0f, c(0x26a69a)) } }
+        g.systems.kraken?.let { k -> if (!k.dead) pt(k.x, k.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 13f, 13f, 0f, c(0xd81b60)) } }
         g.treasure?.let { t -> pt(t.x, t.z, true)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 14f, 14f) } }
         g.questTarget()?.let { t -> pt(t.first, t.second, true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 9f, 9f, 0f, c(0xffc93c)) } }
-        // игрок — стрелка по курсу
         ui.icon(b, ui.arrowIcon, cx, cy, 12f, 14f, -p.h * MathUtils.radiansToDegrees, c(0xffffff))
         ui.icon(b, ui.ring, cx, cy, r * 2 + 6, r * 2 + 6, 0f, c(0xffffff, 0.7f))
-        // ветер: стрелка на ободке, куда дует
-        val wx = cx + sin(g.windA) * (r + 12)
-        val wy = cy + cos(g.windA) * (r + 12)
+        val wx = cx + kotlin.math.sin(g.windA) * (r + 12)
+        val wy = cy + kotlin.math.cos(g.windA) * (r + 12)
         ui.icon(b, ui.arrowIcon, wx, wy, 14f, 16f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
         val tags = ArrayList<String>()
-        tags += "ветер"
+        tags += g.systems.region.title
         if (g.stormLevel > 0.3f) tags += "шторм"
         if (1f - g.sky.day > 0.5f) tags += "ночь"
-        ui.text(b, ui.small, tags.joinToString(" · "), cx - 80, cy - r - 8, Align.center, 160f, c = rgb(0xb3e5fc))
+        val tx = (cx - 110).coerceAtMost(g.wDp - 224)
+        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 8, Align.center, 220f, c = rgb(0xb3e5fc))
     }
 }
