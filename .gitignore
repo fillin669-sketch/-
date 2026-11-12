@@ -7,3 +7,5 @@ local.properties
 captures/
 .kotlin/
 *.apk
+web/node_modules/
+app/src/main/assets/game/bundle.js

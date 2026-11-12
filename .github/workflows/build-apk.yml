@@ -18,6 +18,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Собрать игру (three.js)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Собрать APK
@@ -36,7 +46,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Морской купец (последняя сборка)
+          name: Морские волки (последняя сборка)
           body: |
             Свежая сборка из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
             Скачайте SeaTrader.apk на телефон и установите.
