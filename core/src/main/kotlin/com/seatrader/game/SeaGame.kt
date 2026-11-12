@@ -62,6 +62,9 @@ class SeaGame : ApplicationAdapter() {
     private lateinit var shadowBatch: ModelBatch
     private val shadowCenter = Vector3()
     private val fillLight = DirectionalLight()
+    private val seaBounce = DirectionalLight()
+    private lateinit var post: PostFx
+    private val clouds = ArrayList<FloatArray>() // x, z, размер, поворот, вариант
     private val ambient = ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f)
     private val fogAttr = ColorAttribute(ColorAttribute.Fog, 0.5f, 0.7f, 0.9f, 1f)
     val sky = Sky()
@@ -223,6 +226,10 @@ class SeaGame : ApplicationAdapter() {
                 env.add(sunLight)
                 env.shadowMap = sunLight
                 env.add(fillLight)
+                env.add(seaBounce)
+                post = PostFx().also { it.scale = if (Gdx.app.type == Application.ApplicationType.Android) 0.8f else 1f }
+                val cr = Random(5)
+                repeat(14) { clouds += floatArrayOf(cr.nextFloat() * 900 - 450, cr.nextFloat() * 900 - 450, 70f + cr.nextFloat() * 90, cr.nextFloat() * 360, cr.nextInt(2).toFloat()) }
                 env.set(fogAttr)
                 chestModel = Models.chest().also { models += it }
                 gemModel = Models.gem().also { models += it }
@@ -1696,7 +1703,18 @@ class SeaGame : ApplicationAdapter() {
         ambient.color.set(amb * (0.85f + 0.15f * day), amb * (0.9f + 0.1f * day), amb * (1.15f - 0.05f * day), 1f)
         val k = (0.35f + 0.65f * day) * (1 - storm * 0.45f)
         sunLight.set(cLight.r * 0.75f * k, cLight.g * 0.72f * k, cLight.b * 0.65f * k, -sky.sunDir[0], -sky.sunDir[1], -sky.sunDir[2])
-        fillLight.set(0.12f * day, 0.15f * day, 0.2f * day, 0.5f, -0.6f, -0.4f)
+        // свет неба сверху и отражённый от моря снизу
+        fillLight.set(0.14f * day + 0.04f, 0.17f * day + 0.05f, 0.24f * day + 0.08f, 0.3f, -1f, -0.2f)
+        seaBounce.set(0.03f * day, 0.09f * day, 0.11f * day, -0.2f, 1f, 0.1f)
+        // цветокоррекция по времени суток и погоде
+        if (::post.isInitialized) {
+            post.warmth = dusk * 1.2f + 0.15f * day
+            post.saturation = 1.14f - storm * 0.35f - (1 - day) * 0.15f
+            post.contrast = 1.07f + day * 0.03f
+            post.exposure = 1.0f + (1 - day) * 0.12f
+            post.bloom = 0.45f + (1 - day) * 0.35f
+            post.vignette = 0.32f + storm * 0.2f
+        }
     }
 
     private fun spawnGulls() {
@@ -1805,6 +1823,8 @@ class SeaGame : ApplicationAdapter() {
         sunLight.end()
         }
         Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
+        val usePost = highQuality
+        if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         nearIslands.clear()
@@ -1881,7 +1901,9 @@ class SeaGame : ApplicationAdapter() {
             }
         }
         drawBalls()
+        drawClouds(lookX, lookZ)
         fx.render()
+        if (usePost) post.end()
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         batch.projectionMatrix = hudCam.combined
@@ -1898,6 +1920,25 @@ class SeaGame : ApplicationAdapter() {
         stage.act(dt)
         stage.draw()
         afterRender?.invoke()
+    }
+
+    private val cloudCol = Color()
+
+    /** Облака проплывают между камерой и морем по ветру. */
+    private fun drawClouds(lookX: Float, lookZ: Float) {
+        val dt = min(0.05f, Gdx.graphics.deltaTime)
+        val wx = sin(windA) * 6f * windS; val wz = -cos(windA) * 6f * windS
+        val a = (0.24f + stormLevel * 0.12f) * (0.4f + 0.6f * sky.day)
+        val shade = 0.7f + 0.3f * sky.day - stormLevel * 0.35f
+        cloudCol.set(shade * 1.0f + 0.05f, shade * 1.0f + 0.05f, shade * 1.05f + 0.06f, a)
+        for (c in clouds) {
+            c[0] += wx * dt; c[1] += wz * dt
+            // облако уплыло далеко — переносим на другую сторону
+            if (c[0] - lookX > 480) c[0] -= 960; if (c[0] - lookX < -480) c[0] += 960
+            if (c[1] - lookZ > 480) c[1] -= 960; if (c[1] - lookZ < -480) c[1] += 960
+            if (hypot(c[0] - lookX, c[1] - lookZ) > 420) continue
+            fx.frame(if (c[4] < 0.5f) ui.cloud else ui.cloud2, c[0], 62f + c[2] * 0.08f, c[1], c[2] * 1.6f, c[2], cloudCol, true, c[3])
+        }
     }
 
     // ================= Вспомогательное =================
@@ -1925,6 +1966,7 @@ class SeaGame : ApplicationAdapter() {
         models.forEach { it.dispose() }
         if (::water.isInitialized) water.dispose()
         if (::fx.isInitialized) fx.dispose()
+        if (::post.isInitialized) post.dispose()
         if (::sfx.isInitialized) sfx.dispose()
         ui.dispose()
         batch.dispose()

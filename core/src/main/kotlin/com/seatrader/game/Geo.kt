@@ -442,8 +442,12 @@ object Models {
         val sand = when (style) { Region.ICE -> 0xe3eef5; Region.FIRE -> 0x4e4038; Region.REEF -> 0xd9cfa8; Region.ABYSS -> 0x9e9a8a; else -> 0xe6d3a3 }
         val grass = when (style) { Region.ICE -> 0xf4fafd; Region.FIRE -> 0x3a3330; Region.REEF -> 0x7fae5c; Region.ABYSS -> 0x556b4f; else -> 0x67a83d }
         val hill = when (style) { Region.ICE -> 0xdbe9f3; Region.FIRE -> 0x2b2523; Region.REEF -> 0x6f9a4f; Region.ABYSS -> 0x4a5a45; else -> 0x5b9634 }
-        g.color(sand).push().at(0f, -1.2f, 0f).cylinder(r * 0.98f, r * 1.08f, 5f, 14, jitter(14, rnd, 0.22f)).pop()
-        g.color(grass).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.9f, 3f, 14, jitter(14, rnd, 0.2f)).pop()
+        val seg = 22
+        val jSand = jitter(seg, rnd, 0.2f)
+        // мокрый песок у кромки воды, сухой песок выше, трава сверху
+        g.color(darkerC(sand, 0.78f)).push().at(0f, -1.6f, 0f).cylinder(r * 1.06f, r * 1.12f, 3.2f, seg, jSand).pop()
+        g.color(sand).push().at(0f, 0.2f, 0f).cylinder(r * 0.97f, r * 1.05f, 2.2f, seg, jSand).pop()
+        g.color(grass).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.92f, 3f, seg, jitter(seg, rnd, 0.18f)).pop()
         val occupied = ArrayList<FloatArray>()
         fun free(px: Float, pz: Float, rad: Float) = occupied.all { hypot(it[0] - px, it[1] - pz) > it[2] + rad }
 
@@ -461,10 +465,15 @@ object Models {
             }
             glows?.add(Vector3(0f, 4f + h, 0f))
             occupied += floatArrayOf(0f, 0f, r * 0.6f)
-        } else if (!port || rnd.nextFloat() < 0.5f) {
-            g.color(hill).push()
-                .at((rnd.nextFloat() - 0.5f) * r * 0.3f, 3.7f + r * 0.12f, if (port) -r * 0.4f else (rnd.nextFloat() - 0.5f) * r * 0.3f)
-                .cylinder(r * 0.35f, r * 0.55f, r * 0.25f, 9, jitter(9, rnd, 0.3f)).pop()
+        } else if (!port) {
+            // невысокие пологие холмы
+            repeat(1 + rnd.nextInt(2)) {
+                val hr = r * (0.22f + rnd.nextFloat() * 0.14f)
+                val hh = 1.5f + r * (0.05f + rnd.nextFloat() * 0.05f)
+                g.color(hill).push()
+                    .at((rnd.nextFloat() - 0.5f) * r * 0.5f, 3.6f + hh / 2, (rnd.nextFloat() - 0.5f) * r * 0.5f)
+                    .cylinder(hr * 0.45f, hr, hh, 12, jitter(12, rnd, 0.25f)).pop()
+            }
         }
 
         if (port) {
@@ -512,9 +521,29 @@ object Models {
             when (style) {
                 Region.ICE -> snowPine(g, px, 3.7f, pz, rnd)
                 Region.FIRE -> deadTree(g, px, 3.7f, pz, rnd)
-                else -> if (rnd.nextFloat() < (if (style == Region.REEF) 0.75f else 0.4f)) palm(g, px, 3.7f, pz, rnd) else tree(g, px, 3.7f, pz, rnd)
+                else -> {
+                    val k = rnd.nextFloat()
+                    when {
+                        k < (if (style == Region.REEF) 0.65f else 0.32f) -> palm(g, px, 3.7f, pz, rnd)
+                        k < 0.62f -> broadTree(g, px, 3.7f, pz, rnd)
+                        else -> tree(g, px, 3.7f, pz, rnd)
+                    }
+                }
             }
             occupied += floatArrayOf(px, pz, 2.5f)
+        }
+        // кусты и цветы между деревьями
+        if (style == Region.CENTER || style == Region.REEF || style == Region.ABYSS) {
+            repeat((r / 2.5f).toInt() + 4) {
+                val a = rnd.nextFloat() * 2 * PI
+                val d = r * (0.1f + rnd.nextFloat() * 0.7f)
+                val px = (cos(a) * d).toFloat(); val pz = (sin(a) * d).toFloat()
+                if (!free(px, pz, 1.2f)) return@repeat
+                val s = 0.7f + rnd.nextFloat() * 0.9f
+                g.color(intArrayOf(0x4f8f3a, 0x5aa040, 0x3f7f35)[rnd.nextInt(3)])
+                g.push().at(px, 3.9f + s * 0.3f, pz).scale(1.3f, 0.75f, 1.3f).ico(s).pop()
+                if (rnd.nextFloat() < 0.35f) g.color(intArrayOf(0xffeb3b, 0xf06292, 0xffffff)[rnd.nextInt(3)]).push().at(px + 0.4f, 4.2f + s * 0.5f, pz).ico(0.25f).pop()
+            }
         }
         val rocks = (if (style == Region.REEF) 9 else 4) + rnd.nextInt(5)
         val rockColors = when (style) {
@@ -541,6 +570,27 @@ object Models {
         }
         return g.build()
     }
+
+    /** Лиственное дерево: ствол и пышная крона из нескольких шаров. */
+    private fun broadTree(g: Geo, x: Float, y: Float, z: Float, rnd: Random) {
+        val s = 0.8f + rnd.nextFloat() * 0.5f
+        g.push().at(x, y, z).scale(s, s, s)
+        g.color(0x6d4c2f).push().at(0f, 1.6f, 0f).cylinder(0.3f, 0.5f, 3.2f, 6).pop()
+        val greens = intArrayOf(0x4caf50, 0x43a047, 0x66bb6a, 0x388e3c)
+        g.color(greens[rnd.nextInt(4)]).push().at(0f, 4.6f, 0f).ico(2.2f).pop()
+        for (k in 0..2) {
+            val a = rnd.nextFloat() * 6.28f
+            g.color(greens[rnd.nextInt(4)]).push().at(cos(a) * 1.3f, 4.0f + rnd.nextFloat(), sin(a) * 1.3f).ico(1.4f + rnd.nextFloat() * 0.5f).pop()
+        }
+        g.pop()
+    }
+
+    private fun lighterC(c: Int, k: Float): Int {
+        val r = ((c shr 16 and 255) * k).toInt().coerceAtMost(255); val gg = ((c shr 8 and 255) * k).toInt().coerceAtMost(255); val b = ((c and 255) * k).toInt().coerceAtMost(255)
+        return (r shl 16) or (gg shl 8) or b
+    }
+
+    private fun darkerC(c: Int, k: Float) = lighterC(c, k)
 
     private fun snowPine(g: Geo, x: Float, y: Float, z: Float, rnd: Random) {
         val s = 0.8f + rnd.nextFloat() * 0.6f

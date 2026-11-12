@@ -68,7 +68,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Морские волки (последняя сборка)
+          name: Пираты Семи Ветров (последняя сборка)
           body: |
             Свежая сборка из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
             Скачайте SeaTrader.apk на телефон и установите.

@@ -56,6 +56,8 @@ class Ui(val scale: Float) : Disposable {
     val aimIcon: TextureRegion
     val swordsIcon: TextureRegion
     val squareIcon: TextureRegion
+    val cloud: TextureRegion
+    val cloud2: TextureRegion
     val roundPatch: NinePatch
     val pillPatch: NinePatch
 
@@ -200,6 +202,24 @@ class Ui(val scale: Float) : Disposable {
             p.setColor(rgb(0xffc93c)); p.fillRectangle(40, 40, 12, 4); p.fillRectangle(12, 40, 12, 4)
         })
         squareIcon = region(pix(16, 16) { p -> p.setColor(Color.WHITE); p.fillRectangle(1, 1, 14, 14) })
+        fun cloudTex(seed: Int) = region(pix(256, 128) { p ->
+            val r = java.util.Random(seed.toLong())
+            val acc = FloatArray(256 * 128)
+            repeat(26) {
+                val cx = 50 + r.nextInt(156); val cy = 40 + r.nextInt(48); val rad = 18 + r.nextInt(30)
+                for (y in maxOf(0, cy - rad) until minOf(128, cy + rad)) for (x in maxOf(0, cx - rad) until minOf(256, cx + rad)) {
+                    val d = hypot((x - cx).toFloat(), (y - cy).toFloat()) / rad
+                    if (d < 1) acc[y * 256 + x] += (1 - d * d) * 0.55f
+                }
+            }
+            for (y in 0 until 128) for (x in 0 until 256) {
+                val edge = minOf(minOf(x, 255 - x) / 40f, minOf(y, 127 - y) / 24f).coerceIn(0f, 1f)
+                val a = (acc[y * 256 + x] * edge).coerceIn(0f, 1f)
+                if (a > 0.01f) { p.setColor(1f, 1f, 1f, a); p.drawPixel(x, y) }
+            }
+        })
+        cloud = cloudTex(3)
+        cloud2 = cloudTex(11)
         val rt = pix(64, 64) { p ->
             p.setColor(Color.WHITE)
             p.fillRectangle(16, 0, 32, 64); p.fillRectangle(0, 16, 64, 32)

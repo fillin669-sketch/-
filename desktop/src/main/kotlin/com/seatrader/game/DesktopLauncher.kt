@@ -14,7 +14,7 @@ fun main() {
     val test = System.getenv("SEA_TEST")
     if (test != null) TestScript(game, test).install()
     val config = Lwjgl3ApplicationConfiguration().apply {
-        setTitle("Морские волки")
+        setTitle("Пираты Семи Ветров")
         if (System.getenv("SEA_LANDSCAPE") != null) setWindowedMode(870, 412) else setWindowedMode(412, 870)
         setForegroundFPS(60)
         setBackBufferConfig(8, 8, 8, 8, 24, 0, 4)

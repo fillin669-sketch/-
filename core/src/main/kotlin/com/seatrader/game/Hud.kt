@@ -67,7 +67,7 @@ class Hud(private val g: SeaGame) {
     fun drawLoading() {
         val b = g.batch
         val w = g.wDp; val h = g.hDp
-        ui.text(b, ui.huge, "Морские волки", 0f, h * 0.58f, Align.center, w)
+        ui.text(b, ui.huge, "Пираты Семи Ветров", 0f, h * 0.58f, Align.center, w)
         ui.text(b, ui.small, "Поднимаем паруса…", 0f, h * 0.58f - 44, Align.center, w, c = rgb(0x9cc3e6))
         val bw = min(260f, w - 60)
         ui.pill(b, w / 2 - bw / 2, h * 0.45f, bw, 12f, c(0x0b2238))
@@ -424,11 +424,12 @@ class Hud(private val g: SeaGame) {
         val wy = cy + kotlin.math.cos(g.windA) * (r + 14)
         ui.icon(b, ui.arrowIcon, wx, wy, 14f, 18f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
         val tags = ArrayList<String>()
-        tags += g.systems.region.title
         if (g.stormLevel > 0.3f) tags += "шторм"
         if (1f - g.sky.day > 0.5f) tags += "ночь"
-        val tx = (cx - 110).coerceAtMost(g.wDp - 224)
-        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 10, Align.center, 220f, c = rgb(0xb3e5fc))
-        ui.text(b, ui.small, "нажмите — карта", tx, cy - r - 26, Align.center, 220f, c = rgb(0x90a4ae))
+        tags += "нажмите — карта"
+        val tw = 200f
+        val tx = (cx - tw / 2).coerceAtMost(g.wDp - tw - 6)
+        ui.text(b, ui.small, g.systems.region.title, tx, cy - r - 10, Align.center, tw, c = rgb(0xb3e5fc))
+        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 26, Align.center, tw, c = rgb(0x90a4ae))
     }
 }

@@ -206,6 +206,12 @@ void main() {
     vec3 col = mix(deep, mid, smoothstep(0.35, 0.8, patches));
     col = mix(col, shallow, shore * 0.85);
 
+    // Каустика: световая рябь на мелководье
+    float c1 = noise(p * 0.45 + vec2(tn * 0.35, tn * 0.2));
+    float c2 = noise(p * 0.45 * 1.37 - vec2(tn * 0.28, -tn * 0.31));
+    float caus = smoothstep(0.18, 0.0, abs(c1 - c2)) * smoothstep(0.35, 0.9, shore);
+    col += vec3(0.20, 0.27, 0.24) * caus * 0.35 * u_day * (1.0 - u_storm);
+
     // Отражение неба (Френель): у горизонта небо светлее
     vec3 v = normalize(u_cam - v_world);
     float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
