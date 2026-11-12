@@ -118,7 +118,7 @@ class Systems(private val g: SeaGame) {
     val explored = Explored()
     private var revealT = 0f
     var waypoint: FloatArray? = null
-    private var gullT = 5f
+    private var gullT = 20f
     private var creakT = 8f
     private var farThunderT = 12f
     // абордажные крюки
@@ -879,15 +879,15 @@ class Systems(private val g: SeaGame) {
         // чайки у берега днём
         gullT -= dt
         if (gullT <= 0) {
-            gullT = rand(5f, 12f)
+            gullT = rand(30f, 60f)
             val near = g.islands.minOfOrNull { hypot(it.x - p.x, it.z - p.z) - it.r } ?: 999f
-            if (near < 200 && g.sky.day > 0.5f && g.stormLevel < 0.4f) g.sfx.play(if (Random.nextBoolean()) "gull1" else "gull2", clamp(1f - near / 220f, 0.1f, 0.7f), 0.25f)
+            if (near < 120 && g.sky.day > 0.6f && g.stormLevel < 0.3f) g.sfx.play(if (Random.nextBoolean()) "gull1" else "gull2", clamp(0.35f - near / 400f, 0.08f, 0.3f), 0.15f)
         }
         // скрип корпуса
         creakT -= dt
         if (creakT <= 0) {
-            creakT = rand(7f, 16f)
-            if (abs(p.speed) > 3 || g.stormLevel > 0.3f) g.sfx.play("creak", 0.35f + g.stormLevel * 0.4f, 0.3f)
+            creakT = rand(18f, 35f)
+            if (abs(p.speed) > 6 || g.stormLevel > 0.3f) g.sfx.play("creak", 0.18f + g.stormLevel * 0.3f, 0.2f)
         }
         // далёкий гром перед и во время шторма
         if (g.stormLevel > 0.12f) {

@@ -55,9 +55,16 @@ class Sfx : Disposable {
         return null
     }
 
-    fun play(name: String, volume: Float = 1f, pitchVar: Float = 0.1f) {
+    private val lastPlay = HashMap<String, Long>()
+
+    fun play(name: String, volume: Float = 1f, pitchVar: Float = 0.06f) {
         val v = volume * sfxVolume
         if (v <= 0.01f) return
+        // один и тот же звук не чаще раза в 70 мс (иначе монеты и выстрелы сливаются в шум)
+        val now = System.nanoTime()
+        val last = lastPlay[name] ?: 0L
+        if (now - last < 70_000_000L) return
+        lastPlay[name] = now
         sounds[name]?.play(v.coerceIn(0f, 1f), 1f + (Math.random().toFloat() - 0.5f) * pitchVar, 0f)
     }
 
@@ -88,8 +95,8 @@ class Sfx : Disposable {
         battle?.volume = musicVolume * battleMix * 0.75f * k
         shanty?.volume = musicVolume * shantyVol * (1 - battleMix) * 0.95f * k
         rain?.volume = sfxVolume * rainMix * 0.75f * k
-        wind?.volume = sfxVolume * (0.15f + windMix * 0.6f) * k
-        ambient?.volume = sfxVolume * 0.45f * k
+        wind?.volume = sfxVolume * (0.06f + windMix * 0.32f) * k
+        ambient?.volume = sfxVolume * 0.5f * k
     }
 
     /** Песня закончилась — можно ставить следующую. */
