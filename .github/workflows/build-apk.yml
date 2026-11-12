@@ -18,13 +18,45 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Кеш ключа подписи
+        uses: actions/cache@v4
+        with:
+          path: ~/.seawolves-signing
+          key: seawolves-signing-v1
+
+      - name: Подготовить ключ подписи
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+        run: |
+          DIR="$HOME/.seawolves-signing"
+          mkdir -p "$DIR"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            # собственный ключ из секретов репозитория
+            echo "$KEYSTORE_BASE64" | base64 -d > "$DIR/own.jks"
+            KS="$DIR/own.jks"; PASS="$KEYSTORE_PASSWORD"; ALIAS="${KEYSTORE_ALIAS:-seawolves}"
+          else
+            # постоянный ключ, созданный один раз и сохранённый в кеше Actions
+            if [ ! -f "$DIR/release.jks" ]; then
+              openssl rand -hex 16 > "$DIR/pass"
+              keytool -genkeypair -keystore "$DIR/release.jks" -alias seawolves -keyalg RSA -keysize 2048 \
+                -validity 20000 -storepass "$(cat "$DIR/pass")" -keypass "$(cat "$DIR/pass")" -dname "CN=Sea Wolves"
+            fi
+            KS="$DIR/release.jks"; PASS="$(cat "$DIR/pass")"; ALIAS=seawolves
+          fi
+          echo "::add-mask::$PASS"
+          echo "SIGNING_KEYSTORE=$KS" >> "$GITHUB_ENV"
+          echo "SIGNING_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "SIGNING_KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Собрать APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk SeaTrader.apk
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk SeaTrader.apk
 
       - name: Сохранить APK как артефакт сборки
         uses: actions/upload-artifact@v4

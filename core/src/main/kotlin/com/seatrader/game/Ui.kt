@@ -41,6 +41,15 @@ class Ui(val scale: Float) : Disposable {
     val triangle: TextureRegion
     val sails: TextureRegion
     val vignette: TextureRegion
+    val dark: TextureRegion
+    val streak: TextureRegion
+    val gull: TextureRegion
+    val fireIcon: TextureRegion
+    val chainIcon: TextureRegion
+    val repairIcon: TextureRegion
+    val arrowIcon: TextureRegion
+    val xmark: TextureRegion
+    val hand: TextureRegion
     val roundPatch: NinePatch
     val pillPatch: NinePatch
 
@@ -112,6 +121,49 @@ class Ui(val scale: Float) : Disposable {
                 val a = ((d - 0.7f) / 0.3f).coerceIn(0f, 1f); p.setColor(1f, 0f, 0f, a * a * 0.6f); p.drawPixel(x, y)
             }
         })
+        dark = region(pix(64, 64) { p ->
+            for (y in 0 until 64) for (x in 0 until 64) {
+                val d = hypot(x - 31.5f, y - 31.5f) / 31.5f
+                val a = ((d - 0.6f) / 0.6f).coerceIn(0f, 1f)
+                p.setColor(0f, 0.02f, 0.06f, a * a * 0.55f); p.drawPixel(x, y)
+            }
+        })
+        streak = region(pix(8, 64) { p ->
+            for (y in 0 until 64) { p.setColor(1f, 1f, 1f, y / 64f); p.drawLine(3, y, 4, y) }
+        })
+        gull = region(pix(64, 32) { p ->
+            p.setColor(Color.WHITE)
+            for (k in -2..2) {
+                p.drawLine(2, 6 + k, 22, 18 + k); p.drawLine(22, 18 + k, 32, 12 + k)
+                p.drawLine(32, 12 + k, 42, 18 + k); p.drawLine(42, 18 + k, 62, 6 + k)
+            }
+            p.setColor(rgb(0x37474f)); p.fillCircle(32, 14, 3)
+        })
+        fireIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0xff6d00)); p.fillCircle(32, 40, 18); p.fillTriangle(14, 40, 50, 40, 32, 2)
+            p.setColor(rgb(0xffc400)); p.fillCircle(32, 44, 11); p.fillTriangle(21, 44, 43, 44, 32, 16)
+            p.setColor(rgb(0xfff59d)); p.fillCircle(32, 48, 5)
+        })
+        chainIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x263238)); p.fillCircle(14, 32, 12); p.fillCircle(50, 32, 12)
+            p.setColor(rgb(0xb0bec5))
+            for (k in 0..4) { val x = 24 + k * 4; p.drawCircle(x, 32 + if (k % 2 == 0) -2 else 2, 4) }
+            p.setColor(rgb(0x546e7a)); p.fillCircle(11, 29, 4); p.fillCircle(47, 29, 4)
+        })
+        repairIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x8d6e63))
+            for (k in -3..3) p.drawLine(14 + k, 54, 42 + k, 18)
+            p.setColor(rgb(0xb0bec5)); p.fillRectangle(30, 8, 24, 14); p.fillTriangle(30, 8, 30, 22, 22, 15)
+            p.setColor(rgb(0x66bb6a)); p.fillRectangle(42, 38, 6, 20); p.fillRectangle(35, 45, 20, 6)
+        })
+        arrowIcon = region(pix(32, 32) { p -> p.setColor(Color.WHITE); p.fillTriangle(16, 0, 4, 31, 28, 31) })
+        xmark = region(pix(32, 32) { p ->
+            p.setColor(rgb(0xe53935)); for (k in -3..3) { p.drawLine(4 + k, 4, 28 + k, 28); p.drawLine(28 + k, 4, 4 + k, 28) }
+        })
+        hand = region(pix(64, 64) { p ->
+            p.setColor(Color.WHITE); p.fillCircle(30, 40, 16); p.fillRectangle(24, 6, 10, 34); p.fillCircle(29, 8, 5)
+            p.setColor(rgb(0x1b2a3a)); p.drawCircle(30, 40, 16)
+        })
         val rt = pix(64, 64) { p ->
             p.setColor(Color.WHITE)
             p.fillRectangle(16, 0, 32, 64); p.fillRectangle(0, 16, 64, 32)
@@ -156,6 +208,16 @@ class Ui(val scale: Float) : Disposable {
     fun gray(text: String) = button(text, 0x3b5368, 0x31475a)
 
     val scrollStyle = ScrollPane.ScrollPaneStyle()
+
+    fun slider(): com.badlogic.gdx.scenes.scene2d.ui.Slider.SliderStyle {
+        val bg = NinePatchDrawable(pillPatch).tint(rgb(0x0b2238))
+        bg.minHeight = 10f
+        val before = NinePatchDrawable(pillPatch).tint(rgb(0x3ddc84))
+        before.minHeight = 10f
+        val knob = TextureRegionDrawable(disc).tint(Color.WHITE)
+        knob.minWidth = 28f; knob.minHeight = 28f
+        return com.badlogic.gdx.scenes.scene2d.ui.Slider.SliderStyle(bg, knob).also { it.knobBefore = before }
+    }
 
     // ---------- Рисование HUD ----------
     private val layout = GlyphLayout()

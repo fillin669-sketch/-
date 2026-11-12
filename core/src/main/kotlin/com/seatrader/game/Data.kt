@@ -1,7 +1,7 @@
 package com.seatrader.game
 
 /** Как выглядит корабль. Цвета — 0xRRGGBB. */
-class Look(
+data class Look(
     val len: Float, val width: Float, val masts: Int,
     val hull: Int, val trim: Int, val sail: Int, val flag: Int,
 )
@@ -100,7 +100,7 @@ val PORTS = listOf(
     PortDef("Скала Ворона", -420f, -650f, 50f),
 )
 
-enum class QType { KILL, RAM, COLLECT, REACH, UPGRADE, BUY }
+enum class QType { KILL, RAM, COLLECT, REACH, UPGRADE, BUY, SERPENT, TREASURE, HIRE, ABILITY }
 
 class Quest(
     val type: QType, val text: String, val n: Int = 1, val enemy: String = "",
@@ -113,11 +113,15 @@ private val QUESTS = listOf(
     Quest(QType.COLLECT, "Собери 300 монет", 300, gems = 3),
     Quest(QType.REACH, "Доплыви до порта «Форт Чайки»", port = 2, coins = 200),
     Quest(QType.UPGRADE, "Улучши корабль в порту", coins = 150),
+    Quest(QType.ABILITY, "Выстрели огненными ядрами", coins = 150),
     Quest(QType.KILL, "Потопи 3 пиратские бригантины", 3, "brig", coins = 300, gems = 3),
+    Quest(QType.TREASURE, "Найди сокровище на острове", coins = 200, gems = 2),
     Quest(QType.BUY, "Купи новый корабль на верфи", gems = 10),
+    Quest(QType.HIRE, "Найми корабль сопровождения", coins = 300),
     Quest(QType.RAM, "Протарань пиратскую бригантину", 1, "brig", coins = 400),
     Quest(QType.REACH, "Доплыви до «Коралловой бухты»", port = 1, coins = 300),
     Quest(QType.KILL, "Потопи корсарский фрегат", 1, "frigate", coins = 600, gems = 5),
+    Quest(QType.SERPENT, "Победи морского змея", coins = 1200, gems = 15),
     Quest(QType.COLLECT, "Собери 1 500 монет", 1500, gems = 8),
     Quest(QType.KILL, "Потопи Чёрный галеон", 1, "galleon", coins = 1500, gems = 20),
 )
@@ -125,11 +129,13 @@ private val QUESTS = listOf(
 fun questAt(i: Int): Quest {
     if (i < QUESTS.size) return QUESTS[i]
     val k = i - QUESTS.size
-    val lvl = k / 4 + 1
-    return when (k % 4) {
+    val lvl = k / 6 + 1
+    return when (k % 6) {
         0 -> Quest(QType.KILL, "Потопи ${3 + lvl} пиратских бригантин", 3 + lvl, "brig", coins = 400 * lvl, gems = 3)
-        1 -> Quest(QType.RAM, "Протарань корсарский фрегат", 1, "frigate", coins = 700 * lvl, gems = 4)
-        2 -> Quest(QType.KILL, "Потопи ${1 + lvl} корсарских фрегата", 1 + lvl, "frigate", coins = 800 * lvl, gems = 6)
+        1 -> Quest(QType.TREASURE, "Найди сокровище на острове", coins = 300 * lvl, gems = 3)
+        2 -> Quest(QType.RAM, "Протарань корсарский фрегат", 1, "frigate", coins = 700 * lvl, gems = 4)
+        3 -> Quest(QType.KILL, "Потопи ${1 + lvl} корсарских фрегата", 1 + lvl, "frigate", coins = 800 * lvl, gems = 6)
+        4 -> Quest(QType.SERPENT, "Победи морского змея", coins = 1500 * lvl, gems = 15)
         else -> Quest(QType.KILL, "Потопи Чёрный галеон", 1, "galleon", coins = 2000 * lvl, gems = 20)
     }
 }
@@ -146,6 +152,47 @@ private fun trimZero(v: Float): String {
     return if (s.endsWith(".0")) s.dropLast(2) else s
 }
 
+/** Сила волн: 1 — штиль, до ~2.6 — шторм. Общая для физики и шейдера воды. */
+@Volatile var waveAmp = 1f
+
 fun waveHeight(x: Float, z: Float, t: Float): Float =
-    (Math.sin(x * 0.08 + t * 1.1) * 0.35 + Math.sin(z * 0.11 + t * 0.9) * 0.3 +
-        Math.sin((x + z) * 0.05 + t * 0.7) * 0.4).toFloat()
+    ((Math.sin(x * 0.08 + t * 1.1) * 0.35 + Math.sin(z * 0.11 + t * 0.9) * 0.3 +
+        Math.sin((x + z) * 0.05 + t * 0.7) * 0.4 + Math.sin((x - z) * 0.031 + t * 0.55) * 0.35) * waveAmp).toFloat()
+
+// ---------- Способности ----------
+class Ability(val id: String, val name: String, val desc: String, val cooldown: Float, val duration: Float)
+
+val ABILITIES = listOf(
+    Ability("fire", "Огненные ядра", "Залпы поджигают врага: урон со временем.", 14f, 7f),
+    Ability("chain", "Цепные ядра", "Рвут паруса: враг сильно замедляется.", 16f, 7f),
+    Ability("repair", "Ремонт", "Быстро чинит корпус прямо в бою.", 28f, 3f),
+)
+
+// ---------- Наёмники ----------
+class Mercenary(val id: String, val name: String, val price: Int, val enemyLook: String,
+                val hp: Int, val speed: Float, val cannons: Int, val dmg: Float)
+
+val MERCS = listOf(
+    Mercenary("merc_sloop", "Шлюп-наёмник", 600, "sloop", 110, 16f, 2, 7f),
+    Mercenary("merc_brig", "Бригантина-наёмник", 2000, "brig", 220, 16.5f, 3, 10f),
+    Mercenary("merc_frigate", "Фрегат-наёмник", 6000, "frigate", 420, 17f, 5, 14f),
+)
+const val MAX_ALLIES = 2
+
+// ---------- Внешний вид ----------
+class Paint(val name: String, val color: Int, val price: Int)
+
+val SAIL_COLORS = listOf(
+    Paint("Классика", 0xf6f0e0, 0), Paint("Алые", 0xc62828, 400), Paint("Небесные", 0x64b5f6, 400),
+    Paint("Изумрудные", 0x2e7d32, 600), Paint("Золотые", 0xffc107, 900), Paint("Королевские", 0x6a1b9a, 1200),
+    Paint("Чёрные", 0x262626, 1500),
+)
+val FLAG_COLORS = listOf(
+    Paint("Свой", -1, 0), Paint("Алый", 0xd32f2f, 200), Paint("Синий", 0x1565c0, 200), Paint("Зелёный", 0x2e7d32, 200),
+    Paint("Золотой", 0xffb300, 300), Paint("Белый", 0xfafafa, 300), Paint("Фиолетовый", 0x7b1fa2, 300),
+)
+
+// ---------- Ежедневные награды ----------
+class DailyReward(val coins: Int, val gems: Int)
+val DAILY = listOf(DailyReward(100, 0), DailyReward(200, 0), DailyReward(300, 1), DailyReward(400, 0),
+    DailyReward(500, 2), DailyReward(700, 0), DailyReward(1000, 10))

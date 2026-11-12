@@ -4,13 +4,22 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- мачта -->
-    <path android:fillColor="#FFECEFF1" android:pathData="M53,30h2v34h-2z" />
-    <!-- парус -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M56,32 L74,60 L56,60 Z" />
-    <path android:fillColor="#FFFFCDD2" android:pathData="M52,38 L38,60 L52,60 Z" />
+    <!-- солнце -->
+    <path android:fillColor="#FFFFC93C" android:pathData="M78,30 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+    <!-- мачты -->
+    <path android:fillColor="#FF5D3A1E" android:pathData="M45,24h2.4v44h-2.4z M60,30h2.2v38h-2.2z" />
+    <!-- паруса -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M33,28 Q46,32 59,28 L58,44 Q46,48 34,44 Z" />
+    <path android:fillColor="#FFF3EAD3" android:pathData="M35,47 Q46,51 57,47 L56,60 Q46,63 36,60 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M52,34 Q61,37 70,34 L69,48 Q61,51 53,48 Z" />
+    <path android:fillColor="#FFF3EAD3" android:pathData="M53,51 Q61,54 69,51 L68,62 Q61,64 54,62 Z" />
+    <!-- флаг -->
+    <path android:fillColor="#FFD32F2F" android:pathData="M47.4,24 L55,27 L47.4,30 Z" />
     <!-- корпус -->
-    <path android:fillColor="#FFD84315" android:pathData="M32,64 L76,64 L70,74 L38,74 Z" />
+    <path android:fillColor="#FF7A4A26" android:pathData="M24,66 L84,66 L76,78 L32,78 Z" />
+    <path android:fillColor="#FF2F6DB5" android:pathData="M25.5,68 L82.5,68 L81.3,70 L26.8,70 Z" />
+    <path android:fillColor="#FF3E2412" android:pathData="M36,72h4v3h-4z M46,72h4v3h-4z M56,72h4v3h-4z M66,72h4v3h-4z" />
     <!-- волны -->
-    <path android:fillColor="#FF90CAF9" android:pathData="M30,78 q6,-4 12,0 t12,0 t12,0 t12,0 v3 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 z" />
+    <path android:fillColor="#FFB3E5FC" android:pathData="M18,80 q6,-4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 v4 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 t-12,0 t-12,0 z" />
+    <path android:fillColor="#FF81D4FA" android:pathData="M18,86 q6,-4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 v4 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 t-12,0 t-12,0 z" />
 </vector>

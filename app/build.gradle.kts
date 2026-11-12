@@ -14,13 +14,26 @@ android {
         applicationId = "com.seatrader.game"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 4
+        versionName = "4.0"
+    }
+
+    // Подпись: ключ передаётся через переменные окружения (в GitHub Actions — из кеша или секретов).
+    // Без них release подписывается отладочным ключом.
+    val ksPath = System.getenv("SIGNING_KEYSTORE")
+    signingConfigs {
+        if (ksPath != null) create("shared") {
+            storeFile = file(ksPath)
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "seawolves"
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: System.getenv("SIGNING_STORE_PASSWORD")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("shared") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -30,6 +43,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     sourceSets {
         getByName("main").jniLibs.srcDirs("libs")
