@@ -405,7 +405,7 @@ class MapView(context: Context) : View(context) {
             canvas.drawCircle(pt.x, pt.y, (1.5f + 2.5f * f) * dp, wakePaint)
         }
 
-        drawShip(canvas, sx, sy, g.heading)
+        drawShip(canvas, sx, sy, g.heading, g.model)
 
         if (joyActive && dragging) {
             canvas.drawCircle(joyCx, joyCy, joyR, joyBase)
@@ -414,15 +414,20 @@ class MapView(context: Context) : View(context) {
         }
     }
 
-    private fun drawShip(canvas: Canvas, x: Float, y: Float, heading: Float) {
+    private fun drawShip(canvas: Canvas, x: Float, y: Float, heading: Float, model: ShipModel) {
         canvas.save()
         canvas.translate(x, y)
         canvas.rotate(Math.toDegrees(heading.toDouble()).toFloat())
+        canvas.scale(model.size, model.size)
         canvas.drawPath(hullPath, hullPaint)
         canvas.drawPath(deckPath, deckPaint)
-        // Паруса (вид сверху: поперечные полосы)
-        canvas.drawRoundRect(1 * dp, -9 * dp, 5 * dp, 9 * dp, 2 * dp, 2 * dp, sailPaint)
-        canvas.drawRoundRect(-7 * dp, -8 * dp, -3 * dp, 8 * dp, 2 * dp, 2 * dp, sailPaint)
+        // Паруса (вид сверху: поперечные полосы), по одной на мачту
+        val n = model.masts
+        for (k in 0 until n) {
+            val cx = (5f - 12f * k / (n - 1).coerceAtLeast(1)) * dp
+            val half = (if (k == 0 || k == n - 1) 7.5f else 9f) * dp
+            canvas.drawRoundRect(cx - 1.8f * dp, -half, cx + 1.8f * dp, half, 2 * dp, 2 * dp, sailPaint)
+        }
         canvas.drawRect(-14 * dp, -1.5f * dp, -11 * dp, 1.5f * dp, flagPaint)
         canvas.restore()
     }

@@ -136,8 +136,8 @@ class MainActivity : Activity(), MapView.Listener {
         statusTop.text = "💰 ${game.gold.money()}     📅 День ${game.day.coerceAtMost(MAX_DAY)} из $MAX_DAY" +
             (if (game.boosted) "   🌬" else "")
         val where = if (game.atSea) "в море" else PORTS[game.port].name
-        statusBottom.text = "📦 ${game.used}/${game.capacity}   🛠 Корпус ${game.hull}%   ⚓ $where"
-        statusBottom.setTextColor(if (game.hull < 35) DANGER else MUTED)
+        statusBottom.text = "⛵ ${game.model.name}  📦 ${game.used}/${game.capacity}  🛡 ${game.hull}/${game.maxHull}  ⚓ $where"
+        statusBottom.setTextColor(if (game.hull < game.maxHull * 0.35) DANGER else MUTED)
     }
 
     private fun marketScreen(): View {
@@ -197,44 +197,62 @@ class MainActivity : Activity(), MapView.Listener {
         val col = column()
         col.addView(text("🛠 Верфь", 22f, TEXT, bold = true))
 
+        val m = game.model
         col.addView(card(
-            "⛵ Ваш корабль",
-            "Трюм: ${game.capacity} мест\n" +
-                "Скорость: ×${"%.2f".format(Locale.US, game.speed)}\n" +
-                "Пушки: ${game.cannons}\n" +
-                "Корпус: ${game.hull}%\n" +
-                "Жалованье команды: ${game.wages} 💰 в день"
+            "⛵ ${m.name} · ${m.role}",
+            "${m.description}\n\n" +
+                "📦 Трюм: ${game.capacity} мест\n" +
+                "⚡ Скорость: ×${"%.2f".format(Locale.US, game.speed)}\n" +
+                "🛡 Корпус: ${game.hull}/${game.maxHull}" + (if (m.armor > 0) ", броня гасит ${pct(m.armor)} урона" else "") + "\n" +
+                "💣 Пушки: ${game.cannons} из ${m.cannonSlots}\n" +
+                "🧭 Манёвренность: ${if (m.maneuver >= 0) "+" else ""}${pct(m.maneuver)} к побегу\n" +
+                "👥 Жалованье команды: ${game.wages} 💰 в день\n\n" +
+                "Против пиратов (их сила растёт со временем): бой ${pct(game.fightChance)}, побег ${pct(game.fleeChance)}"
         ), cardParams())
 
         col.addView(actionCard(
             "🔧 Ремонт",
-            if (game.hull >= 100) "Корпус в полном порядке." else "Починить корпус до 100%. Если корпус разрушится, корабль утонет!",
-            if (game.hull >= 100) null else game.repairCost
+            if (game.hull >= game.maxHull) "Корпус в полном порядке."
+            else "Починить корпус до ${game.maxHull}. Если корпус разрушится, корабль утонет!",
+            if (game.hull >= game.maxHull) null else game.repairCost,
+            buyLabel = "Починить"
         ) { game.repair() }, cardParams())
 
+        col.addView(section("Улучшения: ${m.name}"))
         col.addView(actionCard(
-            "📦 Больший трюм",
-            "+15 мест для товара (сейчас ${game.capacity}).",
+            "📦 Трюм  ${stars(game.holdLevel)}",
+            "+20% места для груза. Сейчас ${game.capacity}, станет ${(m.cargo * (1 + 0.2 * (game.holdLevel + 1))).toInt()}.",
             game.holdUpgradeCost
         ) { game.upgradeHold() }, cardParams())
-
         col.addView(actionCard(
-            "🪁 Новые паруса",
-            "Плавания на 25% быстрее, от пиратов уходить легче. Шанс уйти от погони: ${pct(game.fleeChance)}.",
+            "🪁 Паруса  ${stars(game.sailLevel)}",
+            "+10% к скорости: короче плавания, проще уйти от пиратов.",
             game.sailUpgradeCost
         ) { game.upgradeSails() }, cardParams())
-
         col.addView(actionCard(
-            "💣 Пушка",
-            "Выше шанс победить пиратов (сейчас ${pct(game.fightChance)}). Жалованье +3 💰 в день.",
+            "🛡 Обшивка  ${stars(game.armorLevel)}",
+            "+15% прочности корпуса: штормы и абордажи страшны меньше.",
+            game.armorUpgradeCost
+        ) { game.upgradeArmor() }, cardParams())
+        col.addView(actionCard(
+            "💣 Пушки  ${game.cannons}/${m.cannonSlots}",
+            if (game.cannons >= m.cannonSlots) "Все орудийные порты заняты. Нужно больше пушек? Нужен корабль побольше."
+            else "Ещё одна пушка: выше шанс победить пиратов. Жалованье +2 💰 в день.",
             game.cannonCost
         ) { game.buyCannon() }, cardParams())
+
+        col.addView(section("⚓ Корабли на продажу"))
+        col.addView(text("За ваш корабль с улучшениями и пушками дадут ${game.tradeInValue().money()} 💰. Новый корабль приходит без улучшений и пушек.", 13.5f, MUTED))
+        for ((i, sm) in SHIPS.withIndex()) {
+            if (i == game.shipModel) continue
+            col.addView(shipOffer(i, sm), cardParams())
+        }
 
         val best = prefs.getInt("best", 0)
         col.addView(card(
             "🏅 Капитанский журнал",
             "Звание: ${game.title()}\n" +
-                "Состояние (золото + товар): ${game.netWorth().money()} 💰\n" +
+                "Состояние (золото, товар, корабль): ${game.netWorth().money()} 💰\n" +
                 "Рейсов: ${game.voyages}   Побеждено пиратов: ${game.piratesBeaten}" +
                 (if (best > 0) "\nРекорд: ${best.money()} 💰" else "")
         ), cardParams())
@@ -300,7 +318,7 @@ class MainActivity : Activity(), MapView.Listener {
         } else if (to < 0) {
             lines += "Нажмите на порт, чтобы увидеть курс и его товары."
         }
-        if (game.hull < 35) lines += "⚠ Корпус сильно повреждён. Зайдите на верфь!"
+        if (game.hull < game.maxHull * 0.35) lines += "⚠ Корпус сильно повреждён. Зайдите на верфь!"
         if (MAX_DAY - game.day <= 20) lines += "⏳ До конца сезона ${MAX_DAY - game.day} дн."
         info.text = lines.joinToString("\n")
 
@@ -544,9 +562,51 @@ class MainActivity : Activity(), MapView.Listener {
         addView(text(body, 14.5f, MUTED).apply { setPadding(0, dpi(4), 0, 0) })
     }
 
-    private fun actionCard(title: String, body: String, cost: Int?, action: () -> Boolean): View {
+    private fun stars(level: Int) = "★".repeat(level) + "☆".repeat(MAX_UPGRADE - level)
+
+    private fun section(title: String) = text(title, 18f, ACCENT, bold = true).apply {
+        setPadding(0, dpi(20), 0, dpi(2))
+    }
+
+    private fun shipStats(m: ShipModel) =
+        "📦 ${m.cargo}   ⚡ ×${"%.2f".format(Locale.US, m.speed)}   🛡 ${m.hull}   💣 ${m.cannonSlots}\n" +
+            "👥 ${m.wages} 💰/день" + (if (m.armor > 0) "   броня ${pct(m.armor)}" else "") +
+            "   манёвр ${if (m.maneuver >= 0) "+" else ""}${pct(m.maneuver)}"
+
+    private fun shipOffer(i: Int, m: ShipModel): View {
+        val c = card("⛵ ${m.name} · ${m.role}", "${m.description}\n${shipStats(m)}\nЦена: ${m.price.money()} 💰")
+        val cost = game.shipCost(i)
+        val reason = game.cantBuyShip(i)
+        val label = if (cost >= 0) "Купить: доплата ${cost.money()} 💰" else "Обменять: получите ${(-cost).money()} 💰"
+        val b = button(label, if (reason == null) GOOD_DARK else DISABLED) {
+            if (reason != null) {
+                toast(reason)
+                return@button
+            }
+            dialog().setTitle("Купить «${m.name}»?")
+                .setMessage(
+                    "Ваш корабль «${game.model.name}» уйдёт в зачёт за ${game.tradeInValue().money()} 💰.\n" +
+                        (if (cost >= 0) "Доплата: ${cost.money()} 💰." else "Вы получите ${(-cost).money()} 💰.") +
+                        "\n\nУлучшения и пушки остаются со старым кораблём, груз переносится."
+                )
+                .setPositiveButton("Купить") { _, _ ->
+                    if (game.buyShip(i)) {
+                        save()
+                        map.invalidate()
+                        refresh()
+                        toast("Теперь вы капитан корабля «${m.name}»!")
+                    }
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }
+        c.addView(b, LinearLayout.LayoutParams(MATCH, dpi(44)).apply { topMargin = dpi(10) })
+        return c
+    }
+
+    private fun actionCard(title: String, body: String, cost: Int?, buyLabel: String = "Купить", action: () -> Boolean): View {
         val c = card(title, body)
-        val label = if (cost == null) "Недоступно" else "Купить за ${cost.money()} 💰"
+        val label = if (cost == null) "Недоступно" else "$buyLabel за ${cost.money()} 💰"
         val b = button(label, if (cost != null && cost <= game.gold) GOOD_DARK else DISABLED) {
             if (cost == null) return@button
             if (action()) {

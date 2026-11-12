@@ -39,6 +39,53 @@ val PORTS = listOf(
     Port("Южный Форт", 0.76f, 0.88f, cheap = listOf(3, 5), dear = listOf(0, 1)),
 )
 
+/** Модель корабля и её базовые характеристики. */
+class ShipModel(
+    val name: String,
+    val role: String,
+    val description: String,
+    val price: Int,
+    val cargo: Int,
+    val speed: Double,
+    val hull: Int,
+    val cannonSlots: Int,
+    val wages: Int,
+    val armor: Double,       // доля урона, которую гасит корпус
+    val maneuver: Double,    // бонус к шансу уйти от погони
+    val upgradeBase: Int,    // цена первого уровня улучшения
+    val size: Float,         // размер на карте
+    val masts: Int,
+)
+
+val SHIPS = listOf(
+    ShipModel("Шхуна", "Стартовый корабль",
+        "Маленькая и вёрткая. Мало места в трюме и почти нет пушек.",
+        price = 2_000, cargo = 30, speed = 1.0, hull = 100, cannonSlots = 2, wages = 8,
+        armor = 0.0, maneuver = 0.10, upgradeBase = 500, size = 0.85f, masts = 2),
+    ShipModel("Каравелла", "Быстрый торговец",
+        "Самая быстрая из купеческих: короткие рейсы и лёгкий уход от пиратов.",
+        price = 4_500, cargo = 45, speed = 1.3, hull = 110, cannonSlots = 3, wages = 11,
+        armor = 0.0, maneuver = 0.15, upgradeBase = 700, size = 0.95f, masts = 3),
+    ShipModel("Бриг", "Универсал",
+        "Крепкий и надёжный: неплохой трюм, есть где поставить пушки.",
+        price = 6_000, cargo = 55, speed = 1.1, hull = 150, cannonSlots = 6, wages = 14,
+        armor = 0.10, maneuver = 0.05, upgradeBase = 900, size = 1.05f, masts = 2),
+    ShipModel("Флейт", "Грузовоз",
+        "Огромный трюм за небольшие деньги, но медленный и плохо вооружён.",
+        price = 11_000, cargo = 95, speed = 0.9, hull = 160, cannonSlots = 4, wages = 18,
+        armor = 0.10, maneuver = 0.0, upgradeBase = 1_300, size = 1.15f, masts = 3),
+    ShipModel("Фрегат", "Военный корабль",
+        "Быстрый, бронированный, с множеством пушек. Пираты его боятся.",
+        price = 20_000, cargo = 70, speed = 1.25, hull = 230, cannonSlots = 12, wages = 26,
+        armor = 0.25, maneuver = 0.05, upgradeBase = 2_000, size = 1.25f, masts = 3),
+    ShipModel("Галеон", "Плавучая крепость",
+        "Гигантский трюм и толстые борта. Неповоротлив, команда обходится дорого.",
+        price = 38_000, cargo = 150, speed = 0.95, hull = 300, cannonSlots = 14, wages = 34,
+        armor = 0.30, maneuver = -0.10, upgradeBase = 3_000, size = 1.4f, masts = 4),
+)
+
+const val MAX_UPGRADE = 3
+
 sealed class Event {
     object Pirates : Event()
     object Storm : Event()
@@ -55,8 +102,11 @@ class Game(private val rnd: Random = Random.Default) {
     var port = 4
     val cargo = IntArray(GOODS.size)
     val paid = DoubleArray(GOODS.size)   // сколько всего заплачено за товар в трюме
+    var shipModel = 0
     var holdLevel = 0
     var sailLevel = 0
+    var armorLevel = 0
+    var upgradeSpent = 0     // сколько вложено в улучшения текущего корабля
     var cannons = 0
     var hull = 100
     var piratesBeaten = 0
@@ -93,23 +143,62 @@ class Game(private val rnd: Random = Random.Default) {
     }
 
     // ---------- Корабль ----------
-    val capacity get() = 30 + 15 * holdLevel
-    val speed get() = 1.0 + 0.25 * sailLevel
+    val model get() = SHIPS[shipModel]
+    val capacity get() = (model.cargo * (1 + 0.2 * holdLevel)).roundToInt()
+    val speed get() = model.speed * (1 + 0.1 * sailLevel)
+    val maxHull get() = (model.hull * (1 + 0.15 * armorLevel)).roundToInt()
     val used get() = cargo.sum()
     val free get() = capacity - used
-    val wages get() = 8 + 3 * cannons
+    val wages get() = model.wages + 2 * cannons
     val boosted get() = day < boostUntil
     val effectiveSpeed get() = speed * (if (boosted) 1.5 else 1.0)
 
-    val holdUpgradeCost: Int? get() = if (holdLevel >= 4) null else 800 shl holdLevel
-    val sailUpgradeCost: Int? get() = if (sailLevel >= 4) null else 900 shl sailLevel
-    val cannonCost: Int? get() = if (cannons >= 6) null else 500 + 250 * cannons
-    val repairCost get() = (100 - hull) * 6
+    private fun upgradeCost(level: Int): Int? = if (level >= MAX_UPGRADE) null else model.upgradeBase shl level
+    val holdUpgradeCost get() = upgradeCost(holdLevel)
+    val sailUpgradeCost get() = upgradeCost(sailLevel)
+    val armorUpgradeCost get() = upgradeCost(armorLevel)
+    val cannonCost: Int? get() = if (cannons >= model.cannonSlots) null else 400 + 150 * cannons
+    val repairCost get() = (maxHull - hull) * 5
 
-    fun upgradeHold() = spend(holdUpgradeCost) { holdLevel++ }
-    fun upgradeSails() = spend(sailUpgradeCost) { sailLevel++ }
+    fun upgradeHold() = spend(holdUpgradeCost) { upgradeSpent += holdUpgradeCost!!; holdLevel++ }
+    fun upgradeSails() = spend(sailUpgradeCost) { upgradeSpent += sailUpgradeCost!!; sailLevel++ }
+    fun upgradeArmor(): Boolean {
+        val before = maxHull
+        return spend(armorUpgradeCost) {
+            upgradeSpent += armorUpgradeCost!!
+            armorLevel++
+            hull += maxHull - before
+        }
+    }
     fun buyCannon() = spend(cannonCost) { cannons++ }
-    fun repair() = if (hull < 100) spend(repairCost) { hull = 100 } else false
+    fun repair() = if (hull < maxHull) spend(repairCost) { hull = maxHull } else false
+
+    /** Сколько дадут за текущий корабль со всеми улучшениями и пушками. */
+    fun tradeInValue() = model.price / 2 + upgradeSpent / 2 + cannons * 200
+
+    /** Доплата за новый корабль (может быть отрицательной: тогда вы получаете деньги). */
+    fun shipCost(m: Int) = SHIPS[m].price - tradeInValue()
+
+    /** Почему нельзя купить корабль, или null, если можно. */
+    fun cantBuyShip(m: Int): String? = when {
+        m == shipModel -> "Это ваш корабль"
+        used > SHIPS[m].cargo -> "Груз не поместится в трюм (${SHIPS[m].cargo} мест). Сначала продайте часть товара"
+        shipCost(m) > gold -> "Не хватает золота"
+        else -> null
+    }
+
+    fun buyShip(m: Int): Boolean {
+        if (cantBuyShip(m) != null) return false
+        gold -= shipCost(m)
+        shipModel = m
+        holdLevel = 0
+        sailLevel = 0
+        armorLevel = 0
+        upgradeSpent = 0
+        cannons = 0
+        hull = maxHull
+        return true
+    }
 
     private inline fun spend(cost: Int?, action: () -> Unit): Boolean {
         if (cost == null || cost > gold) return false
@@ -177,7 +266,7 @@ class Game(private val rnd: Random = Random.Default) {
     }
 
     fun cargoValue() = GOODS.indices.sumOf { cargo[it] * sellPrice(it) }
-    fun netWorth() = gold + cargoValue()
+    fun netWorth() = gold + cargoValue() + (if (sunk) 0 else tradeInValue())
 
     // ---------- Время ----------
     private fun gaussian(): Double {
@@ -269,7 +358,9 @@ class Game(private val rnd: Random = Random.Default) {
         return "Ветер наполнил паруса! Следующие $d дн. корабль идёт в полтора раза быстрее."
     }
 
-    private fun damage(amount: Int) {
+    /** Урон в процентах «стандартного» корпуса; большие корабли и броня держат лучше. */
+    private fun damage(percent: Int): Int {
+        val amount = (percent / 100.0 * (100 + (maxHull - 100) * 0.5) * (1 - model.armor)).roundToInt().coerceAtLeast(1)
         hull -= amount
         if (hull <= 0) {
             hull = 0
@@ -278,19 +369,19 @@ class Game(private val rnd: Random = Random.Default) {
             cargo.fill(0)
             paid.fill(0.0)
         }
+        return amount
     }
 
     fun applyStorm(): String {
-        val dmg = 10 + rnd.nextInt(21)
         val carried = GOODS.indices.filter { cargo[it] > 0 }
-        var msg = "Шторм потрепал корабль: корпус −$dmg%."
-        if (carried.isNotEmpty()) {
+        val dmg = damage(10 + rnd.nextInt(21))
+        var msg = "Шторм потрепал корабль: корпус −$dmg."
+        if (carried.isNotEmpty() && !sunk) {
             val g = carried.random(rnd)
             val lost = (cargo[g] * (0.2 + rnd.nextDouble() * 0.2)).roundToInt().coerceAtLeast(1)
             removeCargo(g, lost)
             msg += "\nЗа борт смыло ${GOODS[g].emoji} ${GOODS[g].name}: $lost шт."
         }
-        damage(dmg)
         return msg
     }
 
@@ -306,12 +397,13 @@ class Game(private val rnd: Random = Random.Default) {
         return "Вы наткнулись на обломки торгового судна и подобрали ${GOODS[g].emoji} ${GOODS[g].name}: $q шт."
     }
 
-    val fightChance get() = (0.2 + 0.13 * cannons).coerceAtMost(0.95)
-    val fleeChance get() = (0.3 + 0.6 * (speed - 1.0)).coerceAtMost(0.9)
+    /** Пираты со временем становятся сильнее. */
+    val pirateStrength get() = 3 + day / 45
+    val fightChance get() = (0.15 + 0.8 * cannons / (cannons + pirateStrength).toDouble() + model.armor * 0.3).coerceAtMost(0.95)
+    val fleeChance get() = (0.3 + 0.6 * (effectiveSpeed - 1.0) + model.maneuver).coerceIn(0.05, 0.9)
     val pirateToll get() = (gold * 15 / 100).coerceAtLeast(50).coerceAtMost(gold)
 
     private fun pirateLoss(cargoShare: Double): String {
-        val dmg = 20 + rnd.nextInt(16)
         val goldLost = gold / 5
         gold -= goldLost
         var lostUnits = 0
@@ -320,18 +412,17 @@ class Game(private val rnd: Random = Random.Default) {
             lostUnits += l
             removeCargo(g, l)
         }
-        damage(dmg)
-        return "Пираты взяли корабль на абордаж.\nПотеряно: $goldLost 💰, $lostUnits ед. товара, корпус −$dmg%."
+        val dmg = damage(20 + rnd.nextInt(16))
+        return "Пираты взяли корабль на абордаж.\nПотеряно: $goldLost 💰, $lostUnits ед. товара, корпус −$dmg."
     }
 
     fun fightPirates(): String {
         return if (rnd.nextDouble() < fightChance) {
             val loot = 150 + rnd.nextInt(250) + day * 3
-            val dmg = 5 + rnd.nextInt(11)
             gold += loot
             piratesBeaten++
-            damage(dmg)
-            "Победа! Пираты бежали, бросив добычу.\n+$loot 💰, корпус −$dmg%."
+            val dmg = damage(5 + rnd.nextInt(11))
+            "Победа! Пираты бежали, бросив добычу.\n+$loot 💰, корпус −$dmg."
         } else {
             "Бой проигран. " + pirateLoss(0.5)
         }
@@ -351,10 +442,10 @@ class Game(private val rnd: Random = Random.Default) {
     fun title(): String {
         val w = netWorth()
         return when {
-            w < 2_000 -> "Юнга"
-            w < 10_000 -> "Матрос-торговец"
-            w < 30_000 -> "Купец"
-            w < 80_000 -> "Торговый магнат"
+            w < 3_000 -> "Юнга"
+            w < 12_000 -> "Матрос-торговец"
+            w < 35_000 -> "Купец"
+            w < 90_000 -> "Торговый магнат"
             else -> "Легенда морей"
         }
     }
