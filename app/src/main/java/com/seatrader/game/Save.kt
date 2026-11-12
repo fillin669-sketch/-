@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Сохранение игры в JSON (хранится в SharedPreferences). */
 object Save {
     fun toJson(g: Game): String = JSONObject().apply {
-        put("v", 1)
+        put("v", 2)
         put("gold", g.gold)
         put("day", g.day)
         put("port", g.port)
@@ -25,6 +25,13 @@ object Save {
         put("shock", matrix(g.shock.map { it.toList() }))
         put("shockUntil", matrix(g.shockUntil.map { it.toList() }))
         put("news", JSONArray(g.news))
+        put("atSea", g.atSea)
+        put("shipX", g.shipX.toDouble())
+        put("shipY", g.shipY.toDouble())
+        put("heading", g.heading.toDouble())
+        put("dayProgress", g.dayProgress)
+        put("boostUntil", g.boostUntil)
+        put("cooldown", g.eventCooldown)
     }.toString()
 
     private fun matrix(rows: List<List<Number>>) = JSONArray().apply { rows.forEach { put(JSONArray(it)) } }
@@ -60,6 +67,13 @@ object Save {
             news.clear()
             val n = o.getJSONArray("news")
             for (i in 0 until n.length()) news += n.getString(i)
+            atSea = o.optBoolean("atSea", false)
+            shipX = o.optDouble("shipX", PORTS[port].x.toDouble()).toFloat()
+            shipY = o.optDouble("shipY", PORTS[port].y + 0.05).toFloat()
+            heading = o.optDouble("heading", -Math.PI / 2).toFloat()
+            dayProgress = o.optDouble("dayProgress", 0.0)
+            boostUntil = o.optInt("boostUntil", 0)
+            eventCooldown = o.optInt("cooldown", 3)
         }
     } catch (e: Exception) {
         null

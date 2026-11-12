@@ -19,7 +19,7 @@ import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), MapView.Listener {
 
     private enum class Screen { MARKET, SHIPYARD, MAP }
 
@@ -33,10 +33,9 @@ class MainActivity : Activity() {
     private val navButtons = HashMap<Screen, Button>()
 
     private var screen = Screen.MARKET
-    private var traveling = false
-    private var dayOverride: Int? = null
+    private var endShown = false
     private var mapInfo: TextView? = null
-    private var sailButton: Button? = null
+    private var dockButton: Button? = null
 
     private val dp get() = resources.displayMetrics.density
 
@@ -48,7 +47,7 @@ class MainActivity : Activity() {
 
         map = MapView(this).apply {
             game = this@MainActivity.game
-            onSelect = { renderMapInfo() }
+            listener = this@MainActivity
         }
 
         statusTop = text("", 16f, TEXT, bold = true)
@@ -69,7 +68,10 @@ class MainActivity : Activity() {
             setPadding(dpi(8), dpi(6), dpi(8), dpi(8))
         }
         for ((s, label) in listOf(Screen.MARKET to "🏪 Рынок", Screen.SHIPYARD to "🛠 Верфь", Screen.MAP to "🗺 Карта")) {
-            val b = button(label, CARD) { show(s) }
+            val b = button(label, CARD) {
+                if (game.atSea && s != Screen.MAP) toast("Вы в море. Зайдите в порт, чтобы торговать и чинить корабль")
+                else show(s)
+            }
             navButtons[s] = b
             nav.addView(b, LinearLayout.LayoutParams(0, dpi(48), 1f).apply { setMargins(dpi(4), 0, dpi(4), 0) })
         }
@@ -84,7 +86,7 @@ class MainActivity : Activity() {
         }
         setContentView(root)
 
-        show(Screen.MARKET)
+        show(if (game.atSea) Screen.MAP else Screen.MARKET)
         when {
             game.over -> showEndDialog()
             saved == null -> showIntro()
@@ -93,7 +95,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        if (!traveling) save()
+        save()
     }
 
     private fun save() {
@@ -101,14 +103,11 @@ class MainActivity : Activity() {
     }
 
     private fun newGame() {
-        map.stopVoyage()
-        traveling = false
-        dayOverride = null
+        endShown = false
         game = Game()
         map.game = game
+        map.paused = false
         map.selected = -1
-        map.interactive = true
-        nav.visibility = View.VISIBLE
         save()
         show(Screen.MARKET)
         showIntro()
@@ -121,7 +120,7 @@ class MainActivity : Activity() {
         for ((key, b) in navButtons) b.background = rounded(if (key == s) ACCENT_DARK else CARD, 12f)
         content.removeAllViews()
         mapInfo = null
-        sailButton = null
+        dockButton = null
         val view = when (s) {
             Screen.MARKET -> marketScreen()
             Screen.SHIPYARD -> shipyardScreen()
@@ -131,14 +130,12 @@ class MainActivity : Activity() {
         renderStatus()
     }
 
-    private fun refresh() {
-        if (!traveling) show(screen)
-    }
+    private fun refresh() = show(screen)
 
     private fun renderStatus() {
-        val day = dayOverride ?: game.day
-        statusTop.text = "💰 ${game.gold.money()}     📅 День ${day.coerceAtMost(MAX_DAY)} из $MAX_DAY"
-        val where = if (traveling) "в море" else PORTS[game.port].name
+        statusTop.text = "💰 ${game.gold.money()}     📅 День ${game.day.coerceAtMost(MAX_DAY)} из $MAX_DAY" +
+            (if (game.boosted) "   🌬" else "")
+        val where = if (game.atSea) "в море" else PORTS[game.port].name
         statusBottom.text = "📦 ${game.used}/${game.capacity}   🛠 Корпус ${game.hull}%   ⚓ $where"
         statusBottom.setTextColor(if (game.hull < 35) DANGER else MUTED)
     }
@@ -266,9 +263,9 @@ class MainActivity : Activity() {
         col.addView(mapFrame, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
         val info = text("", 14.5f, TEXT)
-        val btn = button("⛵ Отплыть", GOOD_DARK) {
-            val to = map.selected
-            if (to >= 0 && to != game.port) sail(to)
+        val btn = button("", GOOD_DARK) {
+            val p = map.nearPort
+            if (p >= 0 && game.atSea) dock(p)
         }
         val panel = column(padded = false).apply {
             background = rounded(CARD, 14f)
@@ -278,30 +275,66 @@ class MainActivity : Activity() {
         }
         col.addView(panel, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dpi(10) })
         mapInfo = info
-        sailButton = btn
+        dockButton = btn
         renderMapInfo()
         return col
     }
 
     private fun renderMapInfo() {
         val info = mapInfo ?: return
-        val btn = sailButton ?: return
-        val to = map.selected
-        if (traveling) return
-        if (to < 0 || to == game.port) {
-            info.text = "Вы в порту «${PORTS[game.port].name}».\nНажмите на другой порт на карте, чтобы проложить курс."
-            btn.visibility = View.GONE
-            return
+        val btn = dockButton ?: return
+        val lines = ArrayList<String>()
+        if (!game.atSea) {
+            lines += "⚓ Вы в порту «${PORTS[game.port].name}»."
+            lines += "Коснитесь карты и тяните палец в сторону, куда плыть."
+        } else {
+            lines += "🌊 Открытое море · жалованье ${game.wages} 💰 в день"
+            if (game.boosted) lines += "🌬 Попутный ветер ещё ${game.boostUntil - game.day} дн."
         }
-        val p = PORTS[to]
-        val days = game.travelDays(to)
-        var s = "Курс: ${p.name}\n" +
-            "В пути: $days дн.  ·  Жалованье: ${(days * game.wages).money()} 💰\n" +
-            "Обычно дёшево: ${names(p.cheap)}\nОбычно дорого: ${names(p.dear)}"
-        if (game.day + days >= MAX_DAY) s += "\n⚠ Торговый сезон закончится в пути!"
-        if (game.hull < 35) s += "\n⚠ Корпус сильно повреждён. Загляните на верфь!"
-        info.text = s
-        btn.visibility = View.VISIBLE
+        val to = map.selected
+        if (to >= 0 && !(to == game.port && !game.atSea)) {
+            val p = PORTS[to]
+            lines += "🧭 До «${p.name}» ≈ ${game.daysTo(to, map.aspect)} дн."
+            lines += "Обычно дёшево: ${names(p.cheap)}"
+            lines += "Обычно дорого: ${names(p.dear)}"
+        } else if (to < 0) {
+            lines += "Нажмите на порт, чтобы увидеть курс и его товары."
+        }
+        if (game.hull < 35) lines += "⚠ Корпус сильно повреждён. Зайдите на верфь!"
+        if (MAX_DAY - game.day <= 20) lines += "⏳ До конца сезона ${MAX_DAY - game.day} дн."
+        info.text = lines.joinToString("\n")
+
+        val near = map.nearPort
+        if (game.atSea && near >= 0) {
+            btn.text = "⚓ Зайти в порт «${PORTS[near].name}»"
+            btn.visibility = View.VISIBLE
+        } else {
+            btn.visibility = View.GONE
+        }
+    }
+
+    // ---------- События карты ----------
+
+    override fun onSelect(port: Int) = renderMapInfo()
+
+    override fun onDeparted() {
+        renderStatus()
+        renderMapInfo()
+    }
+
+    override fun onDayPassed() {
+        renderStatus()
+        renderMapInfo()
+        if (game.over) showEndDialog()
+    }
+
+    override fun onNearPortChanged(port: Int) = renderMapInfo()
+
+    override fun onEvent(event: Event) {
+        handleEvent(event) {
+            save()
+            if (game.over) showEndDialog() else map.paused = false
+        }
     }
 
     // ---------------- Торговля ----------------
@@ -368,46 +401,6 @@ class MainActivity : Activity() {
 
     // ---------------- Плавание ----------------
 
-    private fun sail(to: Int) {
-        save()
-        val v = game.planVoyage(to)
-        traveling = true
-        nav.visibility = View.GONE
-        map.interactive = false
-        sailButton?.visibility = View.GONE
-        val startDay = game.day
-        val totalMs = (v.days * 170L).coerceIn(1800L, 5500L)
-        val ef = if (v.event != null) v.eventDay.toFloat() / v.days else 1f
-
-        val progress: (Float) -> Unit = { f ->
-            dayOverride = startDay + (f * v.days).toInt()
-            renderStatus()
-            mapInfo?.text = "⛵ Плывём в «${PORTS[v.to].name}»…\nДень пути ${(f * v.days).toInt().coerceAtLeast(1)} из ${v.days}"
-        }
-        val finish = {
-            game.advance(v.days - (if (v.event != null) v.eventDay else 0))
-            arrive(v)
-        }
-
-        map.animateVoyage(v.from, v.to, 0f, ef, (totalMs * ef).toLong(), progress) {
-            val ev = v.event
-            if (ev == null) {
-                finish()
-            } else {
-                game.advance(v.eventDay)
-                dayOverride = null
-                renderStatus()
-                handleEvent(ev) {
-                    if (game.over) {
-                        shipwreck()
-                    } else {
-                        map.animateVoyage(v.from, v.to, ef, 1f, (totalMs * (1 - ef)).toLong(), progress) { finish() }
-                    }
-                }
-            }
-        }
-    }
-
     private fun handleEvent(ev: Event, then: () -> Unit) {
         val showResult = { title: String, msg: String ->
             renderStatus()
@@ -432,32 +425,17 @@ class MainActivity : Activity() {
             }
             is Event.Storm -> showResult("🌊 Шторм!", game.applyStorm())
             is Event.Wreckage -> showResult("🪵 Находка", game.applyWreckage())
-            is Event.Wind -> showResult("🌬 Попутный ветер", "Ветер наполнил паруса: путь короче на ${ev.savedDays} дн.!")
+            is Event.Wind -> showResult("🌬 Попутный ветер", game.applyWind())
         }
     }
 
-    private fun arrive(v: Voyage) {
-        game.arrive(v.to)
-        map.stopVoyage()
-        traveling = false
-        dayOverride = null
+    private fun dock(p: Int) {
+        game.dock(p)
         map.selected = -1
-        map.interactive = true
-        nav.visibility = View.VISIBLE
+        map.placeShipAtPort()
         save()
         show(Screen.MARKET)
-        if (game.over) showEndDialog() else toast("Прибыли в порт «${PORTS[v.to].name}»")
-    }
-
-    private fun shipwreck() {
-        map.stopVoyage()
-        traveling = false
-        dayOverride = null
-        map.interactive = true
-        nav.visibility = View.VISIBLE
-        save()
-        show(Screen.MARKET)
-        showEndDialog()
+        toast("Добро пожаловать в «${PORTS[p].name}»!")
     }
 
     // ---------------- Диалоги ----------------
@@ -467,8 +445,9 @@ class MainActivity : Activity() {
             .setMessage(
                 "У вас небольшой парусник, $START_GOLD золотых и $MAX_DAY дней торгового сезона.\n\n" +
                     "• Покупайте товары там, где они дёшевы, и везите туда, где они в цене.\n" +
-                    "• На карте видно, что где обычно дёшево и дорого, а слухи в таверне подскажут, где выгоднее сейчас.\n" +
-                    "• Каждый день в море стоит денег: команде надо платить.\n" +
+                    "• В море управляйте кораблём джойстиком: коснитесь карты и тяните палец. У порта появится кнопка «Зайти в порт».\n" +
+                    "• Нажмите на порт на карте, чтобы узнать, что там дёшево и дорого. Слухи в таверне подскажут, где выгоднее сейчас.\n" +
+                    "• Пока вы в море, идут дни, а команде каждый день надо платить.\n" +
                     "• Берегитесь штормов и пиратов. На верфи можно чинить и улучшать корабль.\n\n" +
                     "Цель: к концу сезона стать самым богатым купцом архипелага!"
             )
@@ -477,6 +456,9 @@ class MainActivity : Activity() {
     }
 
     private fun showEndDialog() {
+        if (endShown) return
+        endShown = true
+        map.paused = true
         val worth = game.netWorth()
         val best = prefs.getInt("best", 0)
         if (worth > best) prefs.edit().putInt("best", worth).apply()

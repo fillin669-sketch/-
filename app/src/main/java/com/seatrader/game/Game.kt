@@ -43,10 +43,11 @@ sealed class Event {
     object Pirates : Event()
     object Storm : Event()
     object Wreckage : Event()
-    class Wind(val savedDays: Int) : Event()
+    object Wind : Event()
 }
 
-class Voyage(val from: Int, val to: Int, val days: Int, val event: Event?, val eventDay: Int)
+/** Сколько дней занимает путь длиной в ширину карты при скорости 1. */
+const val DAYS_PER_UNIT = 32.0
 
 class Game(private val rnd: Random = Random.Default) {
     var gold = START_GOLD
@@ -62,6 +63,15 @@ class Game(private val rnd: Random = Random.Default) {
     var voyages = 0
     var over = false
     var sunk = false
+
+    // Свободное плавание: положение корабля в долях карты.
+    var atSea = false
+    var shipX = PORTS[4].x
+    var shipY = PORTS[4].y + 0.05f
+    var heading = -Math.PI.toFloat() / 2
+    var dayProgress = 0.0
+    var boostUntil = 0
+    var eventCooldown = 3
 
     val price = Array(PORTS.size) { DoubleArray(GOODS.size) }
     val baseEq = Array(PORTS.size) { DoubleArray(GOODS.size) }
@@ -88,6 +98,8 @@ class Game(private val rnd: Random = Random.Default) {
     val used get() = cargo.sum()
     val free get() = capacity - used
     val wages get() = 8 + 3 * cannons
+    val boosted get() = day < boostUntil
+    val effectiveSpeed get() = speed * (if (boosted) 1.5 else 1.0)
 
     val holdUpgradeCost: Int? get() = if (holdLevel >= 4) null else 800 shl holdLevel
     val sailUpgradeCost: Int? get() = if (sailLevel >= 4) null else 900 shl sailLevel
@@ -184,6 +196,7 @@ class Game(private val rnd: Random = Random.Default) {
             price[p][g] = pr.coerceIn(GOODS[g].base * 0.25, GOODS[g].base * 4.0)
         }
         if (rnd.nextDouble() < 0.05) spawnRumor()
+        if (day >= MAX_DAY) over = true
     }
 
     private fun spawnRumor() {
@@ -200,37 +213,60 @@ class Game(private val rnd: Random = Random.Default) {
     }
 
     // ---------- Плавание ----------
-    fun distance(a: Int, b: Int): Double {
-        val dx = (PORTS[a].x - PORTS[b].x).toDouble()
-        val dy = (PORTS[a].y - PORTS[b].y) * 0.85
-        return sqrt(dx * dx + dy * dy)
+    /** Примерное число дней пути до порта [to] от текущего места корабля; aspect = высота/ширина карты. */
+    fun daysTo(to: Int, aspect: Float): Int {
+        val dx = (PORTS[to].x - shipX).toDouble()
+        val dy = ((PORTS[to].y - shipY) * aspect).toDouble()
+        return ceil(sqrt(dx * dx + dy * dy) * DAYS_PER_UNIT / effectiveSpeed).toInt().coerceAtLeast(1)
     }
 
-    fun travelDays(to: Int, from: Int = port) = ceil(distance(from, to) * 32 / speed).toInt().coerceAtLeast(1)
+    fun leavePort() {
+        if (atSea) return
+        atSea = true
+        eventCooldown = 2
+    }
 
-    fun planVoyage(to: Int): Voyage {
-        var days = travelDays(to)
-        var event: Event? = null
-        if (rnd.nextDouble() < (0.045 * days).coerceAtMost(0.8)) {
-            val r = rnd.nextDouble()
-            event = when {
-                r < 0.42 -> Event.Pirates
-                r < 0.72 -> Event.Storm
-                r < 0.87 || days < 3 -> Event.Wreckage
-                else -> Event.Wind(1 + rnd.nextInt((days / 3).coerceAtLeast(1)))
+    /**
+     * Корабль прошёл [units] (в ширинах карты). Отсчитывает дни пути
+     * и возвращает событие, если оно случилось.
+     */
+    fun sail(units: Double): Event? {
+        if (over || !atSea) return null
+        dayProgress += units * DAYS_PER_UNIT / effectiveSpeed
+        while (dayProgress >= 1.0) {
+            dayProgress -= 1.0
+            tickDay()
+            if (over) return null
+            if (eventCooldown > 0) {
+                eventCooldown--
+                continue
+            }
+            if (rnd.nextDouble() < 0.04) {
+                eventCooldown = 4
+                val r = rnd.nextDouble()
+                return when {
+                    r < 0.42 -> Event.Pirates
+                    r < 0.70 -> Event.Storm
+                    r < 0.86 -> Event.Wreckage
+                    else -> Event.Wind
+                }
             }
         }
-        if (event is Event.Wind) days -= event.savedDays
-        val eventDay = if (event == null) days else 1 + rnd.nextInt(days)
-        return Voyage(port, to, days, event, eventDay)
+        return null
     }
 
-    fun advance(days: Int) = repeat(days) { tickDay() }
-
-    fun arrive(to: Int) {
-        port = to
+    fun dock(p: Int) {
+        port = p
+        atSea = false
         voyages++
-        if (day >= MAX_DAY) over = true
+        shipX = PORTS[p].x
+        shipY = PORTS[p].y + 0.05f
+    }
+
+    fun applyWind(): String {
+        val d = 4 + rnd.nextInt(5)
+        boostUntil = day + d
+        return "Ветер наполнил паруса! Следующие $d дн. корабль идёт в полтора раза быстрее."
     }
 
     private fun damage(amount: Int) {
