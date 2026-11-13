@@ -66,6 +66,11 @@ class Menus(private val g: SeaGame) {
     private fun fitList(content: Table, panelW: Float) {
         val cw = panelW - 28f - 6f
         for (cell in content.cells) cell.width(cw).minWidth(0f)
+        wrapLabels(content)
+    }
+
+    /** Подписи без переноса внутри карточек — с переносом, чтобы не вылезали за края. */
+    private fun wrapLabels(content: Table) {
         fun walk(t: Table) {
             for (cell in t.cells) {
                 val a = cell.actor
@@ -225,6 +230,7 @@ class Menus(private val g: SeaGame) {
             // содержимое строго по ширине панели: на узких экранах ничего не вылезает за края
             val contentW = (if (landscape) min(g.wDp * 0.5f, 540f) else g.wDp - 12f) - 20f
             for (cell in content.cells) cell.width(contentW).minWidth(0f)
+            wrapLabels(content)
             val sc = ScrollPane(content, ui.scrollStyle)
             sc.setScrollingDisabled(true, false)
             sc.setFadeScrollBars(true)
@@ -403,34 +409,41 @@ class Menus(private val g: SeaGame) {
 
     private fun paintCards(content: Table) {
         val ed = card(0x2b1d12)
-        ed.add(ui.label("Свой флаг и узор парусов", ui.big)).left().row()
-        ed.add(ui.label("Нарисуйте флаг пальцем и выберите узор парусов — всё сразу видно на корабле в доке.", ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+        ed.add(ui.label("Свой флаг и узор парусов", ui.big, wrap = true)).growX().row()
+        ed.add(ui.label("Нарисуйте флаг 16×12, выберите форму и размер, узор парусов — всё сразу видно на корабле в доке.", ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
         val row = Table()
-        row.add(ui.blue("✎ Флаг").also { it.onClick { open(SeaGame.State.PORT) { buildFlagEditor() } } }).growX().height(46f).padRight(6f)
-        row.add(ui.blue("✎ Паруса").also { it.onClick { open(SeaGame.State.PORT) { buildSailEditor() } } }).growX().height(46f)
+        row.add(ui.blue("✎ Флаг").also { it.onClick { openFlagEditor() } }).growX().height(46f).padRight(6f)
+        row.add(ui.blue("✎ Паруса").also { it.onClick { openSailEditor() } }).growX().height(46f)
         ed.add(row).growX().padTop(8f).row()
         content.add(ed).growX().padBottom(10f).row()
+        // кайма корпуса — бесплатно, сразу видно в доке
+        val tc = card()
+        tc.add(ui.label("Цвет каймы корпуса", ui.big, wrap = true)).growX().row()
+        tc.add(ui.label("Полоса вдоль борта, надстройки и украшения. ✕ — родной цвет корабля.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().padBottom(4f).row()
+        tc.add(paletteTable(g.trimIdx, min(g.wDp - 16, 480f) - 60f) { g.trimIdx = it; g.rebuildPlayer(); g.save(); refreshPort() }).row()
         for ((title, list, owned, selected) in listOf(
+            Quad("Цвет корпуса", HULL_PAINTS, g.ownedHulls, g.hullIdx),
             Quad("Цвет парусов", SAIL_COLORS, g.ownedSails, g.sailIdx),
             Quad("Цвет флага", FLAG_COLORS, g.ownedFlags, g.flagIdx),
         )) {
+            if (list === SAIL_COLORS) content.add(tc).growX().padBottom(10f).row()
             val c = card()
             c.add(ui.label(title, ui.big)).left().colspan(2).row()
             for ((i, paint) in list.withIndex()) {
                 val row = Table()
-                val color = if (paint.color < 0) g.playerDef().look.flag else if (i == 0 && list === SAIL_COLORS) g.playerDef().look.sail else paint.color
+                val color = if (paint.color < 0) (if (list === HULL_PAINTS) g.playerDef().look.hull else g.playerDef().look.flag) else if (i == 0 && list === SAIL_COLORS) g.playerDef().look.sail else paint.color
                 row.add(Swatch(ui, color, i == selected)).size(34f).padRight(10f)
                 row.add(ui.label(paint.name, ui.mid)).growX().left()
-                val isSails = list === SAIL_COLORS
+                val kind = if (list === SAIL_COLORS) 0 else if (list === FLAG_COLORS) 1 else 2
                 val btn: TextButton = when {
                     i == selected -> ui.gray("✓").also { it.isDisabled = true }
-                    i in owned -> ui.blue("Выбрать").also { it.onClick { applyPaint(isSails, i) } }
+                    i in owned -> ui.blue("Выбрать").also { it.onClick { applyPaint(kind, i) } }
                     else -> priceButton(fmt(paint.price), 0, g.coins >= paint.price).also {
                         it.onClick {
                             if (g.coins < paint.price) { g.toast("Не хватает монет"); return@onClick }
                             g.coins -= paint.price
                             owned += i
-                            applyPaint(isSails, i)
+                            applyPaint(kind, i)
                             g.sfx.play("coin")
                         }
                     }
@@ -444,8 +457,8 @@ class Menus(private val g: SeaGame) {
 
     private data class Quad(val title: String, val list: List<Paint>, val owned: MutableSet<Int>, val selected: Int)
 
-    private fun applyPaint(sails: Boolean, i: Int) {
-        if (sails) g.sailIdx = i else g.flagIdx = i
+    private fun applyPaint(kind: Int, i: Int) {
+        when (kind) { 0 -> g.sailIdx = i; 1 -> g.flagIdx = i; else -> g.hullIdx = i }
         g.rebuildPlayer()
         g.save()
         refreshPort()
@@ -913,125 +926,205 @@ class Menus(private val g: SeaGame) {
     // ===================== Редактор флага и парусов =====================
     private var editPix = CharArray(FLAG_W * FLAG_H) { '.' }
     private var brush = 1
+    private var fillMode = false
+    private var mirror = false
+    private var editShape = 0
+    private var editSize = 0
+    private var editorScroll = 0f
 
     private inner class FlagGrid : Actor() {
+        private var lastCell = -1
         init {
             addListener(object : com.badlogic.gdx.scenes.scene2d.InputListener() {
-                override fun touchDown(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean { paint(x, y); return true }
-                override fun touchDragged(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int) { paint(x, y) }
+                override fun touchDown(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean { lastCell = -1; paint(x, y, true); return true }
+                override fun touchDragged(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int) { if (!fillMode) paint(x, y, false) }
             })
         }
-        fun paint(x: Float, y: Float) {
+        fun paint(x: Float, y: Float, down: Boolean) {
             val cx = (x / width * FLAG_W).toInt(); val cy = ((height - y) / height * FLAG_H).toInt()
-            if (cx in 0 until FLAG_W && cy in 0 until FLAG_H) editPix[cy * FLAG_W + cx] = flagPixChar(brush)
+            if (cx !in 0 until FLAG_W || cy !in 0 until FLAG_H) return
+            val cell = cy * FLAG_W + cx
+            if (cell == lastCell) return
+            lastCell = cell
+            val ch = flagPixChar(brush)
+            if (fillMode && down) {
+                fill(cx, cy, ch)
+                if (mirror) fill(FLAG_W - 1 - cx, cy, ch)
+            } else {
+                editPix[cell] = ch
+                if (mirror) editPix[cy * FLAG_W + (FLAG_W - 1 - cx)] = ch
+            }
+        }
+        /** Заливка области одного цвета. */
+        private fun fill(sx: Int, sy: Int, ch: Char) {
+            val from = editPix[sy * FLAG_W + sx]
+            if (from == ch) return
+            val stack = ArrayDeque<Int>(); stack.addLast(sy * FLAG_W + sx)
+            while (stack.isNotEmpty()) {
+                val c = stack.removeLast()
+                if (editPix[c] != from) continue
+                editPix[c] = ch
+                val x = c % FLAG_W; val y = c / FLAG_W
+                if (x > 0) stack.addLast(c - 1); if (x < FLAG_W - 1) stack.addLast(c + 1)
+                if (y > 0) stack.addLast(c - FLAG_W); if (y < FLAG_H - 1) stack.addLast(c + FLAG_W)
+            }
         }
         override fun draw(batch: Batch, parentAlpha: Float) {
             val base = g.playerLook().flag
             val cw = width / FLAG_W; val ch = height / FLAG_H
             ui.rect(batch, x - 3, y - 3, width + 6, height + 6, rgb(0x3e2723))
             for (fy in 0 until FLAG_H) for (fx in 0 until FLAG_W) {
-                val c = flagPixColor(editPix[fy * FLAG_W + fx]).let { if (it < 0) base else it }
-                ui.rect(batch, x + fx * cw + 1, y + height - (fy + 1) * ch + 1, cw - 2, ch - 2, rgb(c))
+                val vis = flagCellVisible(editShape, fx, fy)
+                val c = if (!vis) 0x0b1a28 else flagPixColor(editPix[fy * FLAG_W + fx]).let { if (it < 0) base else it }
+                ui.rect(batch, x + fx * cw + 0.5f, y + height - (fy + 1) * ch + 0.5f, cw - 1f, ch - 1f, rgb(c, if (vis) 1f else 0.5f))
             }
+            if (mirror) ui.rect(batch, x + width / 2 - 1f, y, 2f, height, rgb(0xffffff, 0.5f))
             batch.color = Color.WHITE
         }
     }
 
-    private fun buildFlagEditor() {
-        stage.clear()
-        if (g.flagPix.length == FLAG_W * FLAG_H) editPix = g.flagPix.toCharArray() else if (editPix.all { it == '.' }) editPix = CharArray(FLAG_W * FLAG_H) { '.' }
+    /** Ряд кнопок-переключателей (выбранная — голубая). */
+    private fun choiceRow(names: List<String>, sel: Int, perRow0: Int, onPick: (Int) -> Unit): Table {
+        val t = Table()
+        val avail = min(g.wDp - 16, 480f) - 36f
+        val longest = names.maxOf { ui.measure(ui.small, it) } + 16f
+        val perRow = perRow0.coerceAtMost((avail / longest).toInt().coerceAtLeast(1))
+        for ((i, n) in names.withIndex()) {
+            val b = if (i == sel) ui.button(n, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(n, 0x164266, 0x123a5c, ui.small)
+            b.onClick { onPick(i) }
+            t.add(b).growX().uniformX().minWidth(0f).height(36f).pad(2f)
+            if (i % perRow == perRow - 1) t.row()
+        }
+        return t
+    }
+
+    /** Палитра: ✕ (основа) и цвета FLAG_PALETTE по 7 в ряд. */
+    private fun paletteTable(sel: Int, w: Float, onPick: (Int) -> Unit): Table {
+        val pal = Table()
+        val sz = min(40f, (w - 16f) / 7f - 4f)
+        for (i in -1 until FLAG_PALETTE.size) {
+            val mark = if (i == sel) "✓" else if (i < 0) "✕" else " "
+            val sw = if (i < 0) ui.button(mark, 0x37474f, 0x263238, ui.small) else ui.button(mark, FLAG_PALETTE[i], FLAG_PALETTE[i], ui.small)
+            sw.onClick { onPick(i) }
+            pal.add(sw).size(sz, 34f).pad(2f)
+            if ((i + 2) % 7 == 0) pal.row()
+        }
+        return pal
+    }
+
+    /** Редактор с прокруткой: [top] — неподвижная часть (холст), [body] — настройки, [bottom] — кнопки. */
+    private fun editorPanel(title: String, top: Actor?, topW: Float, topH: Float, body: Table, bottom: Table) {
         val root = overlay()
         val panel = panelTable()
-        panel.add(ui.label("✎ Свой флаг", ui.big, align = Align.center)).growX().row()
-        panel.add(ui.label("Проведите пальцем по клеткам. Ластик — цвет основы флага (его меняют во вкладке «Вид»).", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(6f).row()
-        val gw = min(g.wDp - 60f, 320f)
-        panel.add(FlagGrid()).size(gw, gw * FLAG_H / FLAG_W).padBottom(8f).row()
-        val pal = Table()
-        for (i in -1 until FLAG_PALETTE.size) {
-            val sw = if (i < 0) ui.button("✕", 0x37474f, 0x263238, ui.small) else ui.button(" ", FLAG_PALETTE[i], FLAG_PALETTE[i], ui.small)
-            if (i == brush) sw.label.setText(if (i < 0) "✕" else "✓")
-            sw.onClick { brush = i; buildFlagEditor0() }
-            pal.add(sw).size(min(36f, (g.wDp - 60f) / 7f), 34f).pad(2f)
-            if (i == 5) pal.row()
-        }
-        panel.add(pal).padBottom(6f).row()
-        val tpl = Table()
-        for ((k, t) in FLAG_TEMPLATES.withIndex()) {
-            tpl.add(ui.button(t.first, 0x164266, 0x123a5c, ui.small).also { it.onClick { editPix = t.second.joinToString("").toCharArray(); buildFlagEditor0() } }).growX().height(34f).pad(2f)
-            if (k == 2) tpl.row()
-        }
-        panel.add(tpl).growX().padBottom(6f).row()
+        val panelW = min(g.wDp - 16, 480f)
+        panel.add(ui.label(title, ui.big, align = Align.center)).growX().row()
+        if (top != null) panel.add(top).size(topW, topH).pad(8f, 0f, 10f, 0f).row()
+        fitList(body, panelW)
+        val scroll = ScrollPane(body, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        panel.add(bottom).growX().padTop(6f).row()
+        root.add(panel).width(panelW).height(g.hDp - g.safeTop - g.safeBottom - 16)
+        root.validate()
+        scroll.scrollY = editorScroll; scroll.updateVisualScroll()
+        scrollRef = scroll
+    }
+
+    private fun rememberScroll() { editorScroll = scrollRef?.scrollY ?: 0f }
+
+    private fun openFlagEditor() {
+        editPix = if (g.flagPix.length == FLAG_W * FLAG_H) g.flagPix.toCharArray() else CharArray(FLAG_W * FLAG_H) { '.' }
+        editShape = g.flagShape; editSize = g.flagSize; editorScroll = 0f
+        open(SeaGame.State.PORT) { buildFlagEditor() }
+    }
+
+    private fun buildFlagEditor() {
+        stage.clear()
+        val panelW = min(g.wDp - 16, 480f)
+        val gw = panelW - 40f
+        val body = Table().top()
+        fun redraw() { rememberScroll(); buildFlagEditor() }
+        fun section(t: String) = body.add(ui.label(t, ui.small, rgb(0xffc93c))).left().padTop(8f).row()
+        body.add(ui.label("Рисуйте пальцем по клеткам. ✕ — цвет основы флага (меняется в «Вид», раздел «Цвет флага»).", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().row()
+        section("Инструмент")
+        body.add(choiceRow(listOf("✎ Кисть", "Заливка", if (mirror) "Зеркало ✓" else "Зеркало"), if (fillMode) 1 else 0, 3) { k ->
+            when (k) { 0 -> fillMode = false; 1 -> fillMode = true; else -> mirror = !mirror }
+            redraw()
+        }).growX().row()
+        section("Цвет")
+        body.add(paletteTable(brush, gw) { brush = it; redraw() }).row()
+        section("Форма флага")
+        body.add(choiceRow(FLAG_SHAPES, editShape, 3) { editShape = it; redraw() }).growX().row()
+        section("Размер флага")
+        body.add(choiceRow(FLAG_SIZES, editSize, 3) { editSize = it; redraw() }).growX().row()
+        section("Шаблоны")
+        body.add(choiceRow(FLAG_TEMPLATES.map { it.first }, -1, 3) { k -> editPix = FLAG_TEMPLATES[k].second.toCharArray(); redraw() }).growX().row()
+        val bottom = Table()
         val row = Table()
-        row.add(ui.gray("Очистить").also { it.onClick { editPix = CharArray(FLAG_W * FLAG_H) { '.' }; buildFlagEditor0() } }).growX().height(46f).padRight(6f)
+        row.add(ui.gray("Очистить").also { it.onClick { editPix = CharArray(FLAG_W * FLAG_H) { '.' }; redraw() } }).growX().height(46f).padRight(6f)
         row.add(ui.green("Поднять флаг").also {
             it.onClick {
                 g.flagPix = if (editPix.all { c -> c == '.' }) "" else String(editPix)
+                g.flagShape = editShape; g.flagSize = editSize
                 g.rebuildPlayer(); g.save(); g.toast("Новый флаг поднят!", 1.5f)
                 portTab = 6; g.portView.select(6); current = { buildPort() }; buildPort()
             }
         }).growX().height(46f)
-        panel.add(row).growX().row()
-        panel.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
-        root.add(panel).width(min(g.wDp - 16, 460f))
+        bottom.add(row).growX().row()
+        bottom.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
+        editorPanel("✎ Свой флаг", FlagGrid(), gw, gw * FLAG_H / FLAG_W, body, bottom)
     }
-
-    /** Перерисовать редактор, сохранив текущие клетки. */
-    private fun buildFlagEditor0() { val keep = editPix; val fp = g.flagPix; g.flagPix = String(keep); buildFlagEditor(); g.flagPix = fp; editPix = keep }
 
     private var editPat = 0
     private var editSail2 = -1
+    private var editScale = 1
 
     private inner class SailPreview : Actor() {
         override fun draw(batch: Batch, parentAlpha: Float) {
             val look = g.playerLook()
             val c1 = look.sail
             val second = if (editSail2 >= 0) FLAG_PALETTE[editSail2] else look.flag
-            val nx = 24; val ny = 16
+            val nx = 30; val ny = 20
             val cw = width / nx; val ch = height / ny
             ui.rect(batch, x + width / 2 - 2, y - 10, 4f, height + 20, rgb(0x5d4037))
             for (j in 0 until ny) for (i in 0 until nx) {
                 val u = (i + 0.5f) / nx; val v = (j + 0.5f) / ny
                 val bow = kotlin.math.sin(u * Math.PI).toFloat() * 6f
-                ui.rect(batch, x + i * cw, y + j * ch - bow, cw + 0.5f, ch + 0.5f, rgb(sailPatColor(editPat, u, v, c1, second, g.flagPix)))
+                ui.rect(batch, x + i * cw, y + j * ch - bow, cw + 0.5f, ch + 0.5f, rgb(sailPatColor(editPat, u, v, c1, second, g.flagPix, editScale)))
             }
             ui.rect(batch, x - 6, y + height - 2, width + 12, 5f, rgb(0x5d4037))
             batch.color = Color.WHITE
         }
     }
 
+    private fun openSailEditor() {
+        editPat = g.sailPat; editSail2 = g.sail2Idx; editScale = g.patScale; editorScroll = 0f
+        open(SeaGame.State.PORT) { buildSailEditor() }
+    }
+
     private fun buildSailEditor() {
         stage.clear()
-        val root = overlay()
-        val panel = panelTable()
-        panel.add(ui.label("✎ Узор парусов", ui.big, align = Align.center)).growX().row()
-        val pw = min(g.wDp - 80f, 260f)
-        panel.add(SailPreview()).size(pw, pw * 0.7f).pad(10f, 0f, 14f, 0f).row()
-        val pats = Table()
-        for ((i, name) in SAIL_PATTERNS.withIndex()) {
-            val b = if (i == editPat) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
-            b.onClick { editPat = i; buildSailEditor() }
-            pats.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
-            if (i % 3 == 2) pats.row()
-        }
-        panel.add(pats).growX().padBottom(6f).row()
-        panel.add(ui.label("Второй цвет узора (✕ — цвет флага):", ui.small, rgb(0xb9d6f2))).left().row()
-        val pal = Table()
-        for (i in -1 until FLAG_PALETTE.size) {
-            val sw = if (i < 0) ui.button(if (editSail2 < 0) "✓" else "✕", 0x37474f, 0x263238, ui.small) else ui.button(if (i == editSail2) "✓" else " ", FLAG_PALETTE[i], FLAG_PALETTE[i], ui.small)
-            sw.onClick { editSail2 = i; buildSailEditor() }
-            pal.add(sw).size(min(36f, (g.wDp - 60f) / 7f), 34f).pad(2f)
-            if (i == 5) pal.row()
-        }
-        panel.add(pal).padBottom(8f).row()
-        panel.add(ui.green("Поставить паруса").also {
+        val panelW = min(g.wDp - 16, 480f)
+        val pw = min(panelW - 100f, 240f)
+        val body = Table().top()
+        fun redraw() { rememberScroll(); buildSailEditor() }
+        fun section(t: String) = body.add(ui.label(t, ui.small, rgb(0xffc93c))).left().padTop(8f).row()
+        section("Узор")
+        body.add(choiceRow(SAIL_PATTERNS, editPat, 3) { editPat = it; redraw() }).growX().row()
+        section("Размер узора")
+        body.add(choiceRow(PAT_SCALES, editScale, 3) { editScale = it; redraw() }).growX().row()
+        section("Второй цвет узора (✕ — цвет флага)")
+        body.add(paletteTable(editSail2, panelW - 40f) { editSail2 = it; redraw() }).row()
+        body.add(ui.label("Основной цвет парусов выбирается в «Вид», раздел «Цвет парусов».", ui.small, rgb(0x90a4ae), wrap = true)).growX().padTop(6f).row()
+        val bottom = Table()
+        bottom.add(ui.green("Поставить паруса").also {
             it.onClick {
-                g.sailPat = editPat; g.sail2Idx = editSail2
+                g.sailPat = editPat; g.sail2Idx = editSail2; g.patScale = editScale
                 g.rebuildPlayer(); g.save(); g.toast("Новые паруса подняты!", 1.5f)
                 portTab = 6; g.portView.select(6); current = { buildPort() }; buildPort()
             }
         }).growX().height(48f).row()
-        panel.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
-        root.add(panel).width(min(g.wDp - 16, 460f))
+        bottom.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
+        editorPanel("✎ Узор парусов", SailPreview(), pw, pw * 0.7f, body, bottom)
     }
 
     // ===================== Фракции =====================
@@ -1690,12 +1783,12 @@ class Menus(private val g: SeaGame) {
             "Бой" to "Пушки стреляют сами, когда враг сбоку от корабля. Кнопка с прицелом: зажмите и тяните к цели, отпустите — прицельный залп (сильнее на 25%). Кнопки справа — особые ядра, ремонт и купленное оружие.",
             "Абордаж" to "Ослабьте пирата до половины прочности, подойдите вдоль его борта с той же скоростью — появится кнопка «Абордаж!». В схватке 3 раунда: натиск сильнее залпа мушкетов, залп сильнее обороны, оборона сильнее натиска. Перед раундом видно, что затевают пираты (не всегда верно). После победы корабль можно взять во флот, разграбить, отпустить или потопить.",
             "Карта" to "Нажмите на мини-карту, чтобы открыть карту мира. Тёмные облака — места, где вы ещё не были. Коснитесь места и выберите «Проложить курс» — на экране появится голубая стрелка.",
-            "Порты" to "Заплывите в белый круг у причала. В порту: ремонт, новые корабли, улучшения, арсенал, рынок, наёмники и покраска.",
+            "Порты" to "Заплывите в белый круг у причала и нажмите «⚓ В гавань». В порту: ремонт, новые корабли, улучшения, арсенал, рынок, наёмники и покраска: цвет корпуса, каймы, парусов, свой флаг 16×12 и узоры.",
             "Торговля" to "На рынке покупайте товар там, где он «дёшево», и продавайте там, где «дорого». Трюм зависит от корабля.",
             "Песни" to "Пока вы плывёте без боя, команда поёт шанти. Новые песни — в бутылках в море (♪ на карте).",
             "Таверна и офицеры" to "В таверне порта нанимайте офицеров: боцман, канонир, штурман и квартирмейстер дают бонусы и комментируют события. Там же доска «Разыскиваются» — охота за капитанами с наградой.",
             "Репутация" to "Торговцы, флот и пираты помнят ваши дела. Торговля поднимает доверие купцов (цены лучше). Охота на пиратов радует флот, но злит пиратов — за вашей головой придут охотники. Уважение пиратов: мелкие шайки не нападут первыми.",
-            "Своя база" to "Остров Надежды рядом с Гаванью Ветров (⚑ на карте). Заплывите в круг у острова, основайте базу и стройте: плантация и таверна приносят доход, склад копит деньги и расширяет трюм, батарея защищает, верфь удешевляет улучшения.",
+            "Своя база" to "Остров Надежды рядом с Гаванью Ветров (⚑ на карте). Заплывите в круг у острова, нажмите «⚓ В гавань», основайте базу и стройте: плантация и таверна приносят доход, склад копит деньги и расширяет трюм, батарея защищает, верфь удешевляет улучшения.",
             "Флот" to "Если есть наёмники, слева появляются кнопки приказов: ⚓ колонна (корабли идут точно по вашему следу и стреляют бортами на ходу), ⚔ атака (флот бьёт врагов в большом радиусе), ↺ отход (плотная колонна).",
             "Высадки и клады" to "Остановитесь у дикого острова — появится кнопка «Высадиться». На островах — тайники, засады и куски карты. Три куска дают карту сокровищ. У колонн затонувших храмов можно нырнуть.",
             "Пиратская фракция" to "Игрок Берегового братства может нападать на любые суда: купцов, рыбаков и патрули флота. Автоогонь бьёт только пиратов — мирное судно атакуйте прицельным залпом, после первого попадания по нему стреляет и автоогонь. Купцы удирают, патрули отвечают огнём. Добыча богаче, но торговцы и флот это запомнят.",

@@ -91,6 +91,9 @@ class TestScript(private val g: SeaGame, private val out: String) {
 
     private val landscape = System.getenv("SEA_LANDSCAPE") != null
 
+    /** Нажать кнопку «⚓ В гавань» на экране. */
+    private fun dockTap() { val (bx, by) = g.hud.boardPos(); touch("down", bx, g.hDp - by); touch("up", bx, g.hDp - by) }
+
     private fun step() {
         frame++
         if (base < 0) {
@@ -115,6 +118,31 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 40) { press("Капитаны") }
             if (f == 46) shot("g5_heroes")
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_PAINT") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
+                10 -> { val pt = g.ports[0]; tp(pt.rx + 3f, pt.rz + 3f) }
+                30 -> { shot("d1_dock_button"); log.append("dockAt=${g.dockAt} state=${g.state}\n"); dockTap() }
+                40 -> { log.append("после кнопки: state=${g.state}\n"); g.coins = 50000; press("Вид") }
+                60 -> shot("d2_look_tab")
+                61 -> press("Флаг")
+                70 -> press("Солнце")
+                72 -> press("Ласточкин")
+                74 -> press("Огромный")
+                80 -> shot("d3_flag_editor")
+                81 -> press("Поднять")
+                90 -> press("Паруса")
+                95 -> press("Круг")
+                98 -> press("Крупный")
+                105 -> shot("d4_sail_editor")
+                106 -> press("Поставить")
+                115 -> { log.append("hull: ${findButton("Багровый") != null}\n"); g.hullIdx = 4; g.ownedHulls += 4; g.trimIdx = 3; g.rebuildPlayer() }
+                160 -> shot("d5_ship")
+                170 -> { g.menus.relayout(); }
+                180 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
             return
         }
         if (System.getenv("SEA_CRASH") != null) {
@@ -192,6 +220,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
             580 -> { shot("10_left_port"); info("left"); g.debugNoShadow = true }
             584 -> { shot("10b_noshadow"); g.debugNoShadow = false }
             590 -> tp(lv.ringX, lv.ringZ)
+            600 -> dockTap()
             650 -> shot("11_base_new")
             651 -> press("Основать")
             655 -> { lv.blev.fill(3); lv.refreshBuildings(); lv.bank = 900f; press("Постройки") }
@@ -405,6 +434,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         step("порт", 5) { if (g.state != SeaGame.State.PLAY) issue("не вышли из порта: ${g.state}") }
         // база
         step("база", 60) { tp(lv.ringX, lv.ringZ) }
+        step("база", 10) { if (g.dockAt != -2) issue("нет кнопки «В гавань» у базы"); dockTap() }
         step("база", 5) { if (g.state != SeaGame.State.PORT) issue("база не открылась") ; press("Основать") }
         for (k in 0 until 22) step("база", 3) { if (findButton("Построить") != null) press("Построить") else press("Улучшить") }
         step("база", 5) { log.append("постройки: ${lv.blev.toList()} доход=${lv.incomePerMin()}/мин\n"); press("Таверна") }

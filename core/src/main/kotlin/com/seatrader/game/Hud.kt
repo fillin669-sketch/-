@@ -58,6 +58,11 @@ class Hud(private val g: SeaGame) {
     }
 
     fun boardPos(): Pair<Float, Float> = (g.wDp / 2) to (g.safeBottom + 175f)
+    /** Кнопка «В гавань» — на месте кнопки абордажа (они не нужны одновременно). */
+    fun dockHit(x: Float, y: Float): Boolean {
+        if (g.systems.boardTarget != null) return false
+        val (px, py) = boardPos(); return abs(x - px) < 105 && abs(y - py) < 32
+    }
 
     /** Кнопка паузы: маленькая, в левом верхнем углу. */
     fun pausePos(): Pair<Float, Float> = 30f to (g.hDp - g.safeTop - 30f)
@@ -324,6 +329,15 @@ class Hud(private val g: SeaGame) {
         g.living.drawHud(b)
         g.extras.drawHud(b)
         // Абордаж
+        if (g.dockAt != -1 && g.systems.boardTarget == null && g.state == SeaGame.State.PLAY) {
+            val (px, py) = boardPos()
+            val pulse = 1f + sin(g.now * 4) * 0.04f
+            val name = if (g.dockAt >= 0) PORTS[g.dockAt].name else if (g.living.baseFounded) "Остров Надежды" else "Основать базу"
+            ui.round(b, px - 100 * pulse, py - 28 * pulse, 200 * pulse, 56 * pulse, c(0x0d47a1))
+            ui.round(b, px - 98 * pulse, py - 25 * pulse, 196 * pulse, 50 * pulse, c(0x1e88e5))
+            ui.text(b, ui.big, "⚓ В гавань", px - 98, py + 13, Align.center, 196f)
+            ui.text(b, ui.small, name, px - 130, py - 34, Align.center, 260f, c = rgb(0xbbdefb))
+        }
         g.systems.boardTarget?.let {
             val (px, py) = boardPos()
             val pulse = 1f + sin(g.now * 6) * 0.06f
@@ -334,7 +348,7 @@ class Hud(private val g: SeaGame) {
             ui.text(b, ui.small, "нажмите — команда бросит крюки", px - 120, py - 34, Align.center, 240f, c = rgb(0xffcdd2))
         }
         if (g.systems.grappleTarget != null) ui.text(b, ui.big, "Крюки летят — сближаемся…", 0f, hDp * 0.55f, Align.center, wDp, c = rgb(0xffe0b2))
-        if (g.systems.boardTarget == null && g.systems.alignHint != null && g.systems.grappleTarget == null) {
+        if (g.dockAt == -1 && g.systems.boardTarget == null && g.systems.alignHint != null && g.systems.grappleTarget == null) {
             val (px, py) = boardPos()
             ui.round(b, px - 130, py - 22, 260f, 44f, c(0x3e2723, 0.85f))
             ui.text(b, ui.small, "Для абордажа идите вдоль борта врага\nс той же скоростью", px - 128, py + 14, Align.center, 256f, c = rgb(0xffe0b2))
@@ -406,7 +420,7 @@ class Hud(private val g: SeaGame) {
         drawMinimap()
 
         // Обучение
-        if (g.tutorial < g.tutorialTexts.size && g.state == SeaGame.State.PLAY) {
+        if (g.tutorial < g.tutorialTexts.size && g.state == SeaGame.State.PLAY && g.dockAt == -1) {
             val text = g.tutorialTexts[g.tutorial]
             val tw = min(wDp - 175, 300f)
             layout.setText(ui.mid, text, Color.WHITE, tw - 70, Align.left, true)

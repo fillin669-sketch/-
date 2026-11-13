@@ -4,8 +4,10 @@ package com.seatrader.game
 data class Look(
     val len: Float, val width: Float, val masts: Int,
     val hull: Int, val trim: Int, val sail: Int, val flag: Int,
-    /** Узор парусов (0 — однотонные), второй цвет и рисунок флага 8×6 (палитра FLAG_PALETTE, '.' — цвет флага). */
+    /** Узор парусов (0 — однотонные), второй цвет и рисунок флага 16×12 (палитра FLAG_PALETTE, '.' — цвет флага). */
     val sailPat: Int = 0, val sail2: Int = -1, val flagPix: String = "",
+    /** Форма флага (0 — прямоугольник, 1 — ласточкин хвост, 2 — вымпел), размер 0..2, масштаб узора 0..2, цвет мачт (-1 — как корпус). */
+    val flagShape: Int = 0, val flagSize: Int = 0, val patScale: Int = 1, val mast: Int = -1,
 )
 
 class ShipDef(
@@ -491,14 +493,57 @@ val HEROES = listOf(
 )
 
 // ---------- Редактор флага и парусов ----------
-val FLAG_PALETTE = intArrayOf(0x111111, 0xf5f5f5, 0xc62828, 0xffc107, 0x1565c0, 0x2e7d32, 0x6a1b9a, 0xef6c00, 0x8d6e63, 0x90a4ae, 0x00acc1, 0xec407a)
-const val FLAG_W = 8
-const val FLAG_H = 6
-fun flagPixColor(ch: Char): Int = when (ch) { in '0'..'9' -> FLAG_PALETTE[ch - '0']; 'a' -> FLAG_PALETTE[10]; 'b' -> FLAG_PALETTE[11]; else -> -1 }
+val FLAG_PALETTE = intArrayOf(0x111111, 0xf5f5f5, 0xc62828, 0xffc107, 0x1565c0, 0x2e7d32, 0x6a1b9a, 0xef6c00, 0x8d6e63, 0x90a4ae, 0x00acc1, 0xec407a,
+    0x4e342e, 0xffeb3b, 0x81d4fa, 0x1b5e20, 0x880e4f, 0xbdbdbd, 0xff7043, 0x283593)
+const val FLAG_W = 16
+const val FLAG_H = 12
+fun flagPixColor(ch: Char): Int = when (ch) { in '0'..'9' -> FLAG_PALETTE[ch - '0']; in 'a'..'j' -> FLAG_PALETTE[10 + (ch - 'a')]; else -> -1 }
 fun flagPixChar(i: Int): Char = if (i < 0) '.' else if (i < 10) '0' + i else 'a' + (i - 10)
 
-/** Шаблоны рисунка флага (строки сверху вниз). */
-val FLAG_TEMPLATES = listOf(
+/** Рисунок старого флага 8×6 — в новую сетку 16×12 (каждая клетка → 2×2). */
+fun upscaleFlag(old: String, w: Int = 8, h: Int = 6): String {
+    if (old.length != w * h) return ""
+    val sx = FLAG_W / w; val sy = FLAG_H / h
+    return String(CharArray(FLAG_W * FLAG_H) { i -> old[(i / FLAG_W / sy) * w + (i % FLAG_W) / sx] })
+}
+
+/** Клетка видна при данной форме флага (ласточкин хвост и вымпел срезают край). */
+fun flagCellVisible(shape: Int, fx: Int, fy: Int): Boolean {
+    val u = (fx + 0.5f) / FLAG_W; val v = kotlin.math.abs((fy + 0.5f) / FLAG_H - 0.5f) * 2f
+    return when (shape) {
+        1 -> !(u > 0.72f && v < (u - 0.72f) / 0.28f)
+        2 -> v < 1f - u * 0.92f
+        else -> true
+    }
+}
+
+val FLAG_SHAPES = listOf("Прямой", "Ласточкин хвост", "Вымпел")
+val FLAG_SIZES = listOf("Обычный", "Большой", "Огромный")
+val PAT_SCALES = listOf("Мелкий", "Средний", "Крупный")
+
+/** Краска корпуса (-1 — родное дерево корабля). */
+val HULL_PAINTS = listOf(
+    Paint("Родное дерево", -1, 0), Paint("Светлый дуб", 0x9c7048, 300), Paint("Тёмный орех", 0x3e2a1c, 300),
+    Paint("Эбеновое", 0x1d1714, 500), Paint("Багровый", 0x6d1b1b, 500), Paint("Морской синий", 0x1d3557, 500),
+    Paint("Изумрудный", 0x1f4a33, 500), Paint("Графит", 0x3a3d42, 500), Paint("Слоновая кость", 0xd9d0bc, 700),
+    Paint("Золочёный", 0x8a6a2a, 900),
+)
+
+private fun gen(f: (Int, Int) -> Char) = String(CharArray(FLAG_W * FLAG_H) { i -> f(i % FLAG_W, i / FLAG_W) })
+
+/** Шаблоны рисунка флага 16×12. */
+val FLAG_TEMPLATES: List<Pair<String, String>> by lazy { OLD_TEMPLATES.map { it.first to upscaleFlag(it.second.joinToString("")) } + listOf(
+    "Полосы" to gen { _, y -> if ((y / 2) % 2 == 0) '2' else '1' },
+    "Скандинавский" to gen { x, y -> if (x in 4..6 || y in 5..6) '3' else '.' },
+    "Диагональ" to gen { x, y -> if (x * FLAG_H > y * FLAG_W) '4' else '1' },
+    "Луна" to gen { x, y -> val dx = x - 7.5f; val dy = y - 5.5f; val dx2 = x - 9.5f
+        if (dx * dx + dy * dy < 17f && dx2 * dx2 + dy * dy > 13f) 'd' else '.' },
+    "Шахматы" to gen { x, y -> if ((x / 2 + y / 2) % 2 == 0) '0' else '1' },
+    "Солнце" to gen { x, y -> val dx = x - 7.5f; val dy = y - 5.5f; val r = dx * dx + dy * dy
+        if (r < 8f) '3' else if (r < 26f && ((Math.atan2(dy.toDouble(), dx.toDouble()) * 4 / Math.PI).toInt() % 2 == 0)) '7' else '.' },
+) }
+
+private val OLD_TEMPLATES = listOf(
     "Череп" to listOf("..1111..", ".111111.", ".1.11.1.", "..1111..", "1..11..1", ".11..11."),
     "Якорь" to listOf("...11...", "..1..1..", "...11...", "...11...", "1..11..1", ".111111."),
     "Звезда" to listOf("...33...", "..3333..", "33333333", ".333333.", "..3..3..", ".3....3."),
@@ -507,7 +552,8 @@ val FLAG_TEMPLATES = listOf(
     "Волны" to listOf("........", ".4..4..4", "4.44.44.", "........", ".1..1..1", "1.11.11."),
 )
 
-val SAIL_PATTERNS = listOf("Однотонные", "Полосы", "Вертикальные", "Крест", "Кайма", "Эмблема флага", "Диагональ")
+val SAIL_PATTERNS = listOf("Однотонные", "Полосы", "Вертикальные", "Крест", "Кайма", "Эмблема флага", "Диагональ",
+    "Шахматы", "Круг", "Зигзаг", "Половины", "Нижняя полоса", "Ромб")
 
 // ---------- Артефакты ----------
 class Artifact(
@@ -533,18 +579,29 @@ val ARTIFACTS = listOf(
 )
 
 /** Цвет узора паруса в точке (u — поперёк 0..1, v — снизу вверх 0..1). */
-fun sailPatColor(pat: Int, u: Float, v: Float, c1: Int, second: Int, flagPix: String): Int = when (pat) {
-    1 -> if ((v * 6).toInt() % 2 == 1) second else c1
-    2 -> if ((u * 6).toInt() % 2 == 1) second else c1
-    3 -> if (kotlin.math.abs(u - 0.5f) < 0.09f || kotlin.math.abs(v - 0.55f) < 0.12f) second else c1
-    4 -> if (u < 0.1f || u > 0.9f || v < 0.13f || v > 0.87f) second else c1
+fun sailPatColor(pat: Int, u: Float, v: Float, c1: Int, second: Int, flagPix: String, scale: Int = 1): Int {
+    // масштаб узора: мелкий — чаще полосы и тоньше линии, крупный — наоборот
+    val k = when (scale) { 0 -> 1.6f; 2 -> 0.6f; else -> 1f }
+    val t = 1f / k
+    return when (pat) {
+    1 -> if ((v * 6 * k).toInt() % 2 == 1) second else c1
+    2 -> if ((u * 6 * k).toInt() % 2 == 1) second else c1
+    3 -> if (kotlin.math.abs(u - 0.5f) < 0.09f * t || kotlin.math.abs(v - 0.55f) < 0.12f * t) second else c1
+    4 -> if (u < 0.1f * t || u > 1 - 0.1f * t || v < 0.13f * t || v > 1 - 0.13f * t) second else c1
     5 -> {
         val fx = ((u - 0.25f) / 0.5f * FLAG_W).toInt(); val fy = ((0.85f - v) / 0.7f * FLAG_H).toInt()
         if (u in 0.25f..0.75f && v in 0.15f..0.85f && flagPix.length == FLAG_W * FLAG_H && fx in 0 until FLAG_W && fy in 0 until FLAG_H)
             flagPixColor(flagPix[fy * FLAG_W + fx]).let { if (it < 0) c1 else it } else c1
     }
-    6 -> if (((u + v) * 5).toInt() % 2 == 1) second else c1
+    6 -> if (((u + v) * 5 * k).toInt() % 2 == 1) second else c1
+    7 -> if (((u * 5 * k).toInt() + (v * 5 * k).toInt()) % 2 == 1) second else c1
+    8 -> { val dx = u - 0.5f; val dy = v - 0.55f; if (dx * dx + dy * dy < 0.07f * t * t) second else c1 }
+    9 -> { val z = kotlin.math.abs(((u * 4 * k) % 1f) - 0.5f) * 0.25f; if (((v + z) * 5 * k).toInt() % 2 == 1) second else c1 }
+    10 -> if (u > 0.5f) second else c1
+    11 -> if (v < 0.22f * t) second else c1
+    12 -> if (kotlin.math.abs(u - 0.5f) + kotlin.math.abs(v - 0.55f) < 0.3f * t) second else c1
     else -> c1
+    }
 }
 
 // ---------- Фракции ----------

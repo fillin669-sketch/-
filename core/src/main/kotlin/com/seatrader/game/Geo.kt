@@ -262,12 +262,13 @@ class Geo {
         return this
     }
 
-    /** Парус с узором: цвет каждой клетки сетки 12×8 задаёт узор (полосы, крест, кайма, эмблема флага…). */
-    fun sailPattern(w: Float, h: Float, bulge: Float, c1: Int, c2: Int, pat: Int, flagPix: String, flagBase: Int): Geo {
-        if (pat == 0 || c2 < 0 && pat != 5) return color(c1).sail(w, h, bulge)
+    /** Парус с узором: цвет каждой клетки сетки 20×14 задаёт узор (полосы, крест, кайма, эмблема флага…). */
+
+    fun sailPattern(w: Float, h: Float, bulge: Float, c1: Int, c2: Int, pat: Int, flagPix: String, flagBase: Int, scale: Int = 1): Geo {
+        if (pat == 0) return color(c1).sail(w, h, bulge)
         val keep = variation
         variation = 0.02f
-        val sx = 12; val sy = 8
+        val sx = 20; val sy = 14
         val pts = Array(sy + 1) { j ->
             Array(sx + 1) { i ->
                 val x = i.toFloat() / sx; val y = j.toFloat() / sy
@@ -278,7 +279,7 @@ class Geo {
         val second = if (c2 >= 0) c2 else flagBase
         for (j in 0 until sy) for (i in 0 until sx) {
             val u = (i + 0.5f) / sx; val v = (j + 0.5f) / sy
-            val col = sailPatColor(pat, u, v, c1, second, flagPix)
+            val col = sailPatColor(pat, u, v, c1, second, flagPix, scale)
             color(col)
             quad(pts[j][i], pts[j][i + 1], pts[j + 1][i + 1], pts[j + 1][i], back)
         }
@@ -436,26 +437,38 @@ object Models {
         for (i in 0 until n) {
             val mz = mastZ(look, i)
             val h = mastH * (if (i == 0 && n > 2) 0.88f else 1f)
-            g.color(look.hull).push().at(0f, top + h / 2, mz).cylinder(0.16f, 0.26f, h, 6).pop()
+            val mastC = if (look.mast >= 0) look.mast else look.hull
+            g.color(mastC).push().at(0f, top + h / 2, mz).cylinder(0.16f, 0.26f, h, 6).pop()
             val sw = W * (if (n == 1) 1.9f else 1.6f)
             for (k in 0..1) {
                 val sh = h * (if (k == 0) 0.36f else 0.26f)
                 val sy = top + h * (if (k == 0) 0.36f else 0.72f)
                 val ww = sw * (if (k == 0) 1f else 0.8f)
-                g.color(look.hull).push().at(0f, sy + sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.1f, 0.1f, ww * 1.05f, 5).pop()
-                g.color(look.hull).push().at(0f, sy - sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.07f, 0.07f, ww * 0.95f, 4).pop()
+                g.color(mastC).push().at(0f, sy + sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.1f, 0.1f, ww * 1.05f, 5).pop()
+                g.color(mastC).push().at(0f, sy - sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.07f, 0.07f, ww * 0.95f, 4).pop()
             }
-            g.color(look.hull).push().at(0f, top + h * 0.86f, mz).cylinder(0.7f, 0.55f, 0.5f, 6).pop()
+            g.color(mastC).push().at(0f, top + h * 0.86f, mz).cylinder(0.7f, 0.55f, 0.5f, 6).pop()
             tops += Vector3(0f, top + h, mz)
             if (i == n - 1) {
-                if (look.flagPix.length == FLAG_W * FLAG_H) {
-                    // рисованный флаг: 8×6 клеток
-                    val cw = 2.2f / FLAG_W; val ch = 1.3f / FLAG_H
-                    for (fy in 0 until FLAG_H) for (fx in 0 until FLAG_W) {
-                        val c = flagPixColor(look.flagPix[fy * FLAG_W + fx]).let { if (it < 0) look.flag else it }
-                        g.color(c).push().at(0f, top + h + 0.5f + 0.65f - (fy + 0.5f) * ch, mz + (fx + 0.5f) * cw).box(0.08f, ch * 1.02f, cw * 1.02f).pop()
+                val fs = when (look.flagSize) { 1 -> 1.35f; 2 -> 1.7f; else -> 1f }
+                val fw = 2.2f * fs; val fh = 1.3f * fs
+                val fy0 = top + h + 0.5f + 0.65f - fh / 2
+                if (look.flagPix.length == FLAG_W * FLAG_H || look.flagShape != 0) {
+                    // рисованный флаг 16×12: клетки одного цвета подряд — одним брусом
+                    val cw = fw / FLAG_W; val ch = fh / FLAG_H
+                    for (fy in 0 until FLAG_H) {
+                        var fx = 0
+                        while (fx < FLAG_W) {
+                            if (!flagCellVisible(look.flagShape, fx, fy)) { fx++; continue }
+                            val c = colAt(look, fx, fy)
+                            var e = fx + 1
+                            while (e < FLAG_W && flagCellVisible(look.flagShape, e, fy) && colAt(look, e, fy) == c) e++
+                            val n = e - fx
+                            g.color(c).push().at(0f, fy0 + fh / 2 - (fy + 0.5f) * ch, mz + (fx + n * 0.5f) * cw).box(0.08f, ch * 1.02f, cw * n + cw * 0.02f).pop()
+                            fx = e
+                        }
                     }
-                } else g.color(look.flag).push().at(0f, top + h + 0.5f, mz + 1.1f).box(0.08f, 1.3f, 2.2f).pop()
+                } else g.color(look.flag).push().at(0f, fy0 + fh / 2, mz + fw / 2).box(0.08f, fh, fw).pop()
             }
         }
         // Такелаж: штаги между мачтами и ванты к бортам
@@ -589,7 +602,7 @@ object Models {
                 val sh = h * (if (k == 0) 0.36f else 0.26f)
                 val sy = top + h * (if (k == 0) 0.36f else 0.72f)
                 val ww = sw * (if (k == 0) 1f else 0.8f)
-                val sg = Geo().mat(Shaders.CLOTH).sailPattern(ww, sh, W * 0.28f, look.sail, look.sail2, look.sailPat, look.flagPix, look.flag)
+                val sg = Geo().mat(Shaders.CLOTH).sailPattern(ww, sh, W * 0.28f, look.sail, look.sail2, look.sailPat, look.flagPix, look.flag, look.patScale)
                 val node = mb.node()
                 node.id = "sail${idx++}"
                 node.translation.set(0f, sy, mz - 0.25f)
@@ -1008,3 +1021,7 @@ object Models {
         return g.build()
     }
 }
+
+/** Цвет клетки рисованного флага (пустая — цвет основы). */
+private fun colAt(look: Look, fx: Int, fy: Int): Int =
+    if (look.flagPix.length == FLAG_W * FLAG_H) flagPixColor(look.flagPix[fy * FLAG_W + fx]).let { if (it < 0) look.flag else it } else look.flag

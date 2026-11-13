@@ -68,6 +68,14 @@ class SeaGame : ApplicationAdapter() {
     var flagPix = ""
     var sailPat = 0
     var sail2Idx = -1
+    var hullIdx = 0
+    val ownedHulls = HashSet<Int>()
+    var trimIdx = -1
+    var flagShape = 0
+    var flagSize = 0
+    var patScale = 1
+    /** Игрок стоит в круге у причала: показываем кнопку «В гавань» (номер порта, -2 — своя база). */
+    var dockAt = -1
     private val env = Environment()
     private lateinit var sunLight: com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
     private lateinit var shadowBatch: ModelBatch
@@ -450,7 +458,14 @@ class SeaGame : ApplicationAdapter() {
         living.load(prefs)
         guilds.load(prefs)
         extras.load(prefs)
-        flagPix = prefs.getString("flagPix", "").takeIf { it.length == FLAG_W * FLAG_H } ?: ""
+        flagPix = prefs.getString("flagPix", "").let { if (it.length == 48) upscaleFlag(it) else it }.takeIf { it.length == FLAG_W * FLAG_H } ?: ""
+        hullIdx = prefs.getInteger("hullPaint", 0).coerceIn(0, HULL_PAINTS.size - 1)
+        ownedHulls.clear(); ownedHulls += 0
+        ownedHulls += prefs.getString("ownedHulls", "").split(",").mapNotNull { it.toIntOrNull() }
+        trimIdx = prefs.getInteger("trim", -1).coerceIn(-1, FLAG_PALETTE.size - 1)
+        flagShape = prefs.getInteger("flagShape", 0).coerceIn(0, FLAG_SHAPES.size - 1)
+        flagSize = prefs.getInteger("flagSize", 0).coerceIn(0, FLAG_SIZES.size - 1)
+        patScale = prefs.getInteger("patScale", 1).coerceIn(0, PAT_SCALES.size - 1)
         sailPat = prefs.getInteger("sailPat", 0).coerceIn(0, SAIL_PATTERNS.size - 1)
         sail2Idx = prefs.getInteger("sail2", -1).coerceIn(-1, FLAG_PALETTE.size - 1)
     }
@@ -485,6 +500,12 @@ class SeaGame : ApplicationAdapter() {
         prefs.putString("flagPix", flagPix)
         prefs.putInteger("sailPat", sailPat)
         prefs.putInteger("sail2", sail2Idx)
+        prefs.putInteger("hullPaint", hullIdx)
+        prefs.putString("ownedHulls", ownedHulls.joinToString(","))
+        prefs.putInteger("trim", trimIdx)
+        prefs.putInteger("flagShape", flagShape)
+        prefs.putInteger("flagSize", flagSize)
+        prefs.putInteger("patScale", patScale)
         if (::sfx.isInitialized) {
             prefs.putFloat("sfxVol", sfx.sfxVolume)
             prefs.putFloat("musicVol", sfx.musicVolume)
@@ -553,8 +574,12 @@ class SeaGame : ApplicationAdapter() {
     fun playerLook(): Look {
         val base = playerDef().look
         val flag = FLAG_COLORS[flagIdx].color.let { if (it < 0) base.flag else it }
+        val hull = HULL_PAINTS[hullIdx].color
         return base.copy(sail = if (sailIdx == 0) base.sail else SAIL_COLORS[sailIdx].color, flag = flag,
-            sailPat = sailPat, sail2 = if (sail2Idx >= 0) FLAG_PALETTE[sail2Idx] else -1, flagPix = flagPix)
+            sailPat = sailPat, sail2 = if (sail2Idx >= 0) FLAG_PALETTE[sail2Idx] else -1, flagPix = flagPix,
+            hull = if (hull >= 0) hull else base.hull, mast = if (hull >= 0) base.hull else -1,
+            trim = if (trimIdx >= 0) FLAG_PALETTE[trimIdx] else base.trim,
+            flagShape = flagShape, flagSize = flagSize, patScale = patScale)
     }
 
     fun shipModel(look: Look, up: IntArray? = null) = shipModels.getOrPut(look.toString() + "|" + (up?.joinToString(",") ?: "")) { Models.ship(look, up).also { models += it } }
@@ -684,6 +709,7 @@ class SeaGame : ApplicationAdapter() {
             if (state == State.CUTSCENE) { prologue.touch(x, y); return true }
             if (state != State.PLAY) return false
             if (hud.pauseHit(x, y)) { sfx.play("click"); openPause(); return true }
+            if (dockAt != -1 && hud.dockHit(x, y)) { sfx.play("click"); enterDock(); return true }
             run { val (bx, by) = hud.boostPos(); if (hypot(x - bx, y - by) < 30) { tryBoost(); return true } }
             run {
                 val (fx, fy) = hud.autoPos()
@@ -1874,7 +1900,7 @@ class SeaGame : ApplicationAdapter() {
         "Кнопка с парусами — рывок. Протараньте врага на скорости!",
         "Кнопки сбоку — способности: огненные и цепные ядра, ремонт",
         "Мини-карта: жёлтая точка — цель, красные — пираты, ✕ — сокровище",
-        "Заплывите в белый круг у порта: ремонт, верфь, флот",
+        "Заплывите в белый круг у порта и нажмите «⚓ В гавань»",
     )
 
     fun advanceTutorial() {
@@ -1916,12 +1942,20 @@ class SeaGame : ApplicationAdapter() {
     private fun updatePorts() {
         val p = player ?: return
         p.safe = false
+        dockAt = -1
         for (port in ports) {
             if (hypot(p.x - port.def.x, p.z - port.def.z) < port.def.r + 110) p.safe = true
             val d = hypot(p.x - port.rx, p.z - port.rz)
-            if (state == State.PLAY && !p.sinking && !p.inPort && d < 9) openPort(port.i)
+            if (!p.sinking && d < 14) dockAt = port.i
             if (p.inPort && port.i == homePort && d > 18) p.inPort = false
         }
+    }
+
+    /** Кнопка «В гавань»: заход в порт или на свою базу. */
+    fun enterDock() {
+        val d = dockAt
+        dockAt = -1
+        if (d >= 0) openPort(d) else if (d == -2) living.enterBase()
     }
 
     fun openPort(i: Int) {

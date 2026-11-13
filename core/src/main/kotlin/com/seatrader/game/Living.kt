@@ -390,21 +390,25 @@ class Living(private val g: SeaGame) {
         g.save()
     }
 
+    /** Заход на базу по кнопке «В гавань». */
+    fun enterBase() {
+        val p = g.player ?: return
+        atBase = true
+        p.vx = 0f; p.vz = 0f; p.angVel = 0f
+        if (baseFounded) { p.hp = p.maxHp; p.burnT = 0f }
+        g.joyActive = false
+        g.save()
+        g.portView.enterBase()
+        g.menus.showBase()
+    }
+
     private fun updateBase(dt: Float, p: Ship) {
         if (!baseBuilt) return
         if (baseFounded) bank = min(bankCap().toFloat(), bank + incomePerMin() * dt / 60f)
         val dBase = hypot(p.x - baseX, p.z - baseZ)
         if (dBase < baseR + 110) p.safe = true
         val d = hypot(p.x - ringX, p.z - ringZ)
-        if (g.state == SeaGame.State.PLAY && !p.sinking && !atBase && d < 9) {
-            atBase = true
-            p.vx = 0f; p.vz = 0f; p.angVel = 0f
-            if (baseFounded) { p.hp = p.maxHp; p.burnT = 0f }
-            g.joyActive = false
-            g.save()
-            g.portView.enterBase()
-            g.menus.showBase()
-        }
+        if (!p.sinking && d < 14) g.dockAt = -2
         if (atBase && d > 18) atBase = false
         if (!baseFounded) return
         // маяк открывает карту
