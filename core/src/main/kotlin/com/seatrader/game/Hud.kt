@@ -461,16 +461,17 @@ class Hud(private val g: SeaGame) {
         // Обучение
         if (g.tutorial < g.tutorialTexts.size && g.state == SeaGame.State.PLAY && g.dockAt == -1) {
             val text = g.tutorialTexts[g.tutorial]
-            val tw = min(wDp - 175, 300f)
-            layout.setText(ui.mid, text, Color.WHITE, tw - 70, Align.left, true)
-            val th = layout.height + 28
-            val tx = if (g.leftHanded) wDp - tw - 16 else 16f
-            val ty = 118 + g.safeBottom
-            ui.round(b, tx, ty - 3, tw, th, c(0x0a141e, 0.5f))
-            ui.round(b, tx, ty, tw, th, c(0x1b3a57, 0.92f))
-            ui.mid.draw(b, layout, tx + 58, ty + th - 14)
-            val bob = sin(g.now * 5) * 5
-            ui.icon(b, ui.hand, tx + 30, ty + th / 2 + bob, 36f, 36f, 0f, c(0xffffff))
+            // широкая плашка вверху, под строкой уровня: не закрывает кнопки действий внизу
+            val tw = min(wDp - 24f, 460f)
+            layout.setText(ui.small, text, Color.WHITE, tw - 62, Align.left, true)
+            val th = layout.height + 22
+            val tx = (wDp - tw) / 2
+            val ty = top - 150f - th
+            ui.round(b, tx, ty - 3, tw, th, c(0x0a141e, 0.45f))
+            ui.round(b, tx, ty, tw, th, c(0x1b3a57, 0.9f))
+            ui.small.draw(b, layout, tx + 50, ty + th - 11)
+            val bob = sin(g.now * 5) * 4
+            ui.icon(b, ui.hand, tx + 26, ty + th / 2 + bob, 30f, 30f, 0f, c(0xffffff))
         }
 
         if (g.toastT > 0) {

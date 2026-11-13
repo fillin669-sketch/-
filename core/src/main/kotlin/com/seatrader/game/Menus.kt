@@ -197,7 +197,9 @@ class Menus(private val g: SeaGame) {
         // верхняя плашка
         val top = Table().also { it.background = ui.panel(0x0b2238, 0.82f); it.pad(8f, 10f, 8f, 10f) }
         val head = Table()
-        val tl = ui.label(title, ui.big)
+        // длинное название порта — шрифтом помельче, чтобы не обрезалось
+        val room = min(g.wDp, 560f) - 200f
+        val tl = ui.label(title, when { ui.measure(ui.big, title) <= room -> ui.big; ui.measure(ui.mid, title) <= room -> ui.mid; else -> ui.small })
         tl.setEllipsis(true)
         head.add(tl).left().growX().minWidth(0f)
         head.add(currencyRow()).right().padLeft(8f)
@@ -811,9 +813,9 @@ class Menus(private val g: SeaGame) {
                     val lvl = lv.blev[i]
                     val c = card()
                     val top = Table()
-                    top.add(ui.label(bd.name, ui.big)).left()
-                    top.add().growX()
-                    top.add(ui.label(if (lvl == 0) "не построено" else "ур. $lvl из 3", ui.small, rgb(if (lvl > 0) 0xffc93c else 0x90a4ae))).right()
+                    val lvTxt = if (lvl == 0) "не построено" else "ур. $lvl из 3"
+                    top.add(ui.label(bd.name, ui.big, wrap = true)).left().growX().minWidth(0f)
+                    top.add(ui.label(lvTxt, ui.small, rgb(if (lvl > 0) 0xffc93c else 0x90a4ae))).width(ui.measure(ui.small, lvTxt) + 4f).right().padLeft(6f)
                     c.add(top).growX().row()
                     if (lvl > 0) c.add(ui.label("Сейчас: " + bd.effects[lvl - 1], ui.small, rgb(0xc8e6c9), wrap = true)).growX().row()
                     if (lvl < 3) {
@@ -1188,7 +1190,8 @@ class Menus(private val g: SeaGame) {
             t.add(ui.label(if (next != null) "$v / $next $unit" else "$v $unit · высший ранг", ui.small, rgb(0x90a4ae))).left().row()
             r.add(t).growX()
             val h = HEROES.first { it.id == gd.hero }
-            r.add(ui.label(if (gs.heroUnlocked(h.id)) "${h.name} ✓" else "${h.name} 🔒".replace("🔒", "—"), ui.small, rgb(if (gs.heroUnlocked(h.id)) 0x3ddc84 else 0x90a4ae))).width(80f).right()
+            // капитан фракции: открыт ✓ или с какого ранга откроется
+            r.add(ui.label(if (gs.heroUnlocked(h.id)) "${h.name} ✓" else "${h.name}\nс ${gd.heroRank} ранга", ui.small, rgb(if (gs.heroUnlocked(h.id)) 0x3ddc84 else 0x90a4ae), align = Align.right)).width(84f).right()
             c.add(r).growX().padTop(4f).row()
             if (next != null) c.add(Bar(ui, v.toFloat() / next, gd.color)).growX().height(8f).padTop(2f).row()
         }

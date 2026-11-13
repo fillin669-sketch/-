@@ -286,7 +286,7 @@ class Extras(private val g: SeaGame) {
     }
 
     // ===================== HUD =====================
-    fun flagPos(): Pair<Float, Float> = (g.wDp / 2) to (g.hDp * 0.64f)
+    fun flagPos(): Pair<Float, Float> = (g.wDp / 2) to (g.hDp * 0.675f)
 
     fun drawHud(b: Batch) {
         val ui = g.ui
