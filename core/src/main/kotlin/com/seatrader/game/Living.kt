@@ -394,6 +394,7 @@ class Living(private val g: SeaGame) {
             if (baseFounded) { p.hp = p.maxHp; p.burnT = 0f }
             g.joyActive = false
             g.save()
+            g.portView.enterBase()
             g.menus.showBase()
         }
         if (atBase && d > 18) atBase = false

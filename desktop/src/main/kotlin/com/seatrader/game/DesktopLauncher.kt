@@ -114,56 +114,36 @@ class TestScript(private val g: SeaGame, private val out: String) {
             2 -> shot("00_daily")
             4 -> { press("Забрать") }
             10 -> { press("швартовы") }
-            20 -> { g.coins = 60000; g.gems = 60; val u = g.ensureUp("sloop"); u[0] = 2; u[2] = 2; g.rebuildPlayer(); g.openPort(0) }
+            20 -> { g.coins = 60000; g.gems = 60; val u = g.ensureUp("sloop"); u[0] = 2; u[2] = 2; g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies(); g.rebuildPlayer(); g.openPort(0) }
             25 -> press("Улучшения")
-            40 -> shot("01_upgrades")
-            41 -> { g.ensureUp("sloop").fill(5); g.rebuildPlayer(); press("Рынок") }
-            43 -> press("Улучшения")
-            60 -> shot("02_upgrades_max")
-            61 -> press("Рынок")
-            75 -> shot("03_market")
-            80 -> press("Таверна")
-            95 -> shot("04_tavern")
-            96 -> press("Нанять")
-            110 -> shot("05_tavern_hired")
-            111 -> press("Взять заказ")
-            115 -> press("Выйти в море")
-            125 -> tp(lv.ringX, lv.ringZ)
-            140 -> shot("06_base_new")
-            141 -> press("Основать")
-            145 -> { lv.blev.fill(3); lv.refreshBuildings(); lv.bank = 900f; press("Постройки") }
-            160 -> shot("07_base_menu")
-            161 -> press("Выйти в море")
-            165 -> { tp(lv.baseX + 20f, lv.baseZ + lv.baseR + 75f); g.player!!.h = -0.4f }
-            185 -> { shot("08_base_view"); info("base") }
-            200 -> {
-                val i = g.islands.indexOfFirst { it.port == -1 && g.systems.fortresses.none { f -> Math.hypot((f.x - it.x).toDouble(), (f.z - it.z).toDouble()) < 80 } }
-                val isl = g.islands[i]; tp(isl.x, isl.z + isl.r + 14f); g.player!!.h = 0f
-                log.append("landing island $i action=${lv.actionText}\n")
-            }
-            210 -> { shot("09_landing_button"); log.append("action=${lv.actionText}\n") }
-            211 -> { val (ax, ay) = lv.actionPos(); touch("down", ax, g.hDp - ay); touch("up", ax, g.hDp - ay) }
-            225 -> shot("10_episode")
-            226 -> press("")
-            240 -> shot("11_episode_result")
-            241 -> press("Вернуться")
-            245 -> { val w = lv.whirls.first(); tp(w.x, w.z + 45f) }
-            275 -> { shot("12_whirlpool"); info("whirl") }
-            280 -> { val fb = lv.fogBanks.first(); tp(fb[0], fb[1]) }
-            310 -> { shot("13_fog"); log.append("fogK=${lv.fogK}\n") }
-            315 -> { val b = lv.bergs.first(); tp(b.x, b.z + 30f) }
-            340 -> { shot("14_iceberg"); info("berg") }
-            345 -> { val r = lv.ruins.first(); tp(r.x, r.z + 18f) }
-            360 -> { shot("15_ruins"); log.append("ruin action=${lv.actionText}\n") }
-            365 -> { g.dayTime = 0.8f; tp(-300f, 300f); val p = g.player!!; g.spawnEnemy("ghost", p.x + 30f, p.z - 60f).ghost = true }
-            400 -> shot("16_ghost")
-            405 -> { g.dayTime = 0.3f; tp(200f, -200f); g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies() }
-            420 -> { val (fx, fy) = lv.fleetPos(1); touch("down", fx, g.hDp - fy); touch("up", fx, g.hDp - fy) }
-            425 -> { val id = lv.crew.firstOrNull { it >= 0 } ?: 0; lv.say(id, OFFICERS[id].quips[1]) }
-            435 -> { shot("17_fleet_talk"); log.append("order=${lv.order} crew=${lv.crew.toList()} bounty=${lv.activeBounty}\n") }
-            440 -> { tp(150f, -250f) }
-            520 -> { shot("18_hunter"); info("hunter"); log.append("hunters=${g.ships.filter { it.bounty >= 0 }.map { it.name }}\n") }
-            530 -> {
+            90 -> shot("01_upgrades")
+            91 -> { g.ensureUp("sloop").fill(5); g.rebuildPlayer(); press("Улучшения") }
+            120 -> shot("02_upgrades_max")
+            121 -> press("Рынок")
+            180 -> shot("03_market")
+            181 -> press("Таверна")
+            240 -> shot("04_tavern")
+            241 -> press("Арсенал")
+            300 -> shot("05_arsenal")
+            301 -> press("Флот")
+            360 -> shot("06_fleet")
+            361 -> press("Вид")
+            420 -> shot("07_paint")
+            421 -> press("Верфь")
+            480 -> shot("08_ships")
+            481 -> press("▼")
+            500 -> { g.portView.orbit = 1.2f }
+            540 -> shot("09_collapsed_orbit")
+            541 -> press("Выйти в море")
+            580 -> { shot("10_left_port"); info("left") }
+            590 -> tp(lv.ringX, lv.ringZ)
+            650 -> shot("11_base_new")
+            651 -> press("Основать")
+            655 -> { lv.blev.fill(3); lv.refreshBuildings(); lv.bank = 900f; press("Постройки") }
+            720 -> shot("12_base_menu")
+            721 -> press("Выйти в море")
+            760 -> { shot("13_left_base"); info("leftbase") }
+            770 -> {
                 log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0}\n")
                 Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
                 Gdx.app.exit()

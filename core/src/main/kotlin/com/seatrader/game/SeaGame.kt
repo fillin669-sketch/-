@@ -58,6 +58,7 @@ class SeaGame : ApplicationAdapter() {
     lateinit var menus: Menus
     val systems = Systems(this)
     val living = Living(this)
+    val portView = PortView(this)
     private val env = Environment()
     private lateinit var sunLight: com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
     private lateinit var shadowBatch: ModelBatch
@@ -241,7 +242,7 @@ class SeaGame : ApplicationAdapter() {
                 systems.initModels(models)
             }
             loadStep <= PORTS.size -> buildPort(loadStep - 1)
-            loadStep == PORTS.size + 1 -> { systems.buildFortresses(models) { x, z, r, reg -> addIsland(x, z, r, reg, 777) }; living.buildBase(models) }
+            loadStep == PORTS.size + 1 -> { systems.buildFortresses(models) { x, z, r, reg -> addIsland(x, z, r, reg, 777) }; living.buildBase(models); portView.build(models) }
             loadStep <= PORTS.size + 1 + wildCount -> repeat(1) { buildWildIsland() }
             else -> {
                 systems.buildReefsAndWrecks { x, z, m -> isWater(x, z, m) }
@@ -1640,11 +1641,13 @@ class SeaGame : ApplicationAdapter() {
         questEvent(QType.REACH, "", false, port = i)
         if (tutorial == 5) advanceTutorial()
         save()
+        portView.enter(i)
         menus.showPort(i)
     }
 
     fun closePort() {
         menus.close()
+        portView.leave()
         val p = player
         if (p != null) for (s in ships) if (s.ally && hypot(s.x - p.x, s.z - p.z) > 200) { s.x = p.x; s.z = p.z + 25 }
         if (ships.count { it.ally } != allies.size) spawnAllies()
@@ -1784,6 +1787,12 @@ class SeaGame : ApplicationAdapter() {
 
     private fun updateCamera(dt: Float) {
         val p = player ?: return
+        if (portView.active) {
+            portView.update(dt)
+            portView.applyCamera(cam)
+            camPos.set(cam.position)
+            return
+        }
         val k = (p.len / 12f).pow(0.45f) * (if (wDp / hDp > 1) 0.8f else 1f)
         val tx = p.x + p.vx * 0.6f
         val tz = p.z + p.vz * 0.6f
@@ -1839,6 +1848,7 @@ class SeaGame : ApplicationAdapter() {
         for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 230) shadowBatch.render(s.inst)
         systems.renderShadows(shadowBatch, lookX, lookZ)
         living.renderShadows(shadowBatch, lookX, lookZ)
+        portView.renderShadows(shadowBatch, lookX, lookZ)
         shadowBatch.end()
         sunLight.end()
         }
@@ -1872,6 +1882,7 @@ class SeaGame : ApplicationAdapter() {
         treasure?.let { if (hypot(it.x - lookX, it.z - lookZ) < 600) modelBatch.render(it.inst, env) }
         systems.render(modelBatch, env, lookX, lookZ)
         living.render(modelBatch, env, lookX, lookZ)
+        portView.render(modelBatch, env, lookX, lookZ)
         serpent?.let { sp ->
             if (hypot(sp.x - lookX, sp.z - lookZ) < 600) {
                 modelBatch.render(sp.head, env)
@@ -1900,6 +1911,7 @@ class SeaGame : ApplicationAdapter() {
                 }
             }
         }
+        if (night > 0.15f) portView.lanterns({ x, y, z -> fx.glow(x, y, z, 4f, glowCol.set(1f, 0.82f, 0.45f, night * 0.85f)) }, lookX, lookZ)
         treasure?.let { t ->
             val pulse = 0.5f + 0.5f * sin(now * 4)
             fx.glow(t.x, 4f, t.z, 7f + pulse * 3, glowCol.set(1f, 0.85f, 0.3f, 0.35f + 0.3f * pulse))

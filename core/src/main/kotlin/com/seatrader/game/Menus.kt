@@ -114,6 +114,7 @@ class Menus(private val g: SeaGame) {
     // ===================== Порт =====================
     fun showPort(i: Int) {
         portIndex = i
+        sheetCollapsed = false
         baseOpen = false
         portScroll = 0f
         open(SeaGame.State.PORT) { buildPort() }
@@ -124,27 +125,13 @@ class Menus(private val g: SeaGame) {
         buildPort()
     }
 
+    private var sheetCollapsed = false
+    private val portChips = listOf("Верфь", "Улучшения", "Арсенал", "Рынок", "Флот", "Таверна", "Вид")
+    private val portPlaces = listOf("Верфь: корабли", "Верфь: улучшения", "Арсенал", "Рыночная площадь", "Причал флота", "Таверна «Семь ветров»", "Парусная мастерская")
+
     private fun buildPort() {
         val prevScroll = portScroll
-        stage.clear()
-        val root = overlay()
-        val panel = panelTable()
-        panel.add(ui.label("⚓ " + PORTS[portIndex].name, ui.big, align = Align.center)).growX().row()
-        panel.add(Table().also { t ->
-            t.add(currencyRow())
-            t.add(ui.label("  ·  корабль отремонтирован", ui.small, rgb(0xb9d6f2)))
-        }).padTop(4f).padBottom(10f).row()
-
-        val tabs = Table()
-        listOf("Верфь", "Улучшения", "Арсенал", "Рынок", "Флот", "Таверна", "Вид").forEachIndexed { i, name ->
-            val b = if (portTab == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
-            b.pad(6f, 4f, 6f, 4f)
-            b.onClick { portTab = i; portScroll = 0f; buildPort() }
-            tabs.add(b).growX().uniformX().minWidth(0f).height(38f).pad(3f, 3f, 3f, 3f)
-            if (i == 3) tabs.row()
-        }
-        panel.add(tabs).growX().padBottom(8f).row()
-
+        g.portView.select(portTab)
         val content = Table().top()
         when (portTab) {
             0 -> shipCards(content)
@@ -155,21 +142,79 @@ class Menus(private val g: SeaGame) {
             5 -> tavernCards(content, portIndex)
             else -> paintCards(content)
         }
-        val scroll = ScrollPane(content, ui.scrollStyle)
-        scroll.setScrollingDisabled(true, false)
-        scroll.setFadeScrollBars(true)
-        scroll.setOverscroll(false, true)
-        panel.add(scroll).grow().row()
+        sceneLayout("⚓ " + PORTS[portIndex].name, portChips, portTab, portPlaces[portTab], { i -> portTab = i; portScroll = 0f; buildPort() },
+            content, prevScroll) { g.closePort() }
+    }
 
+    /**
+     * Меню поверх живой сцены порта: сверху — название и места острова,
+     * снизу (или справа) — панель выбранного места. По пустому месту можно провести пальцем — камера облетит остров.
+     */
+    private fun sceneLayout(title: String, chips: List<String>, sel: Int, place: String, onChip: (Int) -> Unit,
+                            content: Table, prevScroll: Float, onExit: () -> Unit) {
+        stage.clear()
+        val root = Table()
+        root.setFillParent(true)
+        root.touchable = Touchable.enabled
+        stage.addActor(root)
+        root.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.DragListener() {
+            override fun drag(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int) {
+                if (event?.target === root) g.portView.orbit -= deltaX * 0.006f
+            }
+        })
+        val landscape = g.wDp > g.hDp
+        // верхняя плашка
+        val top = Table().also { it.background = ui.panel(0x0b2238, 0.82f); it.pad(8f, 10f, 8f, 10f) }
+        val head = Table()
+        head.add(ui.label(title, ui.big)).left().growX()
+        head.add(currencyRow()).right()
+        top.add(head).growX().row()
+        val tabs = Table()
+        chips.forEachIndexed { i, name ->
+            val b = if (sel == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
+            b.pad(5f, 3f, 5f, 3f)
+            b.onClick { sheetCollapsed = false; onChip(i) }
+            tabs.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
+            if (i == 3 && chips.size > 4) tabs.row()
+        }
+        top.add(tabs).growX().padTop(6f).row()
+        // панель места
+        val sheet = Table().also { it.background = ui.panel(0x10304d, 0.94f); it.pad(10f) }
+        val bar = Table()
+        bar.add(ui.label(place, ui.mid, rgb(0xffc93c))).left().growX()
+        val toggle = ui.button(if (sheetCollapsed) "▲" else "▼", 0x164266, 0x123a5c, ui.mid)
+        toggle.onClick { sheetCollapsed = !sheetCollapsed; relayout() }
+        bar.add(toggle).size(44f, 36f)
+        sheet.add(bar).growX().padBottom(if (sheetCollapsed) 0f else 6f).row()
+        var scroll: ScrollPane? = null
+        if (!sheetCollapsed) {
+            val sc = ScrollPane(content, ui.scrollStyle)
+            sc.setScrollingDisabled(true, false)
+            sc.setFadeScrollBars(true)
+            sc.setOverscroll(false, true)
+            sheet.add(sc).grow().row()
+            scroll = sc
+        }
         val sail = ui.blue("⚓  Выйти в море")
-        sail.onClick { g.closePort() }
-        panel.add(sail).growX().height(54f).padTop(10f).row()
-
-        root.add(panel).width(min(g.wDp - 16, 520f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+        sail.onClick { onExit() }
+        sheet.add(sail).growX().height(50f).padTop(8f).row()
+        val avail = g.hDp - g.safeTop - g.safeBottom
+        if (landscape) {
+            val col = Table()
+            col.add(top).growX().padBottom(6f).row()
+            col.add(sheet).grow().row()
+            root.add().expand().fill()
+            root.add(col).width(min(g.wDp * 0.5f, 540f)).growY().pad(g.safeTop + 6f, 0f, g.safeBottom + 6f, 6f)
+        } else {
+            root.top()
+            root.add(top).growX().pad(g.safeTop + 6f, 6f, 0f, 6f).row()
+            root.add().expand().fill().row()
+            val h = if (sheetCollapsed) 112f else avail * 0.5f
+            root.add(sheet).growX().height(h).pad(0f, 6f, g.safeBottom + 6f, 6f).row()
+        }
         stage.act(0f)
-        root.layout(); panel.layout(); scroll.layout()
-        scroll.scrollY = prevScroll
-        scroll.updateVisualScroll()
+        root.layout(); top.layout(); sheet.layout()
+        scroll?.let { it.layout(); it.scrollY = prevScroll; it.updateVisualScroll() }
         scrollRef = scroll
     }
 
@@ -220,9 +265,7 @@ class Menus(private val g: SeaGame) {
         val head = card()
         head.add(ui.label(def.cls.uppercase(), ui.small, rgb(0xffc93c))).left().row()
         head.add(ui.label(def.name, ui.big)).left().row()
-        head.add(ui.label("Улучшения действуют только на этот корабль — и сразу видны на нём.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
-        val inst = com.badlogic.gdx.graphics.g3d.ModelInstance(g.shipModel(g.playerLook(), u))
-        head.add(ShipPreview(g, inst, def.look)).growX().height(230f).padTop(8f).row()
+        head.add(ui.label("Корабль стоит в доке — улучшения сразу видны на нём. Проведите пальцем по сцене, чтобы облететь его.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
         val partNames = listOf("Корпус", "Паруса", "Пушки", "Заряжание")
         val seen = (0..3).filter { u[it] > 0 }.map { k -> "${partNames[k]}: " + UPGRADE_LOOKS[k][u[k] - 1] }
         if (seen.isNotEmpty()) head.add(ui.label("Видно на корабле:\n" + seen.joinToString("\n"), ui.small, rgb(0xffe082), wrap = true)).growX().padTop(6f).row()
@@ -273,7 +316,7 @@ class Menus(private val g: SeaGame) {
         for ((i, id) in g.allies.withIndex()) {
             val m = MERCS.first { it.id == id }
             val c = card(0x1d5a46)
-            c.add(ui.label("В строю: ${m.name}", ui.mid)).growX().left()
+            c.add(ui.label("В строю: ${m.name}", ui.mid, wrap = true)).growX().left()
             val fire = ui.button("Уволить", 0x8a3b3b, 0x6d2c2c, ui.small)
             fire.onClick {
                 g.allies.removeAt(i)
@@ -649,6 +692,7 @@ class Menus(private val g: SeaGame) {
 
     fun showBase() {
         baseOpen = true
+        sheetCollapsed = false
         baseTab = 0
         portScroll = 0f
         open(SeaGame.State.PORT) { buildBaseMenu() }
@@ -656,12 +700,7 @@ class Menus(private val g: SeaGame) {
 
     private fun buildBaseMenu() {
         val prevScroll = scrollRef?.scrollY ?: 0f
-        stage.clear()
         val lv = g.living
-        val root = overlay()
-        val panel = panelTable()
-        panel.add(ui.label("⚑ Остров Надежды", ui.big, align = Align.center)).growX().row()
-        panel.add(currencyRow()).padTop(4f).padBottom(8f).row()
         val content = Table().top()
         if (!lv.baseFounded) {
             val c = card()
@@ -671,13 +710,6 @@ class Menus(private val g: SeaGame) {
             c.add(priceButton("Основать базу ${fmt(BASE_FOUND_COST)}", 0, g.coins >= BASE_FOUND_COST).also { it.onClick { lv.foundBase(); buildBaseMenu() } }).growX().height(52f).padTop(10f).row()
             content.add(c).growX().row()
         } else {
-            val tabs = Table()
-            listOf("Постройки", "Таверна").forEachIndexed { i, name ->
-                val b = if (baseTab == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
-                b.onClick { if (i == 1 && lv.blev[2] == 0) g.toast("Сначала постройте таверну") else { baseTab = i; buildBaseMenu() } }
-                tabs.add(b).growX().uniformX().height(38f).pad(3f)
-            }
-            panel.add(tabs).growX().padBottom(6f).row()
             if (baseTab == 1) tavernCards(content, Living.BASE_PORT) else {
                 val bank = card(0x1d5a46)
                 bank.add(ui.label("Казна базы: ${lv.bank.toInt()} из ${lv.bankCap()}", ui.big)).left().row()
@@ -702,19 +734,11 @@ class Menus(private val g: SeaGame) {
                 }
             }
         }
-        val scroll = ScrollPane(content, ui.scrollStyle)
-        scroll.setScrollingDisabled(true, false)
-        scroll.setOverscroll(false, true)
-        panel.add(scroll).grow().row()
-        val sail = ui.blue("⚓  Выйти в море")
-        sail.onClick { baseOpen = false; close(); g.save() }
-        panel.add(sail).growX().height(54f).padTop(10f).row()
-        root.add(panel).width(min(g.wDp - 16, 520f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
-        stage.act(0f)
-        root.layout(); panel.layout(); scroll.layout()
-        scroll.scrollY = prevScroll
-        scroll.updateVisualScroll()
-        scrollRef = scroll
+        g.portView.select(baseTab)
+        val chips = if (lv.baseFounded) listOf("Постройки", "Таверна") else listOf("Остров")
+        sceneLayout("⚑ Остров Надежды", chips, if (lv.baseFounded) baseTab else 0, if (!lv.baseFounded) "Ничейный остров" else if (baseTab == 1) "Таверна базы" else "Постройки базы",
+            { i -> if (i == 1 && lv.blev[2] == 0) g.toast("Сначала постройте таверну") else { baseTab = i; buildBaseMenu() } },
+            content, prevScroll) { g.closePort() }
     }
 
     // ===================== Эпизоды: высадки, ныряние =====================

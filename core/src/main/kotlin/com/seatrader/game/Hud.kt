@@ -88,6 +88,7 @@ class Hud(private val g: SeaGame) {
         val top = g.hDp - g.safeTop
         val wDp = g.wDp; val hDp = g.hDp
 
+        if (g.portView.active) return
         b.color = Color.WHITE
         b.draw(ui.dark, 0f, 0f, wDp, hDp)
         if (g.flash > 0) {

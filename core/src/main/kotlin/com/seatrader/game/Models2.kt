@@ -150,4 +150,199 @@ object Models2 {
         g.color(0xc9a227).push().at(0f, 0.2f, 0f).ico(1.2f).pop()
         return g.build()
     }
+
+    // ===================== Портовые места =====================
+    // Локальные координаты: +Z — от берега в море, начало — у кромки воды.
+    private fun platform(g: Geo, x0: Float, x1: Float, z0: Float, z1: Float, y: Float = 2.2f) {
+        g.color(0x9c7449).push().at((x0 + x1) / 2, y, (z0 + z1) / 2).box(x1 - x0, 0.5f, z1 - z0).pop()
+        g.color(0x6d4c2f)
+        var x = x0 + 0.6f
+        while (x < x1) { g.push().at(x, y + 0.26f, (z0 + z1) / 2).box(0.08f, 0.03f, z1 - z0 - 0.3f).pop(); x += 1.6f }
+        var px = x0 + 0.5f
+        while (px <= x1) {
+            var pz = z0 + 0.5f
+            while (pz <= z1) { g.color(0x4e342e).push().at(px, y - 2.6f, pz).cylinder(0.32f, 0.32f, 5f, 6).pop(); pz += 4f }
+            px += 4f
+        }
+    }
+
+    private fun roof(g: Geo, cx: Float, y: Float, cz: Float, w: Float, d: Float, col: Int) {
+        g.color(col)
+        for (s in intArrayOf(-1, 1)) g.push().at(cx + s * w * 0.24f, y + w * 0.12f, cz).rotZ(-s * 28f).box(w * 0.58f, 0.35f, d + 0.8f).pop()
+        g.color(darkC(col)).push().at(cx, y + w * 0.26f, cz).box(0.4f, 0.4f, d + 0.9f).pop()
+    }
+
+    private fun darkC(c: Int): Int {
+        val r = (c shr 16 and 255) * 7 / 10; val gg = (c shr 8 and 255) * 7 / 10; val b = (c and 255) * 7 / 10
+        return (r shl 16) or (gg shl 8) or b
+    }
+
+    private fun lantern(g: Geo, x: Float, y: Float, z: Float) {
+        g.color(0x3e2723).push().at(x, y + 1.6f, z).box(0.2f, 3.2f, 0.2f).pop()
+        g.color(0xffd27a).push().at(x, y + 3.4f, z).box(0.55f, 0.6f, 0.55f).pop()
+        g.color(0x3e2723).push().at(x, y + 3.85f, z).cone(0.45f, 0.4f, 4).pop()
+    }
+
+    private fun barrel(g: Geo, x: Float, y: Float, z: Float, col: Int = 0x6d4c2f) {
+        g.color(col).push().at(x, y + 0.5f, z).cylinder(0.45f, 0.45f, 1f, 8).pop()
+        g.color(0x37474f).push().at(x, y + 0.75f, z).cylinder(0.47f, 0.47f, 0.08f, 8).pop()
+    }
+
+    fun station(kind: String): Model {
+        val g = Geo()
+        val y = 2.2f
+        when (kind) {
+            "yard" -> {
+                platform(g, -12f, 12f, -5f, 3f)
+                // эллинг
+                g.color(0xb08a5e).push().at(-5f, y + 3f, -1.5f).box(9f, 6f, 6f).pop()
+                roof(g, -5f, y + 6f, -1.5f, 9.6f, 6f, 0x7b3f2a)
+                g.color(0x3e2723).push().at(-5f, y + 2f, 1.55f).box(4f, 4f, 0.1f).pop()
+                // два пирса — док для корабля
+                for (sx in intArrayOf(-1, 1)) {
+                    g.color(0x9c7449).push().at(sx * 7.2f, y - 0.3f, 18f).box(2.6f, 0.45f, 32f).pop()
+                    var z = 3f
+                    while (z < 34f) {
+                        g.color(0x4e342e).push().at(sx * 7.2f, y - 2.8f, z).cylinder(0.3f, 0.3f, 5f, 6).pop()
+                        // леса вдоль борта
+                        if (z < 28f && sx < 0) {
+                            g.color(0x8d6e4a).push().at(sx * 6.2f, y + 3f, z).box(0.25f, 6.4f, 0.25f).pop()
+                            g.color(0x8d6e4a).push().at(sx * 6.2f, y + 2.6f, z + 2f).box(0.2f, 0.2f, 4f).pop()
+                            g.color(0x8d6e4a).push().at(sx * 6.2f, y + 5.4f, z + 2f).box(0.2f, 0.2f, 4f).pop()
+                        }
+                        z += 4f
+                    }
+                    g.color(0x263238)
+                    for (k in 0..2) g.push().at(sx * 7.6f, y + 0.4f, 8f + k * 10f).cylinder(0.3f, 0.4f, 0.8f, 6).pop()
+                }
+                // кран
+                g.color(0x6d4c2f).push().at(-10.5f, y + 8f, 6f).box(0.7f, 16f, 0.7f).pop()
+                g.color(0x6d4c2f).beam(Vector3(-10.5f, y + 15.5f, 6f), Vector3(-3f, y + 15.5f, 10f), 0.45f)
+                g.color(0x3e2723).beam(Vector3(-10.5f, y + 9f, 6f), Vector3(-5f, y + 15.4f, 9.2f), 0.18f)
+                g.color(0x212121).push().at(-3.2f, y + 12f, 10f).box(0.08f, 7f, 0.08f).pop()
+                g.color(0x8d6e4a).push().at(-3.2f, y + 8.4f, 10f).box(1.6f, 1f, 1.6f).pop()
+                // штабеля брёвен и бочки
+                g.color(0xa1887f)
+                for (k in 0 until 6) g.push().at(5.5f + (k % 3) * 0.9f, y + 0.6f + (k / 3) * 0.8f, -3f).rotX(90f).cylinder(0.42f, 0.42f, 4.5f, 6).pop()
+                barrel(g, 2f, y, 1.5f); barrel(g, 3f, y, 1.8f); barrel(g, 2.5f, y, 0.6f, 0x8d6e4a)
+                lantern(g, 6f, y, 2.5f); lantern(g, -6f, y + -0.3f, 33.5f); lantern(g, 6f, y - 0.3f, 33.5f)
+            }
+            "market" -> {
+                platform(g, -14f, 14f, -5f, 9f)
+                val aw = listOf(0xc62828 to 0xf5f0dc, 0x6a1b9a to 0xffe082, 0x1565c0 to 0xf5f5f5, 0xef6c00 to 0xfff3e0, 0xad1457 to 0xf8bbd0)
+                for (k in 0 until 5) {
+                    val cx = -10.8f + k * 5.4f
+                    // прилавок
+                    g.color(0x8d6e4a).push().at(cx, y + 0.8f, 4f).box(4.2f, 1.4f, 1.4f).pop()
+                    g.color(0xa1887f).push().at(cx, y + 1.55f, 4f).box(4.4f, 0.15f, 1.6f).pop()
+                    // столбы
+                    g.color(0x5d4037)
+                    for (sx in intArrayOf(-1, 1)) for (sz in intArrayOf(0, 1)) g.push().at(cx + sx * 2.1f, y + 2f, 1.2f + sz * 3.4f).box(0.22f, 4f, 0.22f).pop()
+                    // полосатый навес
+                    val (c1, c2) = aw[k]
+                    for (st in 0 until 6) g.color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 4.25f, 2.9f).rotX(-14f).box(0.7f, 0.14f, 4.4f).pop()
+                    for (st in 0 until 6) g.color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 3.7f, 5.15f).box(0.7f, 0.9f, 0.08f).pop()
+                    // товар
+                    when (k) {
+                        0 -> { g.color(0xd7b98a); for (m in 0..2) g.push().at(cx - 1.2f + m * 1.2f, y + 2.05f, 4f).scale(1f, 1.2f, 1f).ico(0.45f).pop() }
+                        1 -> { barrel(g, cx - 1f, y + 1.6f, 4f); g.color(0x1b5e20); for (m in 0..2) g.push().at(cx + 0.6f + m * 0.45f, y + 2f, 4f).cylinder(0.14f, 0.16f, 0.8f, 6).pop() }
+                        2 -> { val cs = intArrayOf(0xc62828, 0x1565c0, 0xf9a825, 0x2e7d32); for (m in 0..3) g.color(cs[m]).push().at(cx - 1.4f + m * 0.9f, y + 1.95f, 4f).rotX(90f).cylinder(0.35f, 0.35f, 1.3f, 6).pop() }
+                        3 -> { val cs = intArrayOf(0xe65100, 0xb71c1c, 0xfbc02d); for (m in 0..2) { g.color(0x6d4c2f).push().at(cx - 1.2f + m * 1.2f, y + 1.8f, 4f).cylinder(0.5f, 0.35f, 0.3f, 8).pop(); g.color(cs[m]).push().at(cx - 1.2f + m * 1.2f, y + 2f, 4f).scale(1f, 0.5f, 1f).ico(0.45f).pop() } }
+                        else -> { val cs = intArrayOf(0x8e24aa, 0xec407a, 0x26c6da); for (m in 0..2) g.color(cs[m]).push().at(cx - 1f + m * 1f, y + 2.6f, 4.2f).box(0.8f, 1.8f, 0.1f).pop() }
+                    }
+                    // ящики позади
+                    g.color(0x8d6e4a).push().at(cx + 1.2f, y + 0.6f, 0.4f).box(1.1f, 1f, 1.1f).pop()
+                }
+                barrel(g, -13f, y, 7.5f); barrel(g, 13f, y, 7.5f, 0x5d4037)
+                lantern(g, -13.3f, y, 1f); lantern(g, 13.3f, y, 1f); lantern(g, 0f, y, 8.4f)
+            }
+            "tavern" -> {
+                platform(g, -9f, 9f, -5f, 9f)
+                g.color(0xd9c7a0).push().at(0f, y + 3.6f, -0.5f).box(11f, 7.2f, 7f).pop()
+                g.color(0x6d4c2f)
+                for (sx in intArrayOf(-1, 1)) g.push().at(sx * 5.5f, y + 3.6f, 3f).box(0.4f, 7.2f, 0.4f).pop()
+                g.color(0x6d4c2f).push().at(0f, y + 3.6f, 3f).box(11.2f, 0.35f, 0.4f).pop()
+                roof(g, 0f, y + 7.2f, -0.5f, 11.8f, 7f, 0xa1442b)
+                g.color(0x9e9e9e).push().at(3.5f, y + 9.5f, -2f).box(1.2f, 3f, 1.2f).pop()
+                g.color(0x3e2723).push().at(0f, y + 1.5f, 3.05f).box(1.8f, 3f, 0.1f).pop()
+                g.color(0xffcf6b)
+                for (sx in intArrayOf(-1, 1)) { g.push().at(sx * 3f, y + 2f, 3.05f).box(1.6f, 1.3f, 0.1f).pop(); g.push().at(sx * 3f, y + 5.4f, 3.05f).box(1.4f, 1.1f, 0.1f).pop() }
+                g.push().at(0f, y + 5.4f, 3.05f).box(1.4f, 1.1f, 0.1f).pop()
+                // вывеска с кружкой
+                g.color(0x3e2723).push().at(6.2f, y + 4.2f, 3.4f).box(1.8f, 0.2f, 0.2f).pop()
+                g.color(0x6d4c2f).push().at(6.6f, y + 3.1f, 3.4f).box(0.2f, 1.8f, 1.8f).pop()
+                g.color(0xffc107).push().at(6.75f, y + 3.0f, 3.4f).box(0.1f, 0.9f, 0.7f).pop()
+                g.color(0xffffff).push().at(6.75f, y + 3.55f, 3.4f).box(0.12f, 0.25f, 0.8f).pop()
+                // столы и бочки
+                for (k in 0..1) {
+                    val tx = -4f + k * 8f
+                    g.color(0x6d4c2f).push().at(tx, y + 0.9f, 6.2f).cylinder(1.1f, 1.1f, 0.15f, 8).pop()
+                    g.color(0x4e342e).push().at(tx, y + 0.45f, 6.2f).cylinder(0.15f, 0.15f, 0.9f, 5).pop()
+                    g.color(0xffc107).push().at(tx + 0.3f, y + 1.15f, 6.2f).cylinder(0.15f, 0.15f, 0.35f, 6).pop()
+                    for (sx in intArrayOf(-1, 1)) g.color(0x6d4c2f).push().at(tx + sx * 1.6f, y + 0.5f, 6.2f).box(0.5f, 0.2f, 1.6f).pop()
+                }
+                barrel(g, -7.5f, y, 2f); barrel(g, -7.5f, y, 3.1f); barrel(g, -7.5f, y + 1f, 2.5f)
+                lantern(g, -8.4f, y, 8.3f); lantern(g, 8.4f, y, 8.3f)
+            }
+            "arsenal" -> {
+                platform(g, -10f, 10f, -5f, 8f)
+                g.color(0x8a8478).push().at(0f, y + 2.5f, 0f).box(16f, 5f, 8f).pop()
+                g.color(0x6d675e)
+                for (k in -3..3) g.push().at(k * 2.3f, y + 5.5f, 3.6f).box(1.2f, 1f, 0.8f).pop()
+                g.color(0x5d5850).push().at(0f, y + 1.6f, 4.05f).box(3f, 3.2f, 0.1f).pop()
+                g.color(0x3e2723).push().at(0f, y + 1.5f, 4.1f).box(2.4f, 3f, 0.1f).pop()
+                // пушки на стене
+                for (k in -2..2 step 2) {
+                    g.color(0x222222).push().at(k * 2.3f + 1.15f, y + 5.6f, 4.4f).rotX(90f).cylinder(0.35f, 0.48f, 2.8f, 7).pop()
+                    g.color(0x5d4037).push().at(k * 2.3f + 1.15f, y + 5.2f, 3.4f).box(1f, 0.5f, 1.4f).pop()
+                }
+                // мортира, ядра, порох
+                g.color(0x263238).push().at(-6f, y + 0.9f, 6f).rotX(-30f).cylinder(0.9f, 0.7f, 1.6f, 8).pop()
+                g.color(0x5d4037).push().at(-6f, y + 0.3f, 6f).box(1.8f, 0.6f, 1.8f).pop()
+                g.color(0x262626)
+                for (row in 0 until 3) for (k in 0 until 3 - row) g.push().at(4f + (k - (3 - row - 1) / 2f) * 0.6f, y + 0.55f + row * 0.5f, 6f).ico(0.3f).pop()
+                barrel(g, 7.5f, y, 5.5f, 0x4e342e); barrel(g, 8.4f, y, 6.4f, 0x4e342e)
+                g.color(0xc62828).push().at(7.95f, y + 1.05f, 5.95f).box(1.8f, 0.1f, 0.1f).pop()
+                // флаг
+                g.color(0x3e2723).push().at(-7.5f, y + 8f, -2.5f).box(0.25f, 11f, 0.25f).pop()
+                g.color(0xc62828).push().at(-6.1f, y + 12.6f, -2.5f).box(2.6f, 1.6f, 0.08f).pop()
+            }
+            "fleet" -> {
+                platform(g, -6f, 6f, -5f, 2f)
+                g.color(0x9c7449).push().at(0f, y - 0.3f, 22f).box(4f, 0.45f, 40f).pop()
+                var z = 3f
+                while (z < 42f) {
+                    for (sx in intArrayOf(-1, 1)) {
+                        g.color(0x4e342e).push().at(sx * 1.8f, y - 2.8f, z).cylinder(0.3f, 0.3f, 5f, 6).pop()
+                        g.color(0x263238).push().at(sx * 1.6f, y + 0.4f, z + 1f).cylinder(0.25f, 0.35f, 0.7f, 6).pop()
+                    }
+                    z += 6f
+                }
+                // будка смотрителя
+                g.color(0x90a4ae).push().at(-2.5f, y + 1.8f, -2f).box(4f, 3.6f, 3.6f).pop()
+                roof(g, -2.5f, y + 3.6f, -2f, 4.6f, 3.6f, 0x37474f)
+                g.color(0xffcf6b).push().at(-2.5f, y + 2f, -0.15f).box(1f, 0.9f, 0.1f).pop()
+                lantern(g, 1.6f, y - 0.3f, 41f); lantern(g, -1.6f, y - 0.3f, 20f)
+                g.color(0xffffff).push().at(3f, y + 0.3f, 0f).cylinder(0.6f, 0.6f, 0.15f, 10).pop()
+            }
+            "paint" -> {
+                platform(g, -10f, 10f, -5f, 7f)
+                g.color(0xc8b28a).push().at(-4f, y + 3f, -1.5f).box(8f, 6f, 6f).pop()
+                roof(g, -4f, y + 6f, -1.5f, 8.6f, 6f, 0x5d4037)
+                g.color(0x3e2723).push().at(-4f, y + 1.6f, 1.55f).box(2.4f, 3.2f, 0.1f).pop()
+                // верёвки с сушащимися парусами
+                val cols = intArrayOf(0xc62828, 0x64b5f6, 0xffc107, 0x2e7d32, 0x262626, 0x6a1b9a)
+                for (row in 0..1) {
+                    val zz = 3f + row * 2.6f
+                    for (sx in intArrayOf(0, 1)) g.color(0x4e342e).push().at(1f + sx * 8f, y + 3f, zz).box(0.25f, 6f, 0.25f).pop()
+                    g.color(0x3e2723).beam(Vector3(1f, y + 5.8f, zz), Vector3(9f, y + 5.8f, zz), 0.06f)
+                    for (k in 0..2) g.color(cols[row * 3 + k]).push().at(2.4f + k * 2.6f, y + 4.4f, zz).sail(2.2f, 2.8f, 0.3f).pop()
+                }
+                g.color(0xc62828).push().at(-8.5f, y + 0.4f, 4f).cylinder(0.4f, 0.35f, 0.8f, 8).pop()
+                g.color(0x1565c0).push().at(-7.4f, y + 0.4f, 4.6f).cylinder(0.4f, 0.35f, 0.8f, 8).pop()
+                g.color(0xffc107).push().at(-8f, y + 0.4f, 5.6f).cylinder(0.4f, 0.35f, 0.8f, 8).pop()
+            }
+        }
+        return g.build()
+    }
 }
