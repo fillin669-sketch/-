@@ -98,6 +98,14 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val f = frame - base
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
+        if (System.getenv("SEA_BOARD") != null) {
+            if (f == 3) press("Выбрать"); if (f == 5) press("Забрать"); if (f == 8) g.menus.close()
+            if (f == 12) { val p = g.player!!; g.menus.showBoarding(g.spawnEnemy("sloop", p.x + 30f, p.z)) }
+            if (f == 20) shot("board"); if (f == 21) { repeat(3) { press("Удар") } }
+            if (f == 40) shot("board_result")
+            if (f == 41) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Выбрать"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 90) { dumpShaders(); Gdx.app.exit() }; return }
         if (landscape) {
             when (f) {
