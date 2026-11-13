@@ -65,6 +65,10 @@ class Ship(
     var target: Ship? = null
     /** Номер капитана с наградой за голову (-1 — обычный). */
     var bounty = -1
+    /** Навигация ботов: сколько стоим на месте и куда выбираемся. */
+    var stuckT = 0f
+    var escapeT = 0f
+    var escA = 0f
     var hunter = false
     var ghost = false
     var trait = ""

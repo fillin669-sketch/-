@@ -702,11 +702,12 @@ class Systems(private val g: SeaGame) {
     /** Поведение мирных судов: купцы идут в порт назначения, рыбаки кружат у острова. */
     fun neutralAI(s: Ship, dt: Float) {
         if (s.sinking) return
-        if (s.type == "navy") { g.living.navyAI(s, dt); return }
+        if (s.type == "navy") { g.living.navyAI(s, dt); g.steerAround(s, dt); return }
         if (s.type == "fisher") {
             val a = atan2(s.x - s.wx, -(s.z - s.wz))
             s.desired = a + PI.toFloat() / 2 * 1.1f
             s.throttle = 0.35f
+            g.steerAround(s, dt)
             return
         }
         val pirate = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking && hypot(it.x - s.x, it.z - s.z) < 90 }.minByOrNull { hypot(it.x - s.x, it.z - s.z) }
@@ -715,6 +716,7 @@ class Systems(private val g: SeaGame) {
         } else {
             s.desired = atan2(s.wx - s.x, -(s.wz - s.z)); s.throttle = 0.7f
         }
+        g.steerAround(s, dt)
         if (hypot(s.wx - s.x, s.wz - s.z) < 60) g.ships.remove(s)
     }
 

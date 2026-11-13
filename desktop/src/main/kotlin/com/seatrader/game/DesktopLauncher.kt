@@ -110,6 +110,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
             return
         }
         val lv = g.living
+        if (System.getenv("SEA_AI") != null) { aiTest(f); return }
         when (f) {
             2 -> shot("00_hero")
             3 -> press("Выбрать: Hope")
@@ -167,6 +168,58 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
         }
     }
+    private val track = HashMap<Ship, FloatArray>()
+    private var stuckSum = 0; private var samples = 0
+    /** Проверка навигации ботов: застревают ли у островов. */
+    private fun aiTest(f: Int) {
+        when (f) {
+            2 -> press("Выбрать: Fin")
+            4 -> press("Забрать")
+            8 -> g.menus.close()
+            10 -> {
+                val p = g.player!!
+                // место среди диких островов
+                val isl = g.islands.filter { it.port == -1 && Math.hypot(it.x.toDouble(), it.z.toDouble()) in 300.0..900.0 }.take(6)
+                for (s in ArrayList(g.ships)) if (s !== p) g.ships.remove(s)
+                var k = 0
+                for (i in isl) for (a in 0 until 4) {
+                    val ang = a * 1.57f + 0.4f
+                    val x = i.x + kotlin.math.cos(ang) * (i.r + 18f); val z = i.z + kotlin.math.sin(ang) * (i.r + 18f)
+                    val s = if (k % 3 == 2) g.spawnNeutral("merchant", x, z).also { it.wx = i.x * -1f; it.wz = i.z * -1f } else g.spawnEnemy("brig", x, z)
+                    s.h = Math.atan2((i.x - x).toDouble(), (-(i.z - z)).toDouble()).toFloat() // носом к острову
+                    s.desired = s.h
+                    k++
+                }
+                p.x = 0f; p.z = 60f; p.inPort = true
+                log.append("spawned $k ships\n")
+            }
+            in 11..1400 -> {
+                g.player!!.let { it.x = 0f; it.z = 60f; it.vx = 0f; it.vz = 0f }
+                if (f % 60 == 0) {
+                    var stuck = 0; var inside = 0
+                    for (s in g.ships) {
+                        if (s === g.player || s.sinking) continue
+                        val prev = track[s]
+                        if (prev != null && Math.hypot((s.x - prev[0]).toDouble(), (s.z - prev[1]).toDouble()) < 6.0) {
+                            stuck++
+                            val ni = g.islands.minByOrNull { Math.hypot((it.x - s.x).toDouble(), (it.z - s.z).toDouble()) - it.r }!!
+                            log.append("   stuck ${s.type} ${s.faction} ai=${s.ai} thr=${"%.2f".format(s.throttle)} spd=${"%.1f".format(s.speed)} island=${(Math.hypot((ni.x - s.x).toDouble(), (ni.z - s.z).toDouble()) - ni.r).toInt()} pos=(${s.x.toInt()},${s.z.toInt()}) esc=${s.escapeT}\n")
+                        }
+                        if (g.islands.any { Math.hypot((it.x - s.x).toDouble(), (it.z - s.z).toDouble()) < it.r }) inside++
+                        track[s] = floatArrayOf(s.x, s.z)
+                    }
+                    if (f > 300) { stuckSum += stuck; samples++ }
+                    log.append("t=${f / 30}s ships=${g.ships.size - 1} stuck(<6m/2s)=$stuck inside=$inside\n")
+                }
+            }
+            1401 -> {
+                log.append("avg stuck after 10s = ${stuckSum.toFloat() / samples}\n")
+                Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
+                Gdx.app.exit()
+            }
+        }
+    }
+
     /** Нажатие на вкладку порта: ищем кнопку по тексту. */
     private fun clickTab(i: Int) {
         val names = listOf("Верфь", "Улучш.", "Флот", "Вид")

@@ -1458,14 +1458,84 @@ class SeaGame : ApplicationAdapter() {
         if (Random.nextFloat() < dt * 0.05f) s.side = -s.side
     }
 
+    /** Есть ли остров на отрезке от (x0, z0) до (x1, z1). */
+    fun pathBlocked(x0: Float, z0: Float, x1: Float, z1: Float, margin: Float): Boolean {
+        val dx = x1 - x0; val dz = z1 - z0
+        val len2 = dx * dx + dz * dz
+        for (isl in islands) {
+            var t = if (len2 > 0) ((isl.x - x0) * dx + (isl.z - z0) * dz) / len2 else 0f
+            t = clamp(t, 0f, 1f)
+            if (hypot(x0 + dx * t - isl.x, z0 + dz * t - isl.z) < isl.r + margin) return true
+        }
+        return false
+    }
+
     private fun wander(s: Ship) {
         if (s.aiT <= 0 || hypot(s.wx - s.x, s.wz - s.z) < 25) {
-            s.aiT = rand(8f, 16f)
-            s.wx = clamp(s.x + rand(-250f, 250f), -WORLD + 80, WORLD - 80)
-            s.wz = clamp(s.z + rand(-250f, 250f), -WORLD + 80, WORLD - 80)
+            s.aiT = rand(10f, 18f)
+            // точка на чистой воде, к которой можно проплыть без острова на пути
+            var best = false
+            repeat(14) {
+                if (best) return@repeat
+                val tx = clamp(s.x + rand(-260f, 260f), -WORLD + 80, WORLD - 80)
+                val tz = clamp(s.z + rand(-260f, 260f), -WORLD + 80, WORLD - 80)
+                if (isWater(tx, tz, 30f) && !pathBlocked(s.x, s.z, tx, tz, s.radius + 6f)) { s.wx = tx; s.wz = tz; best = true }
+            }
+            if (!best) { s.wx = clamp(s.x + rand(-200f, 200f), -WORLD + 80, WORLD - 80); s.wz = clamp(s.z + rand(-200f, 200f), -WORLD + 80, WORLD - 80) }
         }
         s.desired = atan2(s.wx - s.x, -(s.wz - s.z))
-        s.throttle = 0.45f
+        s.throttle = 0.5f
+    }
+
+    /**
+     * Обход островов: к желаемому курсу добавляется отталкивание от берега
+     * и скольжение вдоль него в сторону цели. Если корабль застрял — отходит от берега.
+     */
+    fun steerAround(s: Ship, dt: Float) {
+        // застревание
+        if (s.throttle > 0.3f && abs(s.speed) < 1.2f) s.stuckT += dt else s.stuckT = max(0f, s.stuckT - dt * 2)
+        if (s.stuckT > 2.2f) {
+            s.stuckT = 0f
+            val isl = islands.minByOrNull { hypot(it.x - s.x, it.z - s.z) - it.r }
+            if (isl != null) {
+                val away = atan2(s.x - isl.x, -(s.z - isl.z))
+                s.escA = away + rand(-0.5f, 0.5f)
+                s.escapeT = 3.5f
+                s.wx = clamp(s.x + sin(s.escA) * 160f, -WORLD + 80, WORLD - 80)
+                s.wz = clamp(s.z - cos(s.escA) * 160f, -WORLD + 80, WORLD - 80)
+                s.aiT = 10f
+            }
+        }
+        if (s.escapeT > 0) {
+            s.escapeT -= dt
+            s.desired = s.escA
+            s.throttle = max(s.throttle, 0.8f)
+            return
+        }
+        val dx0 = sin(s.desired); val dz0 = -cos(s.desired)
+        var ax = dx0; var az = dz0
+        val look = 50f + abs(s.speed) * 2.5f
+        for (isl in islands) {
+            val ox = s.x - isl.x; val oz = s.z - isl.z
+            val d = hypot(ox, oz)
+            val clear = isl.r + s.radius + 6f
+            val range = clear + look
+            if (d > range || d < 0.01f) continue
+            val nx = ox / d; val nz = oz / d
+            val toward = -(nx * dx0 + nz * dz0)
+            if (toward < -0.25f && d > clear + 4f) continue
+            if (s.type == "fisher" && d > clear + 4f) continue
+            val w = clamp((range - d) / (range - clear), 0f, 1.6f)
+            ax += nx * w * 1.5f; az += nz * w * 1.5f
+            val tx = -nz; val tz = nx
+            val side = if (tx * dx0 + tz * dz0 >= 0) 1f else -1f
+            ax += tx * side * w * 1.3f; az += tz * side * w * 1.3f
+        }
+        // край мира
+        val edge = WORLD - 70f
+        if (s.x > edge) ax -= (s.x - edge) / 40f; if (s.x < -edge) ax += (-edge - s.x) / 40f
+        if (s.z > edge) az -= (s.z - edge) / 40f; if (s.z < -edge) az += (-edge - s.z) / 40f
+        s.desired = atan2(ax, -az)
     }
 
     private fun avoidPortsAndIslands(s: Ship, avoidPorts: Boolean) {
@@ -1476,15 +1546,7 @@ class SeaGame : ApplicationAdapter() {
                 s.aiT = 0f
             }
         }
-        val fxv = sin(s.h); val fzv = -cos(s.h)
-        for (isl in islands) {
-            val lx = s.x + fxv * 32; val lz = s.z + fzv * 32
-            if (hypot(lx - isl.x, lz - isl.z) < isl.r + 14) {
-                val cross = fxv * (isl.z - s.z) - fzv * (isl.x - s.x)
-                s.desired = s.h + (if (cross > 0) 1f else -1f) * 1.2f
-                break
-            }
-        }
+        steerAround(s, Gdx.graphics.deltaTime.coerceAtMost(0.05f))
     }
 
     /** Союзники слушаются приказов: строй, атака, отход. */
