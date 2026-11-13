@@ -101,6 +101,12 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val f = frame - base
         if (System.getenv("SEA_PROLOGUE") != null) { prologueTest(f); return }
+        if (System.getenv("SEA_GUILDUI") != null) {
+            if (f == 10) shot("g1_guild_select")
+            if (f == 12) { press("Вступить"); g.openPause() }
+            if (f == 20) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (System.getenv("SEA_CRASH") != null) {
             if (f == 10) shot("c1_crash_dialog")
             if (f == 12) press("Продолжить")

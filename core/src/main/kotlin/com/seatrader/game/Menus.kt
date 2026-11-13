@@ -1031,15 +1031,18 @@ class Menus(private val g: SeaGame) {
             else "Фракция даёт бонусы за ранги. Ранг растёт от ваших дел; на 3-м ранге каждой фракции открывается свой капитан — прогресс по всем путям идёт всегда.",
             ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(8f).row()
         val content = Table().top()
+        // ширина карточек строго по окну: иначе длинные названия раздвигают их за края
+        val panelW = min(g.wDp - 16, 480f)
+        val cardW = panelW - 28f - 6f
         for ((i, gd) in GUILDS.withIndex()) {
             val c = card(if (gs.guild == i) 0x1d5a46 else 0x164266)
             val top = Table()
-            top.add(ui.label(gd.emblem, ui.huge, rgb(gd.color))).width(48f).padRight(8f)
+            top.add(ui.label(gd.emblem, ui.huge, rgb(gd.color))).width(40f).padRight(8f)
             val t = Table()
-            t.add(ui.label(gd.name, ui.big)).left().row()
+            t.add(ui.label(gd.name, if (panelW < 420f) ui.mid else ui.big, wrap = true)).growX().minWidth(0f).row()
             t.add(ui.label(gd.desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
-            top.add(t).growX()
-            c.add(top).growX().row()
+            top.add(t).growX().minWidth(0f)
+            c.add(top).growX().minWidth(0f).row()
             val hero = HEROES.first { it.id == gd.hero }
             val how = when (gd.metric) { "contracts" -> "выполнить ${gd.thresholds[gd.heroRank - 1]} контрактов гильдии"; "explored" -> "открыть ${gd.thresholds[gd.heroRank - 1]}% карты"; else -> "потопить ${gd.thresholds[gd.heroRank - 1]} кораблей" }
             c.add(ui.label("Капитан ${hero.name}: $how", ui.small, rgb(0xffc93c), wrap = true)).growX().padTop(4f).row()
@@ -1052,12 +1055,12 @@ class Menus(private val g: SeaGame) {
                     }
                 }
             c.add(b).growX().height(48f).padTop(8f).row()
-            content.add(c).growX().padBottom(10f).row()
+            content.add(c).width(cardW).minWidth(0f).padBottom(10f).row()
         }
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         if (change) panel.add(ui.blue("Назад").also { it.onClick { close() } }).growX().height(46f).padTop(8f).row()
-        root.add(panel).width(min(g.wDp - 16, 480f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+        root.add(panel).width(panelW).height(g.hDp - g.safeTop - g.safeBottom - 24)
     }
 
     private fun guildCard(content: Table) {
