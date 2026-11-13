@@ -209,8 +209,9 @@ float shadow() {
     for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) r += shadowAt(s.xy + vec2(float(x), float(y)) * o * 1.5, s.z);
     return r / 9.0;
 }
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-vec2 hash2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
+// хэш без синуса: устойчив к точности на телефонах
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 hash2(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
 float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -231,7 +232,7 @@ float cells(vec2 p, float t) {
     return d2 - d1;
 }
 void main() {
-    vec2 p = mod(v_world.xz, 4000.0);
+    vec2 p = v_world.xz + vec2(5000.0);
     float tn = u_time;
     // рябь: несколько систем мелких волн разных направлений
     vec2 gsum = vec2(0.0);

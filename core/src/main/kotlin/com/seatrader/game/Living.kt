@@ -755,13 +755,13 @@ class Living(private val g: SeaGame) {
     // ===================================================================
     // HUD
     fun fleetVisible() = g.ships.any { it.ally && !it.sinking }
-    fun fleetPos(k: Int): Pair<Float, Float> = 40f to (g.hDp - g.safeTop - 268f - k * 54f)
+    fun fleetPos(k: Int): Pair<Float, Float> = 28f to (g.hDp * 0.52f - k * 46f)
     fun actionPos(): Pair<Float, Float> = (g.wDp / 2) to (g.safeBottom + 175f)
 
     fun touch(x: Float, y: Float): Boolean {
         if (fleetVisible()) for (k in 0..2) {
             val (fx, fy) = fleetPos(k)
-            if (hypot(x - fx, y - fy) < 25) {
+            if (hypot(x - fx, y - fy) < 21) {
                 order = k
                 g.sfx.play("click")
                 g.toast("Флот: ${orderNames[k].lowercase()}!", 1.2f)
@@ -783,12 +783,12 @@ class Living(private val g: SeaGame) {
             for (k in 0..2) {
                 val (fx, fy) = fleetPos(k)
                 val on = order == k
-                ui.icon(b, ui.disc, fx, fy, 46f, 46f, 0f, rgb(if (on) 0x2f8ff0 else 0x0a1e32, if (on) 0.95f else 0.6f))
-                ui.icon(b, ui.ring, fx, fy, 50f, 50f, 0f, rgb(if (on) 0xffc93c else 0xffffff, 0.7f))
-                ui.text(b, ui.mid, icons[k], fx - 23, fy + 10, Align.center, 46f)
-                if (on) ui.text(b, ui.small, orderNames[k], fx + 28, fy + 8, Align.left, 100f, c = rgb(0xffe082))
+                ui.icon(b, ui.disc, fx, fy, 38f, 38f, 0f, rgb(if (on) 0x2f8ff0 else 0x0a1e32, if (on) 0.9f else 0.5f))
+                ui.icon(b, ui.ring, fx, fy, 41f, 41f, 0f, rgb(if (on) 0xffc93c else 0xffffff, 0.6f))
+                ui.text(b, ui.small, icons[k], fx - 19, fy + 8, Align.center, 38f)
+                if (on) ui.text(b, ui.small, orderNames[k], fx + 23, fy + 7, Align.left, 100f, c = rgb(0xffe082))
             }
-            ui.text(b, ui.small, "Флот", 18f, fleetPos(0).second + 44f, Align.left, 60f, c = rgb(0xb3e5fc))
+            ui.text(b, ui.small, "Флот", 10f, fleetPos(0).second + 36f, Align.left, 60f, c = rgb(0xb3e5fc))
         }
         actionText?.let { t ->
             val (px, py) = actionPos()

@@ -8,6 +8,7 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -38,8 +39,8 @@ class Hud(private val g: SeaGame) {
             x to (g.safeBottom + 42f)
         } else {
             val col = k / 3; val row = k % 3
-            val x = if (right) colX - col * step else colX + col * step
-            x to (g.safeBottom + 230f + row * step)
+            val x = if (right) colX + 4 - col * 60f else colX - 4 + col * 60f
+            x to (g.safeBottom + 222f + row * 62f)
         }
     }
 
@@ -50,18 +51,37 @@ class Hud(private val g: SeaGame) {
 
     fun boardPos(): Pair<Float, Float> = (g.wDp / 2) to (g.safeBottom + 175f)
 
+    /** Кнопка паузы: маленькая, в левом верхнем углу. */
+    fun pausePos(): Pair<Float, Float> = 30f to (g.hDp - g.safeTop - 30f)
+    fun pauseHit(x: Float, y: Float): Boolean { val (px, py) = pausePos(); return abs(x - px) < 26 && abs(y - py) < 26 }
+
+    /** Рывок — над способностями справа (в альбомной — слева под паузой). */
+    fun boostPos(): Pair<Float, Float> {
+        if (landscape) return 34f to (g.hDp - g.safeTop - 150f)
+        val right = !g.leftHanded
+        val rows = minOf(3, visibleAbilities().size)
+        return (if (right) g.wDp - 38f else 38f) to (g.safeBottom + 222f + rows * 62f)
+    }
+
+    /** Переключатель автоогня рядом с прицелом. */
+    fun autoPos(): Pair<Float, Float> {
+        val right = !g.leftHanded
+        return if (landscape) (if (right) g.wDp - 50f else 50f) to (g.safeBottom + 215f)
+        else (if (right) g.wDp - 122f else 122f) to (g.safeBottom + 100f)
+    }
+
+    private val mapR = 50f
+
     fun minimapHit(x: Float, y: Float): Boolean {
         val (cx, cy) = minimapCenter()
-        return hypot(x - cx, y - cy) < 66f
+        return hypot(x - cx, y - cy) < mapR + 6f
     }
 
     private var questHeight = 60f
 
     private fun minimapCenter(): Pair<Float, Float> {
-        val r = 62f
         val top = g.hDp - g.safeTop
-        return if (landscape) (g.wDp - 12 - 140 - 12 - r) to (top - 12 - r)
-        else (g.wDp - 12 - r) to (top - 112 - questHeight - 16 - r)
+        return (g.wDp - 10 - mapR) to (top - 10 - mapR)
     }
 
     fun drawLoading() {
@@ -187,10 +207,10 @@ class Hud(private val g: SeaGame) {
                 val ang = atan2(ay, ax) * MathUtils.radiansToDegrees - 90f
                 ui.icon(b, ui.triangle, ps.x + ax / al * r, ps.y + ay / al * r, 26f, 26f, ang, c(0xffc93c))
             }
-            val by = 18 + g.safeBottom
-            ui.text(b, ui.big, "${d.roundToInt()} м", 0f, by + 26, Align.center, wDp)
-            ui.icon(b, ui.disc, wDp / 2, by + 52, 40f, 40f, 0f, c(0x3c4650, 0.75f))
-            questIcon(q, wDp / 2, by + 52, 24f)
+            val by = 10 + g.safeBottom
+            ui.icon(b, ui.disc, wDp / 2 - 30, by + 12, 24f, 24f, 0f, c(0x3c4650, 0.7f))
+            questIcon(q, wDp / 2 - 30, by + 12, 14f)
+            ui.text(b, ui.mid, "${d.roundToInt()} м", wDp / 2 - 14, by + 22, Align.left, 100f)
         }
 
         // Путевая точка с карты
@@ -214,7 +234,7 @@ class Hud(private val g: SeaGame) {
         if (g.systems.shantyBanner > 0 && g.sfx.shantyIdx >= 0) {
             val a = min(1f, g.systems.shantyBanner)
             val title = SHANTIES[g.sfx.shantyIdx].title
-            ui.text(b, ui.small, "♪ Команда поёт: «$title» ♪", 0f, g.safeBottom + 92f, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
+            ui.text(b, ui.small, "♪ Команда поёт: «$title» ♪", 0f, g.hDp - g.safeTop - 54f - questHeight - 30f, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
         }
 
         // Джойстик
@@ -231,29 +251,28 @@ class Hud(private val g: SeaGame) {
             }
         }
 
-        // Пауза
-        for (i in 0..1) {
-            val x = 24f + i * 28
-            ui.round(b, x - 3, top - 82, 24f, 66f, c(0x1b2a3a))
-            ui.round(b, x, top - 78, 18f, 60f, c(0xffffff))
-        }
+        // Пауза — маленькая
+        val (pX, pY) = pausePos()
+        ui.round(b, pX - 20, pY - 20, 40f, 40f, c(0x0a141e, 0.5f))
+        for (i in 0..1) ui.rect(b, pX - 8 + i * 10, pY - 10, 6f, 20f, c(0xffffff, 0.95f))
 
         // Рывок
-        val bx = 58f; val by2 = top - 140f
+        val (bx, by2) = boostPos()
         val active = p != null && p.boostT > 0
-        ui.icon(b, ui.disc, bx, by2, 88f, 88f, 0f, c(0xffffff, 0.12f))
-        ui.icon(b, ui.ring, bx, by2, 92f, 92f, 0f, if (active) c(0x3ddc84) else c(0xffffff, 0.6f))
-        ui.icon(b, ui.sails, bx, by2 + 2, 66f, 66f, 0f, c(0xffffff, 0.92f))
-        if (p != null && p.boostCd > 0) ui.pie(b, bx, by2, 42f, p.boostCd / 7f, c(0x0a1e32, 0.6f))
+        ui.icon(b, ui.disc, bx, by2, 54f, 54f, 0f, c(0x0a1e32, 0.5f))
+        ui.icon(b, ui.ring, bx, by2, 57f, 57f, 0f, if (active) c(0x3ddc84) else c(0xffffff, 0.5f))
+        ui.icon(b, ui.sails, bx, by2 + 1, 38f, 38f, 0f, c(0xffffff, 0.92f))
+        if (p != null && p.boostCd > 0) ui.pie(b, bx, by2, 25f, p.boostCd / 7f, c(0x0a1e32, 0.6f))
 
-        // Уровень капитана
+        // Автоогонь
+        val (fxp, fyp) = autoPos()
+        val auto = g.systems.autoFire
+        ui.icon(b, ui.disc, fxp, fyp, 46f, 46f, 0f, c(if (auto) 0x2e7d32 else 0x0a1e32, if (auto) 0.85f else 0.5f))
+        ui.icon(b, ui.ring, fxp, fyp, 49f, 49f, 0f, if (auto) c(0x81c784) else c(0xffffff, 0.5f))
+        ui.text(b, ui.small, "АВТО", fxp - 30, fyp + 12, Align.center, 60f, c = if (auto) Color.WHITE else rgb(0xb0bec5))
+        ui.text(b, ui.small, if (auto) "вкл" else "выкл", fxp - 30, fyp - 2, Align.center, 60f, c = if (auto) rgb(0xc8e6c9) else rgb(0x90a4ae))
+
         val sy = g.systems
-        val lvTxt = "Ур. ${sy.level}" + if (sy.skillPts > 0) "  +${sy.skillPts}" else ""
-        ui.text(b, ui.small, lvTxt, 14f, top - 196, Align.left, 120f, c = if (sy.skillPts > 0) rgb(0xffc93c) else Color.WHITE)
-        ui.pill(b, 14f, top - 216, 96f, 8f, c(0x0b2238, 0.8f))
-        ui.pill(b, 14f, top - 216, max(8f, 96f * sy.xp / xpForLevel(sy.level).toFloat()), 8f, c(0x81d4fa))
-        // Трюм
-        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", 14f, top - 226, Align.left, 140f, c = rgb(0xd7ccc8))
 
         // Способности
         val icons = listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon)
@@ -261,11 +280,11 @@ class Hud(private val g: SeaGame) {
             val (ax, ay) = abilityPos(i)
             val cd = g.abilityCd[i]
             val on = (i == 0 && g.ammo == Ammo.FIRE) || (i == 1 && g.ammo == Ammo.CHAIN) || (i == 2 && p != null && p.repairT > 0)
-            ui.icon(b, ui.disc, ax, ay, 60f, 60f, 0f, c(0x0a1e32, 0.55f))
-            ui.icon(b, ui.ring, ax, ay, 64f, 64f, 0f, if (on) c(0xffc93c) else c(0xffffff, 0.55f))
-            ui.icon(b, icons[i], ax, ay, 38f, 38f, 0f, if (cd > 0) c(0xffffff, 0.45f) else Color.WHITE)
+            ui.icon(b, ui.disc, ax, ay, 50f, 50f, 0f, c(0x0a1e32, 0.5f))
+            ui.icon(b, ui.ring, ax, ay, 53f, 53f, 0f, if (on) c(0xffc93c) else c(0xffffff, 0.5f))
+            ui.icon(b, icons[i], ax, ay, 31f, 31f, 0f, if (cd > 0) c(0xffffff, 0.45f) else Color.WHITE)
             if (cd > 0) {
-                ui.pie(b, ax, ay, 28f, cd / ABILITIES[i].cooldown, c(0x0a1e32, 0.55f))
+                ui.pie(b, ax, ay, 23f, cd / ABILITIES[i].cooldown, c(0x0a1e32, 0.55f))
                 ui.text(b, ui.mid, "${kotlin.math.ceil(cd).toInt()}", ax - 30, ay + 9, Align.center, 60f)
             }
             if (on && i < 2) ui.text(b, ui.small, "${kotlin.math.ceil(g.ammoT).toInt()} с", ax - 30, ay - 36, Align.center, 60f, c = rgb(0xffc93c))
@@ -294,43 +313,51 @@ class Hud(private val g: SeaGame) {
         }
         if (g.systems.grappleTarget != null) ui.text(b, ui.big, "Крюки летят — сближаемся…", 0f, hDp * 0.55f, Align.center, wDp, c = rgb(0xffe0b2))
 
-        // Монеты и кристаллы
+        // Монеты и кристаллы — одна компактная строка рядом с паузой
+        val curY = top - 30f
+        var cxx = 58f
         for ((i, pair) in listOf(fmt(g.coins) to ui.coin, fmt(g.gems) to ui.gem).withIndex()) {
-            val y = top - 16 - 44 - i * 50
-            val tw = ui.measure(ui.big, pair.first)
-            val w = max(118f, tw + 62)
-            ui.round(b, wDp - 12 - w, y, w, 42f, c(0x0a141e, 0.55f))
-            ui.text(b, ui.big, pair.first, wDp - 12 - w, y + 32, Align.right, w - 50)
-            ui.icon(b, pair.second, wDp - 36, y + 21, 32f, if (i == 0) 32f else 28f)
+            val tw = ui.measure(ui.mid, pair.first)
+            val w = tw + 36
+            ui.round(b, cxx, curY - 15, w, 30f, c(0x0a141e, 0.5f))
+            ui.icon(b, pair.second, cxx + 14, curY, 20f, if (i == 0) 20f else 17f)
+            ui.text(b, ui.mid, pair.first, cxx + 28, curY + 10, Align.left, tw + 4)
+            cxx += w + 6
         }
 
-        // Баннер задания
-        val qx = 116f
-        val qw = if (landscape) min(wDp - 116 - 300f, 440f) else min(wDp - 128f, 440f)
-        val textW = qw - 58
-        layout.setText(ui.mid, q.text, Color.WHITE, textW, Align.center, true)
-        val qh = layout.height + 34
+        // Задание — узкая плашка под валютой
+        val qx = 10f
+        val qw = (wDp - 2 * mapR - 34f - qx).coerceAtMost(330f)
+        val textW = qw - 40
+        layout.setText(ui.small, q.text, Color.WHITE, textW, Align.left, true)
+        val qh = layout.height + 22
         questHeight = qh
-        val qy = if (landscape) top - 16 - qh else top - 112 - qh
-        val pop = if (g.questPop > 0) { g.questPop -= dt; 1 + sin(g.questPop / 0.6f * PI.toFloat()) * 0.08f } else 1f
-        val cx = qx + qw / 2; val cy = qy + qh / 2
+        val qy = top - 54 - qh
+        val pop = if (g.questPop > 0) { g.questPop -= dt; 1 + sin(g.questPop / 0.6f * PI.toFloat()) * 0.06f } else 1f
         val sw = qw * pop; val sh = qh * pop
-        ui.round(b, cx - sw / 2, cy - sh / 2 - 3, sw, sh, c(0x0d3f7a))
-        ui.round(b, cx - sw / 2, cy - sh / 2, sw, sh, c(if (g.questIdx < STORY_LENGTH) 0x2f8ff0 else 0x5e35b1))
-        questIcon(q, cx - sw / 2 + 26, cy, 28f)
-        ui.mid.color = Color.WHITE
-        ui.mid.draw(b, layout, cx - sw / 2 + 50, cy + sh / 2 - 7)
-        val barW = sw - 64
-        ui.pill(b, cx - sw / 2 + 50, cy - sh / 2 + 6, barW, 11f, c(0x0d2f57))
+        val qcx = qx + qw / 2; val qcy = qy + qh / 2
+        ui.round(b, qcx - sw / 2, qcy - sh / 2, sw, sh, c(if (g.questIdx < STORY_LENGTH) 0x1565c0 else 0x4527a0, 0.72f))
+        questIcon(q, qcx - sw / 2 + 17, qcy + 2, 18f)
+        ui.small.color = Color.WHITE
+        ui.small.draw(b, layout, qcx - sw / 2 + 34, qcy + sh / 2 - 6)
+        val barW = sw - 44
+        ui.pill(b, qcx - sw / 2 + 34, qcy - sh / 2 + 5, barW, 5f, c(0x0d2f57))
         val prog = min(1f, g.qprog.toFloat() / q.n)
-        if (prog > 0) ui.pill(b, cx - sw / 2 + 50, cy - sh / 2 + 6, max(11f, barW * prog), 11f, c(0xf5b700))
+        if (prog > 0) ui.pill(b, qcx - sw / 2 + 34, qcy - sh / 2 + 5, max(5f, barW * prog), 5f, c(0xf5b700))
+        // уровень и трюм под заданием
+        val lvTxt = "Ур. ${sy.level}" + if (sy.skillPts > 0) "  +${sy.skillPts}" else ""
+        val ly = qy - 8
+        ui.text(b, ui.small, lvTxt, 12f, ly, Align.left, 70f, c = if (sy.skillPts > 0) rgb(0xffc93c) else rgb(0xe3f2fd))
+        ui.pill(b, 62f, ly - 9, 60f, 5f, c(0x0b2238, 0.8f))
+        ui.pill(b, 62f, ly - 9, max(5f, 60f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
+        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", 130f, ly, Align.left, 120f, c = rgb(0xd7ccc8))
 
         drawMinimap()
 
         // Обучение
         if (g.tutorial < g.tutorialTexts.size && g.state == SeaGame.State.PLAY) {
             val text = g.tutorialTexts[g.tutorial]
-            val tw = min(wDp - 150, 320f)
+            val tw = min(wDp - 175, 300f)
             layout.setText(ui.mid, text, Color.WHITE, tw - 70, Align.left, true)
             val th = layout.height + 28
             val tx = if (g.leftHanded) wDp - tw - 16 else 16f
@@ -345,8 +372,8 @@ class Hud(private val g: SeaGame) {
         if (g.toastT > 0) {
             g.toastT -= dt
             val a = min(1f, g.toastT * 3)
-            val font = if (g.toastText.length > 34) ui.big else ui.huge
-            ui.text(b, font, g.toastText, 10f, hDp * 0.62f, Align.center, wDp - 20, true, Color(1f, 1f, 1f, a))
+            val font = if (g.toastText.length > 30) ui.mid else ui.big
+            ui.text(b, font, g.toastText, 20f, hDp * 0.6f, Align.center, wDp - 40, true, Color(1f, 1f, 1f, a))
         }
         b.color = Color.WHITE
     }
@@ -375,7 +402,7 @@ class Hud(private val g: SeaGame) {
         val b = g.batch
         val p = g.player ?: return
         val (cx, cy) = minimapCenter()
-        val r = 62f
+        val r = mapR
         val range = 420f
         ui.icon(b, ui.disc, cx, cy, r * 2 + 8, r * 2 + 8, 0f, c(0x3e2723, 0.85f))
         val waterCol = when (g.systems.region) { Region.ICE -> 0x5d8fb0; Region.FIRE -> 0x3d5566; Region.REEF -> 0x2f7f7c; Region.ABYSS -> 0x163a63; else -> 0x2a7fc0 }
@@ -421,17 +448,14 @@ class Hud(private val g: SeaGame) {
         ui.icon(b, ui.arrowIcon, cx, cy, 13f, 16f, -p.h * MathUtils.radiansToDegrees, c(0xffffff))
         ui.icon(b, ui.ring, cx, cy, r * 2 + 8, r * 2 + 8, 0f, c(0xd7b98e, 0.95f))
         // север и ветер
-        ui.text(b, ui.small, "С", cx - 10, cy + r + 18, Align.center, 20f, c = rgb(0xffcdd2))
-        val wx = cx + sin(g.windA) * (r + 14)
-        val wy = cy + kotlin.math.cos(g.windA) * (r + 14)
-        ui.icon(b, ui.arrowIcon, wx, wy, 14f, 18f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
+        ui.text(b, ui.small, "С", cx - 10, cy + r - 2, Align.center, 20f, c = rgb(0xffcdd2))
+        val wx = cx + sin(g.windA) * (r + 2)
+        val wy = cy + kotlin.math.cos(g.windA) * (r + 2)
+        ui.icon(b, ui.arrowIcon, wx, wy, 11f, 14f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
         val tags = ArrayList<String>()
+        tags += g.systems.region.title
         if (g.stormLevel > 0.3f) tags += "шторм"
-        if (1f - g.sky.day > 0.5f) tags += "ночь"
-        tags += "нажмите — карта"
-        val tw = 200f
-        val tx = (cx - tw / 2).coerceAtMost(g.wDp - tw - 6)
-        ui.text(b, ui.small, g.systems.region.title, tx, cy - r - 10, Align.center, tw, c = rgb(0xb3e5fc))
-        ui.text(b, ui.small, tags.joinToString(" · "), tx, cy - r - 26, Align.center, tw, c = rgb(0x90a4ae))
+        val tw = 2 * r + 60
+        ui.text(b, ui.small, tags.joinToString(" · "), g.wDp - tw - 6, cy - r - 8, Align.right, tw, c = rgb(0xb3e5fc, 0.85f))
     }
 }

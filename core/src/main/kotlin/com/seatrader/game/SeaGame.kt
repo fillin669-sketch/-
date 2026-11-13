@@ -573,11 +573,20 @@ class SeaGame : ApplicationAdapter() {
             val x = screenX / scale
             val y = hDp - screenY / scale
             if (state != State.PLAY) return false
-            if (x < 90 && y > hDp - safeTop - 88) { sfx.play("click"); openPause(); return true }
-            if (hypot(x - 58f, y - (hDp - safeTop - 140f)) < 48) { tryBoost(); return true }
+            if (hud.pauseHit(x, y)) { sfx.play("click"); openPause(); return true }
+            run { val (bx, by) = hud.boostPos(); if (hypot(x - bx, y - by) < 30) { tryBoost(); return true } }
+            run {
+                val (fx, fy) = hud.autoPos()
+                if (hypot(x - fx, y - fy) < 26) {
+                    systems.autoFire = !systems.autoFire
+                    sfx.play("click")
+                    toast(if (systems.autoFire) "Автоогонь включён" else "Автоогонь выключен — стреляйте прицелом", 1.4f)
+                    save(); return true
+                }
+            }
             for (i in hud.visibleAbilities()) {
                 val (bx, by) = hud.abilityPos(i)
-                if (hypot(x - bx, y - by) < 34) { useAbility(i); return true }
+                if (hypot(x - bx, y - by) < 28) { useAbility(i); return true }
             }
             val (ax, ay) = hud.aimPos()
             if (!aimActive && hypot(x - ax, y - ay) < 36) {
