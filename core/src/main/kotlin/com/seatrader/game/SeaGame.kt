@@ -2219,8 +2219,9 @@ class SeaGame : ApplicationAdapter() {
     private var slowChecks = 0
     private var maxFpsSeen = 0f
     private fun scaleSteps(): FloatArray = when (gfx) {
-        0 -> floatArrayOf(0.5f, 0.6f, 0.7f)
-        1 -> floatArrayOf(0.6f, 0.7f, 0.8f, 0.9f)
+        // нижний порог разрешения выше: картинка на слабых телефонах не «мылится»
+        0 -> floatArrayOf(0.62f, 0.72f, 0.82f)
+        1 -> floatArrayOf(0.7f, 0.8f, 0.9f, 1f)
         2 -> floatArrayOf(0.7f, 0.85f, 1f)
         else -> floatArrayOf(0.85f, 1f, 1.12f, 1.25f)
     }
@@ -2241,8 +2242,10 @@ class SeaGame : ApplicationAdapter() {
         if (fps < lowT && scaleIdx > 0) scaleIdx--
         else if (fps > highT && scaleIdx < steps.size - 1) scaleIdx++
         // телефон не справляется даже на минимальном разрешении — снижаем уровень графики
-        if (fps < (if (capped) 20f else 30f) && scaleIdx == 0 && gfx > 0 && autoGfx) {
-            if (++slowChecks >= 2) { slowChecks = 0; applyGfx(gfx - 1); toast("Графика снижена для плавной игры", 2f); return }
+        // графику снижаем, только если телефон стабильно не тянет (не из-за одного подтормаживания)
+        val lowFps = if (capped) 20f else if (gfx == 1) 25f else 30f
+        if (fps < lowFps && scaleIdx == 0 && gfx > 0 && autoGfx) {
+            if (++slowChecks >= 3) { slowChecks = 0; applyGfx(gfx - 1); toast("Графика снижена для плавной игры", 2f); return }
         } else slowChecks = 0
         post.scale = steps[scaleIdx.coerceAtMost(steps.size - 1)]
     }
@@ -2388,11 +2391,13 @@ class SeaGame : ApplicationAdapter() {
         val lookX = camPos.x; val lookZ = camPos.z - 80
         // Карта теней от солнца (или луны)
         shadowCenter.set(lookX, 0f, lookZ + 30)
-        if (gfx >= 1 && !shadowFail) {
+        // тени есть на всех уровнях графики: на слабых телефонах — карта поменьше и ближний радиус
+        if (!shadowFail) {
+        val sr = if (gfx == 0) 0.7f else 1f
         sunLight.begin(shadowCenter, sunLight.direction)
         shadowBatch.begin(sunLight.camera)
-        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 + isl.r) shadowBatch.render(isl.inst)
-        for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 230) shadowBatch.render(s.inst)
+        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 * sr + isl.r) shadowBatch.render(isl.inst)
+        for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 230 * sr) shadowBatch.render(s.inst)
         systems.renderShadows(shadowBatch, lookX, lookZ)
         living.renderShadows(shadowBatch, lookX, lookZ)
         portView.renderShadows(shadowBatch, lookX, lookZ)
@@ -2411,7 +2416,7 @@ class SeaGame : ApplicationAdapter() {
             nearIslands.clear()
             islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
         }
-        val shadows = gfx >= 1 && !debugNoShadow && !shadowFail
+        val shadows = !debugNoShadow && !shadowFail
         env.shadowMap = if (shadows) sunLight else null
         water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans,
             reflTex, if (usePost) post.sceneW else Gdx.graphics.backBufferWidth, if (usePost) post.sceneH else Gdx.graphics.backBufferHeight, gfx >= 2)
