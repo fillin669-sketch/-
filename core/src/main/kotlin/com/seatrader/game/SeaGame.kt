@@ -527,6 +527,8 @@ class SeaGame : ApplicationAdapter() {
         val d = ENEMIES.getValue(type)
         return createShip(name ?: d.name, enemyStats(d), Faction.PIRATE, d.look, x, z, rand(-PI.toFloat(), PI.toFloat()), boss ?: d.boss).also {
             it.type = type; it.coinsMin = d.coinsMin; it.coinsMax = d.coinsMax; it.gems = d.gems
+            it.homeX = x; it.homeZ = z
+            it.leash = if (it.boss || boss == true) 450f else 300f
         }
     }
 
@@ -1008,10 +1010,10 @@ class SeaGame : ApplicationAdapter() {
         val p = player
         if (s.faction == Faction.NEUTRAL && s.type != "navy") return
         if (s === p && !systems.autoFire) return
-        val foes: List<Ship> = when {
-            s.faction == Faction.PLAYER || s.faction == Faction.NEUTRAL -> ships.filter { it.faction == Faction.PIRATE && !it.sinking }
-            s.ai == AiState.ATTACK -> ships.filter { (it.faction == Faction.PLAYER || it.type == "merchant" || (it.type == "navy" && it.faction == Faction.NEUTRAL)) && !it.sinking && !(it === p && p.safe) }
-            else -> emptyList()
+        val mode = when {
+            s.faction == Faction.PLAYER || s.faction == Faction.NEUTRAL -> 1
+            s.ai == AiState.ATTACK -> 2
+            else -> 0
         }
         val sp = serpent
         for (si in 0..1) {
@@ -1019,7 +1021,10 @@ class SeaGame : ApplicationAdapter() {
             val side = if (si == 0) -1f else 1f
             val rx = cos(s.h) * side; val rz = sin(s.h) * side
             var best: Ship? = null; var bd = Float.MAX_VALUE
-            for (o in foes) {
+            if (mode != 0) for (o in ships) {
+                if (o.sinking) continue
+                if (mode == 1 && o.faction != Faction.PIRATE) continue
+                if (mode == 2 && !((o.faction == Faction.PLAYER || o.type == "merchant" || (o.type == "navy" && o.faction == Faction.NEUTRAL)) && !(o === p && p.safe))) continue
                 val dx = o.x - s.x; val dz = o.z - s.z; val d = hypot(dx, dz)
                 if (d > s.stats.range || d < 2) continue
                 if ((dx * rx + dz * rz) / d < 0.42f) continue
@@ -1370,7 +1375,13 @@ class SeaGame : ApplicationAdapter() {
                 sp.depth = max(0f, sp.depth - dt * 8)
                 if (sp.stateT <= 0) { sp.diving = true; sp.stateT = 4f; fx.splash(sp.x, sp.z, 1.8f) }
             }
-            val target = if (p.safe || p.sinking) atan2(sp.x - p.x, -(sp.z - p.z)) else atan2(dx, -dz)
+            val home = hypot(sp.x - sp.homeX, sp.z - sp.homeZ)
+            if (home > 380f) sp.returning = true else if (home < 120f) sp.returning = false
+            val target = when {
+                sp.returning -> atan2(sp.homeX - sp.x, -(sp.homeZ - sp.z))
+                p.safe || p.sinking -> atan2(sp.x - p.x, -(sp.z - p.z))
+                else -> atan2(dx, -dz)
+            }
             val diff = wrapAngle(target - sp.h)
             sp.h = wrapAngle(sp.h + clamp(diff, -1.6f * dt, 1.6f * dt))
             val speed = if (sp.diving) 20f else 13f
@@ -1417,6 +1428,21 @@ class SeaGame : ApplicationAdapter() {
         if (s.sinking) return
         val p = player ?: return
         s.aiT -= dt
+        // возврат после брошенной погони
+        if (s.giveUpT > 0) {
+            s.giveUpT -= dt
+            s.ai = AiState.WANDER; s.target = null
+            val dh = hypot(s.homeX - s.x, s.homeZ - s.z)
+            if (dh > 40) { s.desired = atan2(s.homeX - s.x, -(s.homeZ - s.z)); s.throttle = 0.7f } else wander(s)
+            avoidPortsAndIslands(s, true)
+            return
+        }
+        if (s.ai == AiState.ATTACK && hypot(s.x - s.homeX, s.z - s.homeZ) > s.leash) {
+            s.giveUpT = 14f
+            if (s.target === p) floatText(s.x, s.y + 10f, s.z, "Отстал", rgb(0xb0bec5), ui.small)
+            s.ai = AiState.WANDER; s.target = null
+            return
+        }
         val aggro = if (s.hunter) 3000f else (if (s.boss) 280f else 175f) * (1f - 0.55f * living.fogK)
         val friendly = living.pirateFriendly && !s.boss && !s.hunter && s.type != "navy" && s.lastHit < now - 15
         // цель: ближайший из игрока и его союзников
@@ -1930,15 +1956,35 @@ class SeaGame : ApplicationAdapter() {
         cam.update()
     }
 
+    // Динамическое разрешение: держим плавность, качество поднимаем, когда телефон справляется
+    private var fpsAcc = 0f
+    private var fpsFrames = 0
+    private val scaleSteps = floatArrayOf(0.7f, 0.85f, 1f, 1.12f, 1.25f)
+    private var scaleIdx = 4
+
+    private fun adaptQuality(dt: Float) {
+        if (!highQuality || !::post.isInitialized) return
+        fpsAcc += dt; fpsFrames++
+        if (fpsAcc < 2.5f) return
+        val fps = fpsFrames / fpsAcc
+        fpsAcc = 0f; fpsFrames = 0
+        if (fps < 42f && scaleIdx > 0) scaleIdx--
+        else if (fps > 57f && scaleIdx < scaleSteps.size - 1) scaleIdx++
+        post.scale = scaleSteps[scaleIdx]
+    }
+
     private val nearIslands = ArrayList<FloatArray>()
+    private var nearT = 0f
+    /** Виден ли шар (x, y, z, r) камере — не рисуем то, что за кадром. */
+    fun visible(x: Float, y: Float, z: Float, r: Float) = cam.frustum.sphereInFrustum(x, y, z, r)
     private var reflFbo: com.badlogic.gdx.graphics.glutils.FrameBuffer? = null
     private val reflCam by lazy { PerspectiveCamera(52f, 1f, 1f) }
     private val mirror = com.badlogic.gdx.math.Matrix4().scl(1f, -1f, 1f)
 
     /** Зеркальное отражение сцены в воде: та же камера, мир отражён по высоте. */
     private fun renderReflection(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture {
-        val rw = (Gdx.graphics.backBufferWidth * 0.6f).toInt().coerceAtLeast(64)
-        val rh = (Gdx.graphics.backBufferHeight * 0.6f).toInt().coerceAtLeast(64)
+        val rw = (Gdx.graphics.backBufferWidth * 0.5f).toInt().coerceAtLeast(64)
+        val rh = (Gdx.graphics.backBufferHeight * 0.5f).toInt().coerceAtLeast(64)
         var f = reflFbo
         if (f == null || f.width != rw || f.height != rh) {
             f?.dispose()
@@ -1959,8 +2005,9 @@ class SeaGame : ApplicationAdapter() {
         Gdx.gl.glClearColor(0f, 0f, 0f, 0f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         modelBatch.begin(rc)
-        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 420 + isl.r) modelBatch.render(isl.inst, env)
-        for (s in ships) if (!s.sinking && hypot(s.x - lookX, s.z - lookZ) < 380) modelBatch.render(s.inst, env)
+        // отражение видно, только если отражённый (под водой) объект попадает в кадр
+        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 420 + isl.r && visible(isl.x, -8f, isl.z, isl.r * 1.3f + 20f)) modelBatch.render(isl.inst, env)
+        for (s in ships) if (!s.sinking && hypot(s.x - lookX, s.z - lookZ) < 380 && visible(s.x, -10f, s.z, s.len + 14f)) modelBatch.render(s.inst, env)
         portView.render(modelBatch, env, lookX, lookZ)
         living.render(modelBatch, env, lookX, lookZ)
         modelBatch.end()
@@ -1980,6 +2027,7 @@ class SeaGame : ApplicationAdapter() {
             return
         }
         if (state == State.PLAY) update(dt) else now += dt * 0.3f
+        adaptQuality(dt)
         fx.time = now
         fx.update(dt)
         updateCamera(dt)
@@ -2014,8 +2062,12 @@ class SeaGame : ApplicationAdapter() {
         if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
-        nearIslands.clear()
-        islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
+        nearT -= dt
+        if (nearT <= 0f || nearIslands.isEmpty()) {
+            nearT = 0.25f
+            nearIslands.clear()
+            islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
+        }
         val shadows = highQuality && !debugNoShadow
         env.shadowMap = if (shadows) sunLight else null
         water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans,
@@ -2023,7 +2075,7 @@ class SeaGame : ApplicationAdapter() {
 
         modelBatch.begin(cam)
         for ((i, isl) in islands.withIndex()) {
-            if (hypot(isl.x - lookX, isl.z - lookZ) > 560 + isl.r) continue
+            if (hypot(isl.x - lookX, isl.z - lookZ) > 560 + isl.r || !visible(isl.x, 6f, isl.z, isl.r * 1.3f + 20f)) continue
             modelBatch.render(isl.inst, env)
             (isl.foam.materials[0].get(BlendingAttribute.Type) as BlendingAttribute).opacity = (0.22f + sin(now * 1.6f + i) * 0.1f) * (0.5f + 0.5f * sky.day)
             modelBatch.render(isl.foam, env)
@@ -2035,7 +2087,7 @@ class SeaGame : ApplicationAdapter() {
             (port.ring.materials[0].get(BlendingAttribute.Type) as BlendingAttribute).opacity = 0.55f + sin(now * 3) * 0.2f
             modelBatch.render(port.ring, env)
         }
-        for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 600) modelBatch.render(s.inst, env)
+        for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 600 && visible(s.x, 8f, s.z, s.len + 12f)) modelBatch.render(s.inst, env)
         for (l in loot) if (hypot(l.x - lookX, l.z - lookZ) < 600) modelBatch.render(l.inst, env)
         treasure?.let { if (hypot(it.x - lookX, it.z - lookZ) < 600) modelBatch.render(it.inst, env) }
         systems.render(modelBatch, env, lookX, lookZ)

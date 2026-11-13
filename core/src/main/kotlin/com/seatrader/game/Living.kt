@@ -97,6 +97,7 @@ class Living(private val g: SeaGame) {
     var actionText: String? = null
     var actionSub: String? = null
     private var actionFn: (() -> Unit)? = null
+    private var actionCd = 0f
 
     // ===================================================================
     // Офицеры и бонусы
@@ -248,6 +249,7 @@ class Living(private val g: SeaGame) {
             st.dmg * c.dmgMul, st.reload, st.range, st.mass * massMul)
         s.hp = s.stats.hp.toFloat(); s.maxHp = s.hp
         s.bounty = id; s.hunter = true; s.trait = c.trait
+        s.leash = 750f
         hunter = s
         if (c.trait == "escort") repeat(2) { k ->
             g.spawnEnemy("sloop", pt.first + (k * 2 - 1) * 20f, pt.second + 18f).also { it.leader = s; it.hunter = true }
@@ -293,8 +295,8 @@ class Living(private val g: SeaGame) {
     fun navyAI(s: Ship, dt: Float) {
         if (s.sinking) return
         val p = g.player ?: return
-        val foe = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking && hypot(it.x - s.x, it.z - s.z) < 200 }
-            .minByOrNull { hypot(it.x - s.x, it.z - s.z) }
+        var foe: Ship? = null; var fd = 200f
+        for (o in g.ships) if (o.faction == Faction.PIRATE && !o.sinking) { val d = hypot(o.x - s.x, o.z - s.z); if (d < fd) { fd = d; foe = o } }
         if (foe != null) { s.ai = AiState.ATTACK; s.target = foe; g.attackMove(s, foe, dt); return }
         s.ai = AiState.WANDER
         if (rep[1] >= 30 && hypot(p.x - s.x, p.z - s.z) < 400) {
@@ -660,7 +662,8 @@ class Living(private val g: SeaGame) {
         updateBase(dt, p)
         updateWeather(dt, p)
         updateGhosts(dt, p)
-        updateAction(p)
+        actionCd -= dt
+        if (actionCd <= 0f) { actionCd = 0.2f; updateAction(p) }
     }
 
     // ===================================================================

@@ -69,6 +69,10 @@ class Ship(
     var stuckT = 0f
     /** Союзник догоняет строй: немного быстрее обычного. */
     var catchUp = false
+    /** Граница погони: враг не уходит от точки появления дальше [leash] м. */
+    var homeX = x; var homeZ = z
+    var leash = 300f
+    var giveUpT = 0f
     var escapeT = 0f
     var escA = 0f
     var hunter = false
@@ -113,6 +117,8 @@ class Serpent(var x: Float, var z: Float, val head: ModelInstance, val body: Lis
     var depth = 0f
     var deadT = 0f
     var lastHit = -99f
+    var homeX = x; var homeZ = z
+    var returning = false
     val trail = ArrayList<Vector3>()
     val segPos = Array(body.size) { Vector3() }
     val dead get() = deadT > 0

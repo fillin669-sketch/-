@@ -112,6 +112,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         val lv = g.living
         if (System.getenv("SEA_AI") != null) { aiTest(f); return }
         if (System.getenv("SEA_ALLY") != null) { allyTest(f); return }
+        if (System.getenv("SEA_LEASH") != null) { leashTest(f); return }
         when (f) {
             2 -> shot("00_hero")
             3 -> press("Выбрать: Hope")
@@ -242,6 +243,25 @@ class TestScript(private val g: SeaGame, private val out: String) {
                 if (f == 1200) shot("ally2")
             }
             1301 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+        }
+    }
+
+    private var chaser: Ship? = null
+    private fun leashTest(f: Int) {
+        val p = g.player ?: return
+        when (f) {
+            2 -> press("Выбрать: Fin")
+            4 -> press("Забрать")
+            8 -> { g.menus.close(); for (s in ArrayList(g.ships)) if (s !== p) g.ships.remove(s)
+                p.x = 400f; p.z = 400f; p.inPort = false; p.h = 0f
+                chaser = g.spawnEnemy("brig", 400f, 480f) }
+            in 10..1500 -> {
+                g.joyActive = true; g.joyMag = 1f; g.joyJx = 0.3f; g.joyJy = 1f
+                p.hp = p.maxHp
+                val c = chaser ?: return
+                if (f % 60 == 0) log.append("t=${f / 30}s dist=${Math.hypot((c.x - p.x).toDouble(), (c.z - p.z).toDouble()).toInt()} fromHome=${Math.hypot((c.x - c.homeX).toDouble(), (c.z - c.homeZ).toDouble()).toInt()} ai=${c.ai} giveUp=${"%.1f".format(c.giveUpT)} fps=${Gdx.graphics.framesPerSecond}\n")
+            }
+            1501 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
         }
     }
 

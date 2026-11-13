@@ -309,14 +309,17 @@ void main() {
     col += u_sunCol * (spec + glint) * (0.12 + 0.88 * u_day) * (1.0 - u_storm * 0.85) * sh;
 
     // пена: кружево на гребнях и полосы прибоя
-    float lace = smoothstep(0.08, 0.0, cells(p * 0.55 + vec2(tn * 0.05, tn * 0.03), tn * 0.8));
-    float lace2 = smoothstep(0.12, 0.0, cells(p * 1.3 - vec2(tn * 0.07, 0.0), tn * 1.1));
     float crest = smoothstep(0.55, 1.05, v_chop + v_h * 0.25 + u_storm * 0.4);
     float wavesIn = sin(d0 * 0.55 - tn * 2.0 + patches * 6.0);
     float surfBand = smoothstep(11.0, 0.0, d0) * smoothstep(0.35, 0.95, wavesIn);
     float edge = smoothstep(2.8, -0.8, d0);
-    float foam = clamp(crest * (lace * 0.9 + lace2 * 0.5) * (0.6 + u_storm) + surfBand * (0.45 + 0.55 * lace2) + edge * (0.7 + 0.3 * lace), 0.0, 1.0);
-    col = mix(col, vec3(0.94, 0.97, 1.0) * (0.55 + 0.45 * u_day), foam * 0.9);
+    // дорогое кружево пены считаем только там, где пена есть
+    if (crest + surfBand + edge > 0.01) {
+        float lace = smoothstep(0.08, 0.0, cells(p * 0.55 + vec2(tn * 0.05, tn * 0.03), tn * 0.8));
+        float lace2 = smoothstep(0.12, 0.0, cells(p * 1.3 - vec2(tn * 0.07, 0.0), tn * 1.1));
+        float foam = clamp(crest * (lace * 0.9 + lace2 * 0.5) * (0.6 + u_storm) + surfBand * (0.45 + 0.55 * lace2) + edge * (0.7 + 0.3 * lace), 0.0, 1.0);
+        col = mix(col, vec3(0.94, 0.97, 1.0) * (0.55 + 0.45 * u_day), foam * 0.9);
+    }
 
     float d = distance(u_cam, v_world);
     col = mix(col, u_fog, smoothstep(u_fogRange.x, u_fogRange.y, d));

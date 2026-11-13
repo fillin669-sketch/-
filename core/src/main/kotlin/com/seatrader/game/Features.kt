@@ -712,7 +712,8 @@ class Systems(private val g: SeaGame) {
             g.steerAround(s, dt)
             return
         }
-        val pirate = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking && hypot(it.x - s.x, it.z - s.z) < 90 }.minByOrNull { hypot(it.x - s.x, it.z - s.z) }
+        var pirate: Ship? = null; var pd = 90f
+        for (o in g.ships) if (o.faction == Faction.PIRATE && !o.sinking) { val d = hypot(o.x - s.x, o.z - s.z); if (d < pd) { pd = d; pirate = o } }
         if (pirate != null && s.lastHit > g.now - 8) {
             s.desired = atan2(s.x - pirate.x, -(s.z - pirate.z)); s.throttle = 1f
         } else {
