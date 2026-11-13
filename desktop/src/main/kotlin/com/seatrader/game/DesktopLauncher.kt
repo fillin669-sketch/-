@@ -142,7 +142,8 @@ class TestScript(private val g: SeaGame, private val out: String) {
             481 -> press("▼")
             500 -> { g.portView.orbit = 1.2f }
             540 -> shot("09_collapsed_orbit")
-            541 -> press("Выйти в море")
+            541 -> { press("Выйти в море"); g.systems.skillPts = 2; g.systems.cargo[0] = 10 }
+            575 -> { g.systems.shantyBanner = 4f }
             580 -> { shot("10_left_port"); info("left"); g.debugNoShadow = true }
             584 -> { shot("10b_noshadow"); g.debugNoShadow = false }
             590 -> tp(lv.ringX, lv.ringZ)

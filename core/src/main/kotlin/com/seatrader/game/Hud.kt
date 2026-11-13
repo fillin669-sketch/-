@@ -78,6 +78,7 @@ class Hud(private val g: SeaGame) {
     }
 
     private var questHeight = 60f
+    private var lineEnd = 130f
 
     private fun minimapCenter(): Pair<Float, Float> {
         val top = g.hDp - g.safeTop
@@ -234,7 +235,12 @@ class Hud(private val g: SeaGame) {
         if (g.systems.shantyBanner > 0 && g.sfx.shantyIdx >= 0) {
             val a = min(1f, g.systems.shantyBanner)
             val title = SHANTIES[g.sfx.shantyIdx].title
-            ui.text(b, ui.small, "♪ Команда поёт: «$title» ♪", 0f, g.hDp - g.safeTop - 54f - questHeight - 30f, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
+            // строкой ниже уровня и названия региона — ни на что не налезает
+            val songY = g.hDp - g.safeTop - 10f - 2 * mapR - 34f
+            val st = "♪ «$title» ♪"
+            val sw2 = ui.measure(ui.small, st) + 20
+            ui.round(b, (wDp - sw2) / 2, songY - 17, sw2, 22f, c(0x0a141e, 0.45f * a))
+            ui.text(b, ui.small, st, 0f, songY, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
         }
 
         // Джойстик
@@ -354,10 +360,13 @@ class Hud(private val g: SeaGame) {
             b.color = Color.WHITE
             b.draw(HeroArt.face(hero), 12f, ly - 20, 22f, 22f)
         }
-        ui.text(b, ui.small, lvTxt, lx, ly, Align.left, 70f, c = if (sy.skillPts > 0) rgb(0xffc93c) else rgb(0xe3f2fd))
-        ui.pill(b, lx + 50f, ly - 9, 60f, 5f, c(0x0b2238, 0.8f))
-        ui.pill(b, lx + 50f, ly - 9, max(5f, 60f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
-        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", lx + 118f, ly, Align.left, 120f, c = rgb(0xd7ccc8))
+        val lvW = ui.measure(ui.small, lvTxt)
+        ui.text(b, ui.small, lvTxt, lx, ly, Align.left, lvW + 4, c = if (sy.skillPts > 0) rgb(0xffc93c) else rgb(0xe3f2fd))
+        val barX = lx + lvW + 8
+        ui.pill(b, barX, ly - 9, 50f, 5f, c(0x0b2238, 0.8f))
+        ui.pill(b, barX, ly - 9, max(5f, 50f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
+        lineEnd = barX + 58
+        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", lineEnd, ly, Align.left, 120f, c = rgb(0xd7ccc8))
 
         drawMinimap()
 
