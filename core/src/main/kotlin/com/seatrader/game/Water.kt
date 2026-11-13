@@ -28,6 +28,9 @@ class Water : Disposable {
     private val mesh: Mesh
     private val shader: ShaderProgram
     private val islandBuf = FloatArray(12 * 3)
+    /** Шейдер воды собрался на этом телефоне. */
+    var ok = true
+        private set
 
     init {
         // сетка гуще у камеры (клетка ~1,4 м) и реже к краям (~13 м)
@@ -56,6 +59,7 @@ class Water : Disposable {
         ShaderProgram.pedantic = false
         shader = ShaderProgram(VERT, FRAG)
         if (!shader.isCompiled) Gdx.app.error("Water", shader.log)
+        ok = shader.isCompiled
     }
 
     /** [islands] — ближайшие острова: x, z, r (до 12 штук). */
@@ -127,6 +131,7 @@ varying float v_h;
 varying float v_shoreD;
 varying vec3 v_shadowUv;
 varying float v_chop;
+varying float v_time;
 // мелкие волны Герстнера: острые гребни (только для вида)
 vec3 gerstner(vec2 p, vec2 d, float k, float a, float sp, inout vec3 dn) {
     float ph = dot(d, p) * k + u_time * sp;
@@ -136,6 +141,7 @@ vec3 gerstner(vec2 p, vec2 d, float k, float a, float sp, inout vec3 dn) {
 }
 void main() {
     vec3 w = a_position + vec3(u_offset.x, 0.0, u_offset.y);
+    v_time = u_time;
     float a1 = w.x * 0.08 + u_time * 1.1;
     float a2 = w.z * 0.11 + u_time * 0.9;
     float a3 = (w.x + w.z) * 0.05 + u_time * 0.7;
@@ -175,7 +181,7 @@ precision highp float;
 precision mediump float;
 #endif
 #endif
-uniform float u_time;
+varying float v_time;
 uniform vec3 u_cam;
 uniform vec3 u_fog;
 uniform vec2 u_fogRange;
@@ -236,7 +242,7 @@ float cells(vec2 p, float t) {
 }
 void main() {
     vec2 p = v_world.xz + vec2(5000.0);
-    float tn = u_time;
+    float tn = v_time;
     // рябь: несколько систем мелких волн разных направлений
     vec2 gsum = vec2(0.0);
     vec2 dirs[6];

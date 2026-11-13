@@ -1,6 +1,7 @@
 package com.seatrader.game
 
 import com.badlogic.gdx.Gdx
+import kotlin.math.abs
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
@@ -96,6 +97,8 @@ class TestScript(private val g: SeaGame, private val out: String) {
             log.append("loaded at frame $frame state=${g.state}\n")
         }
         val f = frame - base
+        if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
+        if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Выбрать"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 90) { dumpShaders(); Gdx.app.exit() }; return }
         if (landscape) {
             when (f) {
                 3 -> { g.menus.close() }
@@ -114,6 +117,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (System.getenv("SEA_AI") != null) { aiTest(f); return }
         if (System.getenv("SEA_ALLY") != null) { allyTest(f); return }
         if (System.getenv("SEA_LEASH") != null) { leashTest(f); return }
+        if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
         when (f) {
             2 -> shot("00_hero")
             3 -> press("Выбрать: Hope")
@@ -264,6 +268,237 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             1501 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
         }
+    }
+
+    // ===================== Бета-тест: сценарии + «обезьяна» + проверки =====================
+    private val plan = ArrayList<Pair<Int, () -> Unit>>()
+    private var planIdx = 0
+    private var waitUntil = 0
+    private var lastNano = 0L
+    private val issues = LinkedHashMap<String, Int>()
+    private var stepName = ""
+    private var softFrames = 0
+    private var minFps = 999
+    private val rnd = java.util.Random(77)
+    private var spikes = 0
+    private fun issue(t: String) { val k = "[$stepName] $t"; issues[k] = (issues[k] ?: 0) + 1 }
+    private fun step(name: String, wait: Int, a: () -> Unit) { plan += wait to { stepName = name; a() } }
+
+    private fun betaChecks(f: Int) {
+        val now = System.nanoTime()
+        if (lastNano != 0L && f > 20) {
+            val ms = (now - lastNano) / 1_000_000
+            if (ms > 400) { spikes++; issue("долгий кадр ${ms / 100 * 100}+ мс") }
+        }
+        lastNano = now
+        val p = g.player ?: run { issue("нет корабля игрока"); return }
+        if (p.x.isNaN() || p.z.isNaN() || p.hp.isNaN()) issue("NaN у игрока")
+        if (abs(p.x) > WORLD + 60 || abs(p.z) > WORLD + 60) issue("игрок за краем мира")
+        if (g.coins < 0) issue("монеты < 0"); if (g.gems < 0) issue("кристаллы < 0")
+        if (g.ships.size > 70) issue("слишком много кораблей ${g.ships.size / 10 * 10}+")
+        if (g.balls.size > 500) issue("слишком много ядер")
+        if (g.loot.size > 250) issue("слишком много добычи")
+        for (s in g.ships) if (s.x.isNaN() || s.hp.isNaN()) { issue("NaN у корабля ${s.type}"); break }
+        val actors = g.stage.root.children.size
+        if (g.state != SeaGame.State.PLAY && g.state != SeaGame.State.LOADING && actors == 0) { if (++softFrames == 30) issue("зависание: состояние ${g.state} без окна") } else softFrames = 0
+        if (g.state == SeaGame.State.PLAY && actors > 0) issue("в игре осталось окно поверх экрана")
+        val fps = Gdx.graphics.framesPerSecond
+        if (f > 200 && fps in 1 until minFps) minFps = fps
+    }
+
+    private fun spawnSide(type: String, d: Float): Ship {
+        val p = g.player!!
+        val rx = kotlin.math.cos(p.h); val rz = kotlin.math.sin(p.h)
+        return g.spawnEnemy(type, p.x + rx * d, p.z + rz * d).also { it.h = p.h; it.ai = AiState.WANDER }
+    }
+
+    private fun buildPlan() {
+        val lv = g.living
+        step("старт", 3) { press("Выбрать: Mihael") }
+        step("старт", 3) { press("Забрать") }
+        step("старт", 3) { if (findButton("швартовы") != null) press("швартовы") }
+        step("старт", 20) { g.menus.close(); g.coins = 200000; g.gems = 2000; tp(250f, -250f); g.player!!.h = 0f }
+        // бой
+        var e1: Ship? = null
+        step("бой", 360) { g.systems.autoFire = true; e1 = spawnSide("sloop", 40f) }
+        step("бой", 1) { val e = e1!!; if (e.hp >= e.maxHp && !e.sinking) issue("автоогонь не попал по пирату за 12 с"); log.append("бой: hp врага ${e.hp.toInt()}/${e.maxHp.toInt()} kills=${g.kills}\n") }
+        // способности и оружие
+        step("способности", 30) { tp(300f, -300f); g.systems.ownedWeapons += listOf(3, 4, 5); spawnSide("brig", 45f) }
+        for (i in 0..5) step("способность $i", 40) { g.abilityCd[i] = 0f; g.useAbility(i) }
+        // абордаж
+        var e2: Ship? = null
+        step("абордаж", 40) { tp(350f, -350f); g.player!!.h = 0f; e2 = spawnSide("sloop", 30f).also { it.hp = it.maxHp * 0.3f } }
+        step("абордаж", 90) { val t = g.systems.boardTarget; if (t == null) issue("нет кнопки абордажа рядом с ослабленным пиратом") else g.systems.throwGrapples(t) }
+        step("абордаж", 110) { }
+        step("абордаж", 10) { if (g.state != SeaGame.State.DIALOG) issue("абордаж не начался: ${g.state}") }
+        for (k in 0..2) step("абордаж", 25) { press("Удар") }
+        step("абордаж", 15) { for (b in listOf("Захватить", "Разграбить", "Продолжить")) if (findButton(b) != null) { press(b); break } }
+        step("абордаж", 10) { if (g.state != SeaGame.State.PLAY) { issue("после абордажа не вернулись в игру: ${g.state}"); g.menus.close() } }
+        // порт: всё купить и проверить
+        step("порт", 30) { g.openPort(0) }
+        for (sd in PLAYER_SHIPS.drop(1)) step("верфь", 6) { press("Верфь"); if (findButton("Купить") != null) press("Купить") }
+        step("верфь", 6) { log.append("кораблей: ${g.owned.size}\n"); if (g.owned.size < PLAYER_SHIPS.size) issue("куплены не все корабли (${g.owned.size})") }
+        step("улучшения", 6) { press("Улучшения") }
+        for (k in 0 until 20) step("улучшения", 3) { val b = findButtonIn { it.text.toString().contains("K") || it.text.toString().matches(Regex(".*\\d.*")) && !it.text.toString().contains("Выйти") }; b?.toggle() }
+        step("улучшения", 6) { log.append("улучшения ${g.playerDef().id}: ${g.ensureUp(g.shipId).toList()}\n") }
+        step("рынок", 6) { press("Рынок") }
+        step("рынок", 6) { repeat(4) { press("+5") } }
+        step("рынок", 6) { val before = g.coins; press("Продать всё"); if (g.coins < before) issue("продажа уменьшила монеты") }
+        step("арсенал", 6) { press("Арсенал") }
+        step("арсенал", 6) { repeat(3) { press("Купить") } }
+        step("флот", 6) { press("Флот") }
+        step("флот", 6) {
+            val names = ArrayList<String>()
+            fun collect(a: com.badlogic.gdx.scenes.scene2d.Actor) { if (a is com.badlogic.gdx.scenes.scene2d.ui.TextButton) names += a.text.toString(); if (a is com.badlogic.gdx.scenes.scene2d.Group) for (c in a.children) collect(c) }
+            collect(g.stage.root); log.append("флот: союзников ${g.allies.size}, кнопки: $names\n")
+            repeat(2) { press("Нанять") } }
+        step("таверна", 6) { press("Таверна") }
+        step("таверна", 6) { repeat(4) { press("Нанять") }; press("Взять заказ") }
+        step("таверна", 6) { log.append("офицеры: ${lv.crew.toList()} заказ=${lv.activeBounty}\n") }
+        step("вид", 6) { press("Вид") }
+        step("вид", 6) { repeat(3) { press("Купить") } }
+        step("порт", 30) { press("Выйти в море") }
+        step("порт", 5) { if (g.state != SeaGame.State.PLAY) issue("не вышли из порта: ${g.state}") }
+        // база
+        step("база", 60) { tp(lv.ringX, lv.ringZ) }
+        step("база", 5) { if (g.state != SeaGame.State.PORT) issue("база не открылась") ; press("Основать") }
+        for (k in 0 until 22) step("база", 3) { if (findButton("Построить") != null) press("Построить") else press("Улучшить") }
+        step("база", 5) { log.append("постройки: ${lv.blev.toList()} доход=${lv.incomePerMin()}/мин\n"); press("Таверна") }
+        step("база", 5) { press("Постройки"); press("Забрать") }
+        step("база", 30) { press("Выйти в море") }
+        // высадки: все исходы
+        step("высадки", 5) {
+            val acts = LANDINGS.flatMap { it.choices.map { c -> c.act } } + DIVE.choices.map { it.act } + "x_dig"
+            val wild = g.islands.withIndex().filter { it.value.port == -1 }.map { it.index }
+            for ((k, a) in acts.withIndex()) {
+                try { val t = lv.resolve(a, wild[k % wild.size]); if (t.isBlank()) issue("пустой текст исхода $a") } catch (e: Exception) { issue("исход $a: $e") }
+            }
+            log.append("высадки: ${acts.size} исходов, кусков карты=${lv.mapPieces} цель=${lv.mapTarget}\n")
+        }
+        step("эпизод", 30) { g.menus.showEpisode(LANDINGS[0]) { lv.resolve(it, 0) } }
+        step("эпизод", 10) { press("") }
+        step("эпизод", 10) { press("Вернуться") }
+        // регионы, погода, ночь
+        for ((name, xz) in listOf("лёд" to (0f to -1500f), "огонь" to (1500f to 0f), "риф" to (-1500f to 0f), "бездна" to (0f to 1500f))) {
+            step("регион $name", 90) { tp(xz.first, xz.second); g.stormTarget = 1f; g.stormLevel = 1f }
+        }
+        step("ночь", 120) { g.dayTime = 0.8f; g.stormTarget = 0f; g.stormLevel = 0f; tp(-300f, 300f); g.spawnEnemy("ghost", -260f, 260f).ghost = true }
+        step("день", 60) { g.dayTime = 0.3f }
+        step("водоворот", 120) { val w = lv.whirls.first(); tp(w.x, w.z + 30f) }
+        step("айсберг", 90) { val b = lv.bergs.first(); tp(b.x, b.z + 20f) }
+        step("туман", 60) { val fb = lv.fogBanks.first(); tp(fb[0], fb[1]) }
+        // боссы
+        step("кракен", 300) { tp(0f, 1300f); g.systems.spawnKraken(40f, 1250f) }
+        step("змей", 300) { tp(-500f, -500f); g.spawnSerpent(-470f, -540f) }
+        step("крепость", 300) { val f0 = g.systems.fortresses.first(); tp(f0.x + f0.r + 60f, f0.z) }
+        step("охотник", 200) { tp(600f, 600f); lv.acceptBounty(1) }
+        // гибель и возрождение
+        step("гибель", 120) { tp(200f, 200f); val p = g.player!!; g.damage(p, p.hp + 10f, null, false) }
+        step("гибель", 5) { if (g.state != SeaGame.State.DEAD) issue("нет экрана гибели: ${g.state}"); press("Вернуться") }
+        step("гибель", 30) { if (g.state != SeaGame.State.PLAY || g.player!!.sinking) issue("не возродились: ${g.state}") }
+        // сохранение
+        step("сохранение", 5) {
+            val code = g.exportSave(); val coins = g.coins; val q = g.questIdx; val crew = lv.crew.toList()
+            g.coins = 1; if (!g.importSave(code)) issue("код сохранения не принят")
+            if (g.coins != coins || g.questIdx != q || lv.crew.toList() != crew) issue("после загрузки кода данные отличаются")
+            log.append("код сохранения: ${code.length} символов\n")
+        }
+        // все меню
+        step("меню", 5) { g.openPause() }
+        for (b in listOf("Капитан", "Достижения", "Карта мира", "Песни команды", "Как играть", "Настройки")) {
+            step("меню $b", 8) { press(b) }
+            step("меню $b", 5) { if (findButton("Назад") != null) press("Назад") else if (findButton("Готово") != null) press("Готово") else g.menus.showPause() }
+        }
+        step("графика", 5) { press("Настройки") }
+        for (k in 0 until 5) step("графика", 40) { press("Графика") }
+        step("графика", 5) { press("Готово") }
+        step("меню", 10) { press("Продолжить") }
+        // сюжет: все задания
+        step("задания", 5) {
+            val keep = g.questIdx
+            for (i in 0..STORY_LENGTH + 6) { g.questIdx = i; try { g.quest(); g.questTarget() } catch (e: Exception) { issue("задание $i: $e") } }
+            g.questIdx = keep
+        }
+        // «обезьяна»: случайные касания и кнопки
+        step("обезьяна", 1) { tp(150f, 150f) }
+        for (k in 0 until 2400) step("обезьяна", 1) { monkey(k) }
+    }
+
+    private fun findButtonIn(pred: (com.badlogic.gdx.scenes.scene2d.ui.TextButton) -> Boolean): com.badlogic.gdx.scenes.scene2d.ui.TextButton? {
+        fun find(a: com.badlogic.gdx.scenes.scene2d.Actor): com.badlogic.gdx.scenes.scene2d.ui.TextButton? {
+            if (a is com.badlogic.gdx.scenes.scene2d.ui.TextButton && !a.isDisabled && pred(a)) return a
+            if (a is com.badlogic.gdx.scenes.scene2d.Group) for (c in a.children) find(c)?.let { return it }
+            return null
+        }
+        return find(g.stage.root)
+    }
+
+    private var monkeyDown = false
+    private fun monkey(k: Int) {
+        val w = g.wDp; val h = g.hDp
+        if (g.state != SeaGame.State.PLAY) {
+            // случайная кнопка меню
+            val all = ArrayList<com.badlogic.gdx.scenes.scene2d.ui.TextButton>()
+            fun collect(a: com.badlogic.gdx.scenes.scene2d.Actor) {
+                if (a is com.badlogic.gdx.scenes.scene2d.ui.TextButton && !a.isDisabled) all += a
+                if (a is com.badlogic.gdx.scenes.scene2d.Group) for (c in a.children) collect(c)
+            }
+            collect(g.stage.root)
+            if (k % 7 == 0 && all.isNotEmpty()) all[rnd.nextInt(all.size)].toggle()
+            if (k % 120 == 0 && g.state != SeaGame.State.DEAD) g.menus.close()
+            return
+        }
+        when (rnd.nextInt(10)) {
+            0, 1, 2 -> { if (!monkeyDown) { touch("down", rnd.nextFloat() * w, rnd.nextFloat() * h); monkeyDown = true } }
+            3, 4, 5 -> if (monkeyDown) touch("drag", rnd.nextFloat() * w, rnd.nextFloat() * h)
+            6 -> if (monkeyDown) { touch("up", rnd.nextFloat() * w, rnd.nextFloat() * h); monkeyDown = false }
+            7 -> if (k % 40 == 0) spawnSide(listOf("sloop", "brig", "frigate")[rnd.nextInt(3)], 60f)
+            else -> {}
+        }
+        if (k % 600 == 0) g.player?.let { it.hp = it.maxHp }
+    }
+
+    private fun betaTest(f: Int) {
+        if (plan.isEmpty()) buildPlan()
+        betaChecks(f)
+        if (f >= waitUntil && planIdx < plan.size) {
+            val (w, a) = plan[planIdx++]
+            try { a() } catch (e: Exception) { issue("исключение: $e"); log.append(e.stackTraceToString().take(800) + "\n") }
+            waitUntil = f + w
+        } else if (planIdx >= plan.size && f >= waitUntil) {
+            log.append("\n=== ИТОГ: шагов ${plan.size}, кадров $f, ${(System.currentTimeMillis() - t0) / 1000} с, мин. FPS $minFps, долгих кадров $spikes ===\n")
+            if (issues.isEmpty()) log.append("Проблем не найдено\n") else for ((k, n) in issues) log.append("ПРОБЛЕМА ×$n: $k\n")
+            log.append("kills=${g.kills} quest=${g.questIdx} coins=${g.coins} ships=${g.ships.size} level=${g.systems.level} ach=${g.systems.unlocked.size}\n")
+            Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
+            shot("beta_end")
+            Gdx.app.exit()
+        }
+    }
+
+    private fun field(o: Any, name: String): Any? {
+        var c: Class<*>? = o.javaClass
+        while (c != null) { try { val f = c.getDeclaredField(name); f.isAccessible = true; return f.get(o) } catch (_: NoSuchFieldException) { c = c.superclass } }
+        return null
+    }
+
+    private fun dumpShaders() {
+        val dir = Gdx.files.absolute("$out/shaders"); dir.mkdirs()
+        var n = 0
+        fun save(name: String, p: com.badlogic.gdx.graphics.glutils.ShaderProgram) {
+            Gdx.files.absolute("$out/shaders/$name.vert").writeString(p.vertexShaderSource, false)
+            Gdx.files.absolute("$out/shaders/$name.frag").writeString(p.fragmentShaderSource, false)
+            n++
+        }
+        for (bn in listOf("detailBatch", "plainBatch")) {
+            val mb = field(g, bn) ?: continue
+            val prov = field(mb, "shaderProvider") ?: continue
+            val arr = field(prov, "shaders") as? com.badlogic.gdx.utils.Array<*> ?: continue
+            for ((i, sh) in arr.withIndex()) (field(sh!!, "program") as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("${bn}_$i", it) }
+        }
+        (field(field(g, "water")!!, "shader") as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("water", it) }
+        val post = field(g, "post")!!
+        for (k in listOf("bright", "blur", "composite")) (field(post, k) as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("post_$k", it) }
+        log.append("dumped $n\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
     }
 
     /** Нажатие на вкладку порта: ищем кнопку по тексту. */

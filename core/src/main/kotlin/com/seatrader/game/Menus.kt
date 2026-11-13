@@ -412,7 +412,7 @@ class Menus(private val g: SeaGame) {
         val resume = ui.green("▶  Продолжить").also { it.onClick { close() } }
         val captain = ui.blue("★  Капитан" + if (g.systems.skillPts > 0) " (+${g.systems.skillPts})" else "").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }
         val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
-        val map = ui.blue("⚓  Карта мира").also { it.onClick { current = { buildMap() }; buildMap() } }
+        val map = ui.blue("⚓  Карта мира").also { it.onClick { mapFromPause = true; current = { buildMap() }; buildMap() } }
         val songs = ui.blue("♪  Песни команды").also { it.onClick { current = { buildSongs() }; buildSongs() } }
         val help = ui.blue("?  Как играть").also { it.onClick { current = { buildHelp() }; buildHelp() } }
         val settings = ui.blue("⚙  Настройки").also { it.onClick { current = { buildSettings() }; buildSettings() } }
@@ -1152,7 +1152,8 @@ class Menus(private val g: SeaGame) {
         }
     }
 
-    fun showMap() = open(SeaGame.State.DIALOG) { buildMap() }
+    private var mapFromPause = false
+    fun showMap() { mapFromPause = false; open(SeaGame.State.DIALOG) { buildMap() } }
 
     private fun buildMap() {
         stage.clear()
@@ -1175,7 +1176,7 @@ class Menus(private val g: SeaGame) {
             }
         }
         val clear = ui.gray("Убрать отметку").also { it.onClick { g.systems.waypoint = null; g.save(); info.setText("Отметка убрана") } }
-        val back = ui.blue("Назад").also { it.onClick { close() } }
+        val back = ui.blue("Назад").also { it.onClick { if (mapFromPause) { current = { buildPause() }; buildPause() } else close() } }
         val legend = Table()
         fun leg(icon: com.badlogic.gdx.graphics.g2d.TextureRegion?, glyph: String?, col: Int, text: String) {
             if (icon != null) legend.add(Image(icon).also { it.color = rgb(col) }).size(12f).padRight(3f)

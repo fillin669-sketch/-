@@ -1034,6 +1034,8 @@ class SeaGame : ApplicationAdapter() {
             var best: Ship? = null; var bd = Float.MAX_VALUE
             if (mode != 0) for (o in ships) {
                 if (o.sinking) continue
+                // по кораблю, который берём на абордаж, не стреляем
+                if (o === systems.grappleTarget) continue
                 if (mode == 1 && o.faction != Faction.PIRATE) continue
                 if (mode == 2 && !((o.faction == Faction.PLAYER || o.type == "merchant" || (o.type == "navy" && o.faction == Faction.NEUTRAL)) && !(o === p && p.safe))) continue
                 val dx = o.x - s.x; val dz = o.z - s.z; val d = hypot(dx, dz)
@@ -2108,7 +2110,7 @@ class SeaGame : ApplicationAdapter() {
         sunLight.end()
         }
         Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
-        val usePost = true
+        val usePost = post.ok
         val reflTex = if (gfx >= 2) renderReflection(lookX, lookZ) else null
         if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)

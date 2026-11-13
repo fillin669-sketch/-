@@ -57,6 +57,9 @@ class PostFx : Disposable {
         return p
     }
 
+    /** Все шейдеры постобработки собрались на этом телефоне (иначе рисуем сцену прямо на экран). */
+    val ok get() = bright.isCompiled && blur.isCompiled && composite.isCompiled
+
     private fun ensure() {
         outW = Gdx.graphics.backBufferWidth; outH = Gdx.graphics.backBufferHeight
         if (maxTex == 0) {
@@ -145,7 +148,8 @@ attribute vec2 a_texCoord0;
 uniform vec2 u_uvScale;
 varying vec2 v_uv;
 varying vec2 v_uv0;
-void main() { v_uv0 = a_texCoord0; v_uv = a_texCoord0 * u_uvScale; gl_Position = vec4(a_position.xy, 0.0, 1.0); }
+varying vec2 v_uvMax;
+void main() { v_uv0 = a_texCoord0; v_uv = a_texCoord0 * u_uvScale; v_uvMax = u_uvScale; gl_Position = vec4(a_position.xy, 0.0, 1.0); }
 """
         private const val HEAD = """
 #ifdef GL_ES
@@ -153,6 +157,7 @@ precision mediump float;
 #endif
 varying vec2 v_uv;
 varying vec2 v_uv0;
+varying vec2 v_uvMax;
 uniform sampler2D u_tex;
 """
         private const val BRIGHT = HEAD + """
@@ -177,7 +182,6 @@ void main() {
         private const val COMPOSITE = HEAD + """
 uniform sampler2D u_bloom;
 uniform vec2 u_texel;
-uniform vec2 u_uvScale;
 uniform float u_exposure;
 uniform float u_saturation;
 uniform float u_contrast;
@@ -206,7 +210,7 @@ vec3 fxaa(vec2 uv) {
     return (lB < lMin || lB > lMax) ? a : b;
 }
 void main() {
-    vec3 c = fxaa(min(v_uv, u_uvScale - u_texel));
+    vec3 c = fxaa(min(v_uv, v_uvMax - u_texel));
     c += texture2D(u_bloom, v_uv0).rgb * u_bloomAmt;
     c *= u_exposure;
     // мягкая плёночная кривая

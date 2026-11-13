@@ -165,6 +165,15 @@ float getShadow()
         cfg.numDirectionalLights = 3
         cfg.numPointLights = 0
         cfg.numSpotLights = 0
-        return ModelBatch(DefaultShaderProvider(cfg))
+        return ModelBatch(SafeProvider(cfg))
+    }
+
+    /** Если наш шейдер не собрался на каком-то телефоне — берём стандартный, чтобы мир всё равно был виден. */
+    private class SafeProvider(cfg: DefaultShader.Config) : DefaultShaderProvider(cfg) {
+        override fun createShader(renderable: com.badlogic.gdx.graphics.g3d.Renderable): com.badlogic.gdx.graphics.g3d.Shader =
+            try { super.createShader(renderable) } catch (e: Exception) {
+                com.badlogic.gdx.Gdx.app.error("Shaders", "fallback: " + e.message)
+                DefaultShader(renderable, DefaultShader.Config())
+            }
     }
 }
