@@ -24,18 +24,20 @@ class Sky {
 /** Море: сетка едет за камерой; волны, пена, мелководье и свет считаются в шейдере. */
 class Water : Disposable {
     private val size = 1300f
-    private val seg = 130
+    private val seg = 240
     private val mesh: Mesh
     private val shader: ShaderProgram
     private val islandBuf = FloatArray(12 * 3)
 
     init {
+        // сетка гуще у камеры (клетка ~1,4 м) и реже к краям (~13 м)
+        fun warp(u: Float) = u * (0.25f + 0.75f * u * u)
         val verts = FloatArray((seg + 1) * (seg + 1) * 3)
         var k = 0
         for (j in 0..seg) for (i in 0..seg) {
-            verts[k++] = (i.toFloat() / seg - 0.5f) * size
+            verts[k++] = warp(i.toFloat() / seg * 2 - 1) * size / 2
             verts[k++] = 0f
-            verts[k++] = (j.toFloat() / seg - 0.5f) * size
+            verts[k++] = warp(j.toFloat() / seg * 2 - 1) * size / 2
         }
         val idx = ShortArray(seg * seg * 6)
         k = 0
@@ -58,7 +60,8 @@ class Water : Disposable {
 
     /** [islands] — ближайшие острова: x, z, r (до 12 штук). */
     fun render(cam: Camera, cx: Float, cz: Float, time: Float, sky: Sky, islands: List<FloatArray>,
-               shadowTex: com.badlogic.gdx.graphics.GLTexture? = null, shadowPV: com.badlogic.gdx.math.Matrix4? = null) {
+               shadowTex: com.badlogic.gdx.graphics.GLTexture? = null, shadowPV: com.badlogic.gdx.math.Matrix4? = null,
+               refl: com.badlogic.gdx.graphics.GLTexture? = null, screenW: Int = 1, screenH: Int = 1) {
         val ox = Math.round(cx / 10f) * 10f
         val oz = Math.round(cz / 10f) * 10f
         islandBuf.fill(0f)
@@ -93,6 +96,13 @@ class Water : Disposable {
             shader.setUniformf("u_shadowOn", 1f)
             Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
         } else shader.setUniformf("u_shadowOn", 0f)
+        if (refl != null) {
+            refl.bind(2)
+            shader.setUniformi("u_refl", 2)
+            shader.setUniformf("u_reflOn", 1f)
+            Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
+        } else shader.setUniformf("u_reflOn", 0f)
+        shader.setUniformf("u_screen", screenW.toFloat(), screenH.toFloat())
         mesh.render(shader, GL20.GL_TRIANGLES)
     }
 
@@ -115,6 +125,14 @@ varying vec3 v_normal;
 varying float v_h;
 varying float v_shoreD;
 varying vec3 v_shadowUv;
+varying float v_chop;
+// мелкие волны Герстнера: острые гребни (только для вида)
+vec3 gerstner(vec2 p, vec2 d, float k, float a, float sp, inout vec3 dn) {
+    float ph = dot(d, p) * k + u_time * sp;
+    float c = cos(ph); float s = sin(ph);
+    dn += vec3(-d.x * k * a * c, 0.0, -d.y * k * a * c);
+    return vec3(d.x * 0.7 * a * c, a * s, d.y * 0.7 * a * c);
+}
 void main() {
     vec3 w = a_position + vec3(u_offset.x, 0.0, u_offset.y);
     float a1 = w.x * 0.08 + u_time * 1.1;
@@ -122,10 +140,19 @@ void main() {
     float a3 = (w.x + w.z) * 0.05 + u_time * 0.7;
     float a4 = (w.x - w.z) * 0.031 + u_time * 0.55;
     float h = sin(a1) * 0.35 + sin(a2) * 0.3 + sin(a3) * 0.4 + sin(a4) * 0.35;
-    w.y = h * u_amp;
     float dx = (cos(a1) * 0.028 + cos(a3) * 0.02 + cos(a4) * 0.01085) * u_amp;
     float dz = (cos(a2) * 0.033 + cos(a3) * 0.02 - cos(a4) * 0.01085) * u_amp;
-    v_normal = normalize(vec3(-dx * 5.0, 1.0, -dz * 5.0));
+    vec3 dn = vec3(-dx * 5.0, 0.0, -dz * 5.0);
+    vec3 g = vec3(0.0);
+    float ca = 0.55 + 0.45 * u_amp;
+    g += gerstner(w.xz, normalize(vec2(0.86, 0.5)), 0.42, 0.16 * ca, 1.9, dn);
+    g += gerstner(w.xz, normalize(vec2(-0.45, 0.89)), 0.61, 0.1 * ca, 2.3, dn);
+    g += gerstner(w.xz, normalize(vec2(0.2, -0.98)), 0.83, 0.07 * ca, 2.8, dn);
+    g += gerstner(w.xz, normalize(vec2(-0.9, -0.3)), 1.15, 0.045 * ca, 3.3, dn);
+    w.y = h * u_amp + g.y;
+    w.xz += g.xz;
+    v_chop = g.y / (0.38 * ca);
+    v_normal = normalize(vec3(dn.x, 1.0, dn.z));
     v_world = w;
     v_h = h;
     float sd = 1000.0;
@@ -159,88 +186,136 @@ uniform vec3 u_deep;
 uniform vec3 u_mid;
 uniform sampler2D u_shadowTex;
 uniform float u_shadowOn;
+uniform sampler2D u_refl;
+uniform float u_reflOn;
+uniform vec2 u_screen;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_h;
 varying float v_shoreD;
 varying vec3 v_shadowUv;
+varying float v_chop;
 float shadowAt(vec2 uv, float z) {
     vec4 p = texture2D(u_shadowTex, uv);
     float d = dot(p, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
-    return step(z, d + 0.002);
+    return step(z, d + 0.0015);
 }
 float shadow() {
     if (u_shadowOn < 0.5) return 1.0;
     vec3 s = v_shadowUv;
     if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
-    float o = 1.0 / 1024.0;
-    return (shadowAt(s.xy, s.z) + shadowAt(s.xy + vec2(o, 0.0), s.z) + shadowAt(s.xy - vec2(o, 0.0), s.z)
-          + shadowAt(s.xy + vec2(0.0, o), s.z) + shadowAt(s.xy - vec2(0.0, o), s.z)) / 5.0;
+    float o = 1.0 / 2048.0;
+    float r = 0.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) r += shadowAt(s.xy + vec2(float(x), float(y)) * o * 1.5, s.z);
+    return r / 9.0;
 }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 hash2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
 float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+// ячейки Вороного: кружево пены
+float cells(vec2 p, float t) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    float d1 = 8.0; float d2 = 8.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 b = vec2(float(x), float(y));
+        vec2 o = hash2(i + b);
+        o = 0.5 + 0.45 * sin(t + 6.2831 * o);
+        float d = length(b + o - f);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    return d2 - d1;
+}
 void main() {
     vec2 p = mod(v_world.xz, 4000.0);
     float tn = u_time;
-    // мелкая рябь в нормали
+    // рябь: несколько систем мелких волн разных направлений
+    vec2 gsum = vec2(0.0);
+    vec2 dirs[6];
+    dirs[0] = vec2(0.94, 0.34); dirs[1] = vec2(-0.6, 0.8); dirs[2] = vec2(0.17, -0.98);
+    dirs[3] = vec2(-0.87, -0.5); dirs[4] = vec2(0.71, 0.71); dirs[5] = vec2(-0.26, 0.97);
+    float fr = 0.9; float am = 0.11;
+    for (int i = 0; i < 6; i++) {
+        float ph = dot(dirs[i], p) * fr + tn * (1.2 + fr * 0.9) + float(i) * 1.7;
+        gsum += dirs[i] * (am * fr * cos(ph));
+        fr *= 1.42; am *= 0.7;
+    }
     float rn = noise(p * 0.35 + vec2(tn * 0.6, tn * 0.4));
-    float rn2 = noise(p * 1.1 - vec2(tn * 0.9, tn * 0.3));
-    vec3 n = normalize(v_normal + vec3(rn - 0.5 + (rn2 - 0.5) * 0.6, 0.0, 0.5 - rn + (0.5 - rn2) * 0.4) * 0.32);
+    float e = 0.15;
+    float nx = noise(p * 2.2 + vec2(tn * 0.7, 0.0)) - noise(p * 2.2 + vec2(e + tn * 0.7, 0.0));
+    float nz = noise(p * 2.2 + vec2(tn * 0.7, 0.0)) - noise(p * 2.2 + vec2(tn * 0.7, e));
+    float detail = 0.75 + 0.6 * u_storm;
+    vec3 n = normalize(v_normal + vec3(-gsum.x + nx * 0.6, 0.0, -gsum.y + nz * 0.6) * detail);
     vec3 sun = normalize(u_sunDir);
+    vec3 v = normalize(u_cam - v_world);
+    float ndv = max(dot(n, v), 0.0);
 
-    // Мелководье и прибой возле островов (расстояние до берега — из вершинного шейдера)
+    // мелководье и прибой
     float d0 = v_shoreD;
     float patches = noise(p * 0.03 + vec2(tn * 0.02, 0.0));
-    float shore = smoothstep(30.0, 2.0, d0);
-    float wave = sin(d0 * 0.6 - tn * 2.2 + patches * 5.0);
-    float surf = smoothstep(9.0, 0.0, d0) * smoothstep(0.4, 1.0, wave) * 0.8 + smoothstep(2.5, -1.0, d0);
+    float shore = smoothstep(34.0, 2.0, d0);
+    vec3 deep = mix(u_deep * 0.82, vec3(0.16, 0.25, 0.32), u_storm);
+    vec3 mid = mix(u_mid, vec3(0.24, 0.34, 0.42), u_storm);
+    vec3 shallow = vec3(0.22, 0.82, 0.80);
+    vec3 col = mix(deep, mid, smoothstep(0.3, 0.85, patches) * 0.8 + 0.2 * smoothstep(-0.6, 1.0, v_h));
+    col = mix(col, shallow, shore * 0.88);
+    // песчаное дно просвечивает у самого берега
+    col = mix(col, vec3(0.62, 0.78, 0.66), smoothstep(10.0, 0.0, d0) * 0.35 * u_day);
 
-    vec3 deep = mix(u_deep, vec3(0.20, 0.30, 0.38), u_storm);
-    vec3 mid = mix(u_mid, vec3(0.26, 0.36, 0.44), u_storm);
-    vec3 shallow = vec3(0.25, 0.80, 0.82);
-    vec3 col = mix(deep, mid, smoothstep(0.35, 0.8, patches));
-    col = mix(col, shallow, shore * 0.85);
-
-    // Каустика: световая рябь на мелководье
+    // каустика на мелководье
     float c1 = noise(p * 0.45 + vec2(tn * 0.35, tn * 0.2));
     float c2 = noise(p * 0.45 * 1.37 - vec2(tn * 0.28, -tn * 0.31));
-    float caus = smoothstep(0.18, 0.0, abs(c1 - c2)) * smoothstep(0.35, 0.9, shore);
-    col += vec3(0.20, 0.27, 0.24) * caus * 0.35 * u_day * (1.0 - u_storm);
+    float caus = smoothstep(0.18, 0.0, abs(c1 - c2)) * smoothstep(0.3, 0.9, shore);
+    col += vec3(0.24, 0.3, 0.26) * caus * 0.4 * u_day * (1.0 - u_storm);
 
-    // Отражение неба (Френель): у горизонта небо светлее
-    vec3 v = normalize(u_cam - v_world);
-    float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-    vec3 skyc = mix(u_fog * 1.08, vec3(0.62, 0.78, 0.95) * (0.3 + 0.7 * u_day), 0.35 * (1.0 - u_storm));
-    col = mix(col, skyc, fres * 0.6);
-    // подсветка гребней: свет проходит сквозь тонкую воду
-    col += vec3(0.02, 0.22, 0.20) * smoothstep(0.1, 1.2, v_h) * 0.45 * u_day * (1.0 - shore * 0.5);
+    // свет проходит сквозь гребни (подповерхностное рассеяние)
+    vec2 sunH = normalize(sun.xz + vec2(0.0001));
+    float back = pow(clamp(dot(normalize(-v.xz + vec2(0.0001)), sunH) * 0.5 + 0.5, 0.0, 1.0), 2.0);
+    float sss = clamp(v_chop * 0.8 + v_h * 0.25, 0.0, 1.0) * (0.4 + 0.6 * back);
+    col += vec3(0.03, 0.32, 0.27) * sss * 0.55 * (0.25 + 0.75 * u_day) * (1.0 - shore * 0.6);
 
-    // Освещение
+    // освещение
     float l = clamp(dot(n, sun), 0.0, 1.0);
-    col *= (0.55 + 0.45 * u_day) * (0.85 + 0.25 * l);
-
-    // Тени облаков
+    col *= (0.5 + 0.5 * u_day) * (0.82 + 0.3 * l);
     float cloud = smoothstep(0.45, 0.75, noise(p * 0.006 + vec2(tn * 0.012, tn * 0.006)));
     col *= 1.0 - cloud * (0.18 + 0.25 * u_storm);
-
-    // Тени кораблей и островов
     float sh = shadow();
-    col *= 0.62 + 0.38 * sh;
+    col *= 0.6 + 0.4 * sh;
 
-    // Солнечные блики
-    float spec = pow(max(dot(reflect(-sun, n), v), 0.0), 60.0);
-    col += u_sunCol * spec * (0.45 * u_day) * (1.0 - u_storm * 0.8) * sh;
-    col += vec3(smoothstep(0.93, 0.99, rn) * 0.15 * u_day);
+    // отражение: зеркало сцены (острова, корабли) или небо
+    float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+    vec3 skyc = mix(u_fog * 1.06, vec3(0.6, 0.76, 0.94) * (0.25 + 0.75 * u_day), 0.4 * (1.0 - u_storm));
+    vec3 refl = skyc;
+    float rmix = clamp(fres * 2.2 + 0.1, 0.0, 0.75);
+    if (u_reflOn > 0.5) {
+        vec2 suv = gl_FragCoord.xy / u_screen + n.xz * vec2(0.035, 0.035) * (1.0 - shore * 0.5);
+        vec4 rc = texture2D(u_refl, clamp(suv, 0.002, 0.998));
+        refl = mix(skyc, rc.rgb, rc.a);
+        rmix = mix(rmix, clamp(fres * 2.6 + 0.32, 0.0, 0.8), rc.a);
+    }
+    col = mix(col, refl, rmix);
 
-    // Пена на гребнях волн и у берега
-    float crest = smoothstep(0.75, 1.25, v_h) * (0.35 + 0.65 * rn);
-    float foam = clamp(crest * (0.5 + u_storm * 0.8) + surf, 0.0, 1.0);
-    col = mix(col, vec3(0.93, 0.97, 1.0) * (0.6 + 0.4 * u_day), foam * 0.85);
+    // солнечная (лунная) дорожка и искры
+    vec3 hv = normalize(sun + v);
+    float nh = max(dot(n, hv), 0.0);
+    float spec = pow(nh, 420.0) * 4.0 + pow(nh, 60.0) * 0.25;
+    vec2 gp = floor(p * 3.0);
+    float glint = step(0.985, hash(gp + floor(tn * 6.0))) * pow(nh, 30.0) * 2.5;
+    col += u_sunCol * (spec + glint) * (0.12 + 0.88 * u_day) * (1.0 - u_storm * 0.85) * sh;
+
+    // пена: кружево на гребнях и полосы прибоя
+    float lace = smoothstep(0.08, 0.0, cells(p * 0.55 + vec2(tn * 0.05, tn * 0.03), tn * 0.8));
+    float lace2 = smoothstep(0.12, 0.0, cells(p * 1.3 - vec2(tn * 0.07, 0.0), tn * 1.1));
+    float crest = smoothstep(0.55, 1.05, v_chop + v_h * 0.25 + u_storm * 0.4);
+    float wavesIn = sin(d0 * 0.55 - tn * 2.0 + patches * 6.0);
+    float surfBand = smoothstep(11.0, 0.0, d0) * smoothstep(0.35, 0.95, wavesIn);
+    float edge = smoothstep(2.8, -0.8, d0);
+    float foam = clamp(crest * (lace * 0.9 + lace2 * 0.5) * (0.6 + u_storm) + surfBand * (0.45 + 0.55 * lace2) + edge * (0.7 + 0.3 * lace), 0.0, 1.0);
+    col = mix(col, vec3(0.94, 0.97, 1.0) * (0.55 + 0.45 * u_day), foam * 0.9);
 
     float d = distance(u_cam, v_world);
     col = mix(col, u_fog, smoothstep(u_fogRange.x, u_fogRange.y, d));

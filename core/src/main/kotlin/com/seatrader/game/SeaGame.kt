@@ -1817,6 +1817,42 @@ class SeaGame : ApplicationAdapter() {
     }
 
     private val nearIslands = ArrayList<FloatArray>()
+    private var reflFbo: com.badlogic.gdx.graphics.glutils.FrameBuffer? = null
+    private val reflCam by lazy { PerspectiveCamera(52f, 1f, 1f) }
+    private val mirror = com.badlogic.gdx.math.Matrix4().scl(1f, -1f, 1f)
+
+    /** Зеркальное отражение сцены в воде: та же камера, мир отражён по высоте. */
+    private fun renderReflection(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture {
+        val rw = (Gdx.graphics.backBufferWidth * 0.6f).toInt().coerceAtLeast(64)
+        val rh = (Gdx.graphics.backBufferHeight * 0.6f).toInt().coerceAtLeast(64)
+        var f = reflFbo
+        if (f == null || f.width != rw || f.height != rh) {
+            f?.dispose()
+            f = com.badlogic.gdx.graphics.glutils.FrameBuffer(com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888, rw, rh, true).also {
+                it.colorBufferTexture.setFilter(com.badlogic.gdx.graphics.Texture.TextureFilter.Linear, com.badlogic.gdx.graphics.Texture.TextureFilter.Linear)
+            }
+            reflFbo = f
+        }
+        val rc = reflCam
+        rc.fieldOfView = cam.fieldOfView
+        rc.viewportWidth = cam.viewportWidth; rc.viewportHeight = cam.viewportHeight
+        rc.near = cam.near; rc.far = cam.far
+        rc.position.set(cam.position); rc.direction.set(cam.direction); rc.up.set(cam.up)
+        rc.update()
+        rc.view.mul(mirror)
+        rc.combined.set(rc.projection).mul(rc.view)
+        f.begin()
+        Gdx.gl.glClearColor(0f, 0f, 0f, 0f)
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
+        modelBatch.begin(rc)
+        for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 420 + isl.r) modelBatch.render(isl.inst, env)
+        for (s in ships) if (!s.sinking && hypot(s.x - lookX, s.z - lookZ) < 380) modelBatch.render(s.inst, env)
+        portView.render(modelBatch, env, lookX, lookZ)
+        living.render(modelBatch, env, lookX, lookZ)
+        modelBatch.end()
+        f.end()
+        return f.colorBufferTexture
+    }
     private val glowCol = Color()
 
     override fun render() {
@@ -1860,6 +1896,7 @@ class SeaGame : ApplicationAdapter() {
         }
         Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
         val usePost = highQuality
+        val reflTex = if (highQuality) renderReflection(lookX, lookZ) else null
         if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
@@ -1867,7 +1904,8 @@ class SeaGame : ApplicationAdapter() {
         islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
         val shadows = highQuality && !debugNoShadow
         env.shadowMap = if (shadows) sunLight else null
-        water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans)
+        water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans,
+            reflTex, if (usePost) post.sceneW else Gdx.graphics.backBufferWidth, if (usePost) post.sceneH else Gdx.graphics.backBufferHeight)
 
         modelBatch.begin(cam)
         for ((i, isl) in islands.withIndex()) {

@@ -20,6 +20,8 @@ class PostFx : Disposable {
     private var bloomB: FrameBuffer? = null
     private var w = 0
     private var h = 0
+    val sceneW get() = w
+    val sceneH get() = h
     private val quad: Mesh = Mesh(true, 4, 6, VertexAttribute.Position(), VertexAttribute.TexCoords(0)).also {
         it.setVertices(floatArrayOf(-1f, -1f, 0f, 0f, 0f, 1f, -1f, 0f, 1f, 0f, 1f, 1f, 0f, 1f, 1f, -1f, 1f, 0f, 0f, 1f))
         it.setIndices(shortArrayOf(0, 1, 2, 2, 3, 0))
