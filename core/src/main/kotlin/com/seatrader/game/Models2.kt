@@ -13,11 +13,12 @@ object Models2 {
         val g = Geo()
         val rnd = Random(99)
         val j = FloatArray(24) { 1 + (rnd.nextFloat() - 0.5f) * 0.12f }
-        g.color(0xbfa77a).push().at(0f, -1.6f, 0f).cylinder(r * 1.06f, r * 1.12f, 3.2f, 24, j).pop()
+        g.mat(Shaders.SAND).color(0xbfa77a).push().at(0f, -1.6f, 0f).cylinder(r * 1.06f, r * 1.12f, 3.2f, 24, j).pop()
         g.color(0xe6d3a3).push().at(0f, 0.2f, 0f).cylinder(r * 0.97f, r * 1.05f, 2.2f, 24, j).pop()
-        g.color(0x6fae45).push().at(0f, 2.2f, 0f).cylinder(r * 0.84f, r * 0.92f, 3f, 24, j).pop()
+        g.mat(Shaders.GRASS).color(0x6fae45).push().at(0f, 2.2f, 0f).cylinder(r * 0.84f, r * 0.92f, 3f, 24, j).pop()
         // площадь в центре
-        g.color(0xb9a585).push().at(0f, 3.72f, 0f).cylinder(r * 0.22f, r * 0.24f, 0.1f, 14).pop()
+        g.mat(Shaders.STONE).color(0xb9a585).push().at(0f, 3.72f, 0f).cylinder(r * 0.22f, r * 0.24f, 0.1f, 14).pop()
+        g.mat(-1)
         // пальмы по краю
         for (k in 0 until 7) {
             val a = k * 0.9f + 0.4f
@@ -57,7 +58,8 @@ object Models2 {
                 for (k in 0 until lvl) g.push().at(4.4f * s, 0.5f + k * 0.9f, 2.8f).box(1.2f, 0.85f, 1.2f).pop()
             }
             "tavern" -> {
-                g.color(0xe8dcc0).push().at(0f, 2.2f * s, 0f).box(7f * s, 4.4f * s, 6f * s).pop()
+                g.mat(Shaders.BRICK).color(0xc98a5e).push().at(0f, 2.2f * s, 0f).box(7f * s, 4.4f * s, 6f * s).pop()
+                g.mat(-1)
                 g.color(0xa1442b).push().at(0f, 5.2f * s, 0f).cone(5.6f * s, 3f * s, 4).pop()
                 g.color(0x5d4037).push().at(0f, 1.4f, 3.05f * s).box(1.6f, 2.8f, 0.1f).pop()
                 g.color(0xffd27a)
@@ -91,7 +93,7 @@ object Models2 {
                 g.color(0x37474f).push().at(0f, y + 2.8f, 0f).cone(1.5f, 1.4f, 8).pop()
             }
             "battery" -> {
-                g.color(0x8a8478)
+                g.mat(Shaders.STONE).color(0x8a8478)
                 for (k in -2..2) g.push().at(k * 2.6f, 1f, 0f).box(2.5f, 2f, 1.6f).pop()
                 g.color(0x6d675e)
                 for (k in -2..2 step 2) g.push().at(k * 2.6f, 2.4f, 0f).box(1.6f, 0.9f, 1.6f).pop()
@@ -125,7 +127,7 @@ object Models2 {
     fun iceberg(seed: Int): Model {
         val g = Geo()
         val rnd = Random(seed)
-        g.color(0xbfe3f2).push().scale(1.4f, 0.55f, 1.2f).ico(6f).pop()
+        g.mat(Shaders.ROCK).color(0xbfe3f2).push().scale(1.4f, 0.55f, 1.2f).ico(6f).pop()
         g.color(0xeef7fb)
         repeat(4) {
             val a = rnd.nextFloat() * 6.28f
@@ -165,9 +167,9 @@ object Models2 {
     }
 
     private fun roof(g: Geo, cx: Float, y: Float, cz: Float, w: Float, d: Float, col: Int) {
-        g.color(col)
+        g.mat(Shaders.TILES).color(col)
         for (s in intArrayOf(-1, 1)) g.push().at(cx + s * w * 0.24f, y + w * 0.12f, cz).rotZ(-s * 28f).box(w * 0.58f, 0.35f, d + 0.8f).pop()
-        g.color(darkC(col)).push().at(cx, y + w * 0.26f, cz).box(0.4f, 0.4f, d + 0.9f).pop()
+        g.mat(-1).color(darkC(col)).push().at(cx, y + w * 0.26f, cz).box(0.4f, 0.4f, d + 0.9f).pop()
     }
 
     private fun darkC(c: Int): Int {
@@ -238,8 +240,9 @@ object Models2 {
                     for (sx in intArrayOf(-1, 1)) for (sz in intArrayOf(0, 1)) g.push().at(cx + sx * 2.1f, y + 2f, 1.2f + sz * 3.4f).box(0.22f, 4f, 0.22f).pop()
                     // полосатый навес
                     val (c1, c2) = aw[k]
-                    for (st in 0 until 6) g.color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 4.25f, 2.9f).rotX(-14f).box(0.7f, 0.14f, 4.4f).pop()
-                    for (st in 0 until 6) g.color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 3.7f, 5.15f).box(0.7f, 0.9f, 0.08f).pop()
+                    for (st in 0 until 6) g.mat(Shaders.CLOTH).color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 4.25f, 2.9f).rotX(-14f).box(0.7f, 0.14f, 4.4f).pop()
+                    for (st in 0 until 6) g.mat(Shaders.CLOTH).color(if (st % 2 == 0) c1 else c2).push().at(cx - 2.1f + 0.35f + st * 0.7f, y + 3.7f, 5.15f).box(0.7f, 0.9f, 0.08f).pop()
+                    g.mat(-1)
                     // товар
                     when (k) {
                         0 -> { g.color(0xd7b98a); for (m in 0..2) g.push().at(cx - 1.2f + m * 1.2f, y + 2.05f, 4f).scale(1f, 1.2f, 1f).ico(0.45f).pop() }
@@ -256,7 +259,9 @@ object Models2 {
             }
             "tavern" -> {
                 platform(g, -9f, 9f, -5f, 9f)
-                g.color(0xd9c7a0).push().at(0f, y + 3.6f, -0.5f).box(11f, 7.2f, 7f).pop()
+                g.mat(Shaders.STONE).color(0x8a8379).push().at(0f, y + 0.4f, -0.5f).box(11.4f, 0.8f, 7.4f).pop()
+                g.mat(Shaders.BRICK).color(0xc98a5e).push().at(0f, y + 4f, -0.5f).box(11f, 6.4f, 7f).pop()
+                g.mat(-1)
                 g.color(0x6d4c2f)
                 for (sx in intArrayOf(-1, 1)) g.push().at(sx * 5.5f, y + 3.6f, 3f).box(0.4f, 7.2f, 0.4f).pop()
                 g.color(0x6d4c2f).push().at(0f, y + 3.6f, 3f).box(11.2f, 0.35f, 0.4f).pop()
@@ -284,10 +289,10 @@ object Models2 {
             }
             "arsenal" -> {
                 platform(g, -10f, 10f, -5f, 8f)
-                g.color(0x8a8478).push().at(0f, y + 2.5f, 0f).box(16f, 5f, 8f).pop()
+                g.mat(Shaders.STONE).color(0x8a8478).push().at(0f, y + 2.5f, 0f).box(16f, 5f, 8f).pop()
                 g.color(0x6d675e)
                 for (k in -3..3) g.push().at(k * 2.3f, y + 5.5f, 3.6f).box(1.2f, 1f, 0.8f).pop()
-                g.color(0x5d5850).push().at(0f, y + 1.6f, 4.05f).box(3f, 3.2f, 0.1f).pop()
+                g.mat(-1).color(0x5d5850).push().at(0f, y + 1.6f, 4.05f).box(3f, 3.2f, 0.1f).pop()
                 g.color(0x3e2723).push().at(0f, y + 1.5f, 4.1f).box(2.4f, 3f, 0.1f).pop()
                 // пушки на стене
                 for (k in -2..2 step 2) {

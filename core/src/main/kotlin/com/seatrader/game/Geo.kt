@@ -44,10 +44,41 @@ class Geo {
     private val t1 = Vector3()
     private val t2 = Vector3()
 
+    /** Материал (фактура) для следующих треугольников; -1 — подобрать по цвету. */
+    var material = -1
+    /** Во что превращается серое: камень (по умолчанию) или металл (на кораблях). */
+    var greyAs = Shaders.STONE
+    private var pat = 0
+
     fun color(rgb: Int): Geo {
+        pat = if (material >= 0) material else autoMaterial(rgb)
         base.set((rgb shl 8) or 0xff)
+        base.a = 1f - pat / 32f
         packed = base.toFloatBits()
         return this
+    }
+
+    fun mat(id: Int): Geo { material = id; return this }
+
+    /** Фактура по цвету: коричневое — доски, серое — камень, зелёное — трава и т. д. */
+    private fun autoMaterial(rgb: Int): Int {
+        val r = (rgb shr 16 and 255) / 255f; val g = (rgb shr 8 and 255) / 255f; val b = (rgb and 255) / 255f
+        val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
+        val v = mx; val sat = if (mx > 0) (mx - mn) / mx else 0f
+        var h = 0f
+        if (mx - mn > 1e-4f) {
+            h = when (mx) { r -> 60f * (((g - b) / (mx - mn)) % 6f); g -> 60f * ((b - r) / (mx - mn) + 2f); else -> 60f * ((r - g) / (mx - mn) + 4f) }
+            if (h < 0) h += 360f
+        }
+        return when {
+            sat < 0.12f && v in 0.28f..0.7f -> greyAs
+            sat < 0.12f && v in 0.12f..0.28f -> Shaders.METAL
+            h in 14f..44f && sat in 0.28f..0.8f && v in 0.2f..0.78f -> Shaders.PLANKS
+            h in 30f..55f && sat in 0.12f..0.5f && v > 0.78f -> Shaders.SAND
+            h in 75f..160f && sat > 0.25f && v > 0.2f -> Shaders.GRASS
+            (h < 12f || h > 348f) && sat > 0.6f && v in 0.3f..0.75f -> Shaders.TILES
+            else -> Shaders.NONE
+        }
     }
 
     fun push(): Geo { stack.add(Matrix4(m)); return this }
@@ -73,7 +104,7 @@ class Geo {
         n.rot(m).nor()
         val col = if (variation > 0) {
             val f = 1f + (vary.nextFloat() * 2 - 1) * variation
-            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), 1f).toFloatBits()
+            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), base.a).toFloatBits()
         } else packed
         for (p in arrayOf(pa, pb, pc)) {
             data.add(p.x, p.y, p.z)
@@ -94,7 +125,7 @@ class Geo {
         na0.set(an).rot(m).nor(); nb0.set(bn).rot(m).nor(); nc0.set(cn).rot(m).nor()
         val col = if (variation > 0) {
             val f = 1f + (vary.nextFloat() * 2 - 1) * variation * 0.6f
-            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), 1f).toFloatBits()
+            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), base.a).toFloatBits()
         } else packed
         data.add(pa.x, pa.y, pa.z); data.add(na0.x, na0.y, na0.z); data.add(col)
         data.add(pb.x, pb.y, pb.z); data.add(nb0.x, nb0.y, nb0.z); data.add(col)
@@ -311,16 +342,19 @@ object Models {
     fun ship(look: Look, up: IntArray? = null): Model {
         val u = up ?: IntArray(4)
         val g = Geo()
+        g.greyAs = Shaders.METAL
         val L = look.len; val W = look.width; val H = W * 0.62f
         val top = H * 0.6f
         val deck = 0xc89a62
         val dark = darker(look.hull, 0.78f)
+        g.mat(Shaders.HULL)
         g.extrude(hull(L, W), top - H, top, deck, look.hull)
         // Полосы обшивки
         g.extrude(hull(L * 1.008f, W * 1.008f), top - H * 0.55f, top - H * 0.42f, dark, dark)
         g.extrude(hull(L * 1.008f, W * 1.008f), top - H * 0.95f, top - H * 0.8f, dark, dark)
         g.extrude(hull(L * 1.03f, W * 1.03f), top - 0.7f, top - 0.25f, look.trim, look.trim)
         g.extrude(hull(L, W), top, top + 0.6f, look.hull, look.hull)
+        g.mat(-1)
         g.extrude(hull(L * 0.92f, W * 0.86f), top + 0.02f, top + 0.63f, deck, deck)
 
         // Пушечные порты
@@ -482,14 +516,14 @@ object Models {
             if (sl >= 5 && i == n / 2) g.color(0xd4a017).push().at(0f, top + h + 0.6f, mz + 3.2f).box(0.05f, 0.5f, 6f).pop()
             if (sl >= 3) {
                 g.color(look.hull).push().at(0f, top + h * 0.93f, mz - 0.1f).rotZ(90f).cylinder(0.06f, 0.06f, W * 0.95f, 4).pop()
-                g.color(look.sail).push().at(0f, top + h * 0.88f, mz - 0.2f).sail(W * 0.8f, h * 0.12f, W * 0.12f).pop()
+                g.mat(Shaders.CLOTH).color(look.sail).push().at(0f, top + h * 0.88f, mz - 0.2f).sail(W * 0.8f, h * 0.12f, W * 0.12f).pop()
             }
             if (sl >= 4 && i == (if (n > 1) 1 else 0)) {
-                for (sx in intArrayOf(-1, 1)) g.color(look.sail).push().at(sx * W * 1.15f, top + h * 0.36f, mz - 0.3f).sail(W * 0.5f, h * 0.3f, W * 0.1f).pop()
+                for (sx in intArrayOf(-1, 1)) g.mat(Shaders.CLOTH).color(look.sail).push().at(sx * W * 1.15f, top + h * 0.36f, mz - 0.3f).sail(W * 0.5f, h * 0.3f, W * 0.1f).pop()
             }
         }
         if (sl >= 4) {
-            g.color(look.sail).triangle(Vector3(0f, top + 1.6f, -L * 0.7f), Vector3(0f, top + mastH * 0.6f, -L * 0.3f), Vector3(0f, top + 1.8f, -L * 0.34f))
+            g.mat(Shaders.CLOTH).color(look.sail).triangle(Vector3(0f, top + 1.6f, -L * 0.7f), Vector3(0f, top + mastH * 0.6f, -L * 0.3f), Vector3(0f, top + 1.8f, -L * 0.34f))
         }
 
         // Паруса — отдельные узлы, чтобы надуваться от ветра
@@ -507,14 +541,14 @@ object Models {
                 val sh = h * (if (k == 0) 0.36f else 0.26f)
                 val sy = top + h * (if (k == 0) 0.36f else 0.72f)
                 val ww = sw * (if (k == 0) 1f else 0.8f)
-                val sg = Geo().color(look.sail).sail(ww, sh, W * 0.28f)
+                val sg = Geo().mat(Shaders.CLOTH).color(look.sail).sail(ww, sh, W * 0.28f)
                 val node = mb.node()
                 node.id = "sail${idx++}"
                 node.translation.set(0f, sy, mz - 0.25f)
                 mb.part("s$idx", sg.mesh(), GL20.GL_TRIANGLES, 0, sg.vertexCount, mat)
             }
         }
-        val jib = Geo().color(look.sail)
+        val jib = Geo().mat(Shaders.CLOTH).color(look.sail)
         jib.triangle(Vector3(0f, top + 1f, -L * 0.62f), Vector3(0f, top + mastH * 0.75f, -L * 0.2f), Vector3(0f, top + 1.2f, -L * 0.26f))
         mb.node().id = "jib"
         mb.part("jib", jib.mesh(), GL20.GL_TRIANGLES, 0, jib.vertexCount, mat)
@@ -567,11 +601,26 @@ object Models {
     private fun house(g: Geo, x: Float, y: Float, z: Float, angle: Float, rnd: Random) {
         val w = 6 + rnd.nextFloat() * 4; val d = 5 + rnd.nextFloat() * 3; val hh = 4 + rnd.nextFloat() * 2
         g.push().at(x, y, z).rotY(angle)
-        g.color(intArrayOf(0x8d5b3a, 0x9c6b45, 0xd7c4a3)[rnd.nextInt(3)]).push().at(0f, hh / 2, 0f).box(w, hh, d).pop()
+        g.mat(Shaders.STONE).color(0x8a8379).push().at(0f, 0.35f, 0f).box(w + 0.3f, 0.7f, d + 0.3f).pop()
+        g.mat(Shaders.BRICK).color(intArrayOf(0xa65a3a, 0xb36b46, 0xd7c4a3, 0x9c5236)[rnd.nextInt(4)]).push().at(0f, hh / 2 + 0.35f, 0f).box(w, hh, d).pop()
+        // угловые балки и карниз
+        g.mat(Shaders.PLANKS).color(0x5d4037)
+        for (sx in intArrayOf(-1, 1)) for (sz in intArrayOf(-1, 1)) g.push().at(sx * w / 2, hh / 2 + 0.35f, sz * d / 2).box(0.35f, hh, 0.35f).pop()
+        g.push().at(0f, hh + 0.35f, 0f).box(w + 0.5f, 0.3f, d + 0.5f).pop()
         val mx = max(w, d)
-        g.color(intArrayOf(0x9b2226, 0xae2012, 0x7f1d1d)[rnd.nextInt(3)])
-            .push().at(0f, hh + 2f, 0f).scale(w / mx, 1f, d / mx).rotY(45f).cone(mx * 0.78f, 4f, 4).pop()
-        g.color(0x3e2412).push().at(0f, 1.2f, d / 2 + 0.06f).box(1.4f, 2.4f, 0.2f).pop()
+        g.mat(Shaders.TILES).color(intArrayOf(0x9b2226, 0xae4a12, 0x8f3b1d)[rnd.nextInt(3)])
+            .push().at(0f, hh + 2.4f, 0f).scale(w / mx, 1f, d / mx).rotY(45f).cone(mx * 0.82f, 4f, 4).pop()
+        // дверь, окна со ставнями, труба
+        g.mat(Shaders.PLANKS).color(0x4e2e17).push().at(0f, 1.5f, d / 2 + 0.06f).box(1.4f, 2.4f, 0.2f).pop()
+        g.mat(Shaders.NONE)
+        for (sx in intArrayOf(-1, 1)) {
+            g.color(0xffd27a).push().at(sx * w * 0.28f, hh * 0.62f, d / 2 + 0.05f).box(1f, 0.9f, 0.1f).pop()
+            g.mat(Shaders.PLANKS).color(0x2e5e4e)
+            for (k in intArrayOf(-1, 1)) g.push().at(sx * w * 0.28f + k * 0.75f, hh * 0.62f, d / 2 + 0.08f).box(0.45f, 1f, 0.08f).pop()
+            g.mat(Shaders.NONE)
+        }
+        if (rnd.nextBoolean()) g.mat(Shaders.BRICK).color(0x7a3b2a).push().at(w * 0.25f, hh + 3.6f, -d * 0.15f).box(0.8f, 2.4f, 0.8f).pop()
+        g.mat(-1)
         g.pop()
     }
 
@@ -589,9 +638,10 @@ object Models {
         val seg = 22
         val jSand = jitter(seg, rnd, 0.2f)
         // мокрый песок у кромки воды, сухой песок выше, трава сверху
-        g.color(darkerC(sand, 0.78f)).push().at(0f, -1.6f, 0f).cylinder(r * 1.06f, r * 1.12f, 3.2f, seg, jSand).pop()
+        g.mat(Shaders.SAND).color(darkerC(sand, 0.78f)).push().at(0f, -1.6f, 0f).cylinder(r * 1.06f, r * 1.12f, 3.2f, seg, jSand).pop()
         g.color(sand).push().at(0f, 0.2f, 0f).cylinder(r * 0.97f, r * 1.05f, 2.2f, seg, jSand).pop()
-        g.color(grass).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.92f, 3f, seg, jitter(seg, rnd, 0.18f)).pop()
+        g.mat(Shaders.GRASS).color(grass).push().at(0f, 2.2f, 0f).cylinder(r * 0.82f, r * 0.92f, 3f, seg, jitter(seg, rnd, 0.18f)).pop()
+        g.mat(-1)
         val occupied = ArrayList<FloatArray>()
         fun free(px: Float, pz: Float, rad: Float) = occupied.all { hypot(it[0] - px, it[1] - pz) > it[2] + rad }
 
@@ -614,7 +664,7 @@ object Models {
             repeat(1 + rnd.nextInt(2)) {
                 val hr = r * (0.22f + rnd.nextFloat() * 0.14f)
                 val hh = 1.5f + r * (0.05f + rnd.nextFloat() * 0.05f)
-                g.color(hill).push()
+                g.mat(Shaders.GRASS).color(hill).push()
                     .at((rnd.nextFloat() - 0.5f) * r * 0.5f, 3.6f + hh / 2, (rnd.nextFloat() - 0.5f) * r * 0.5f)
                     .cylinder(hr * 0.45f, hr, hh, 12, jitter(12, rnd, 0.25f)).pop()
             }
@@ -700,7 +750,7 @@ object Models {
             if (port && Math.abs(sin(a) - 1) < 0.25) continue
             val d = r * (0.95f + rnd.nextFloat() * 0.15f)
             val s = 1.5f + rnd.nextFloat() * 3 * (if (style == Region.ICE) 1.6f else 1f)
-            g.color(rockColors[rnd.nextInt(3)])
+            g.mat(Shaders.ROCK).color(rockColors[rnd.nextInt(3)])
                 .push().at((cos(a) * d).toFloat(), 0.5f, (sin(a) * d).toFloat())
                 .rotX(rnd.nextFloat() * 180).rotY(rnd.nextFloat() * 180).scale(1f, 0.7f + rnd.nextFloat() * 0.5f, 1f).ico(s).pop()
         }
@@ -760,6 +810,7 @@ object Models {
     fun fortress(r: Float): Model {
         val g = Geo()
         val wall = 0x8d8478; val dark = 0x5d574f
+        g.mat(Shaders.STONE)
         val n = 12
         for (i in 0 until n) {
             val a0 = 2 * PI.toFloat() * i / n; val a1 = 2 * PI.toFloat() * (i + 1) / n
@@ -776,6 +827,7 @@ object Models {
         }
         g.color(0x7a7166).push().at(0f, 3.7f + 4f, 0f).box(r * 0.8f, 8f, r * 0.8f).pop()
         g.color(0x5d574f).push().at(0f, 3.7f + 8.6f, 0f).box(r * 0.85f, 1.2f, r * 0.85f).pop()
+        g.mat(-1)
         g.color(0x3e2723).push().at(0f, 3.7f + 14f, 0f).cylinder(0.25f, 0.3f, 12f, 5).pop()
         g.color(0x111111).push().at(1.6f, 3.7f + 18.5f, 0f).box(3.2f, 2f, 0.1f).pop()
         g.color(0xeeeeee).push().at(1.6f, 3.7f + 18.5f, 0.08f).box(0.8f, 0.8f, 0.05f).pop()
@@ -785,6 +837,7 @@ object Models {
     fun ruins(r: Float): Model {
         val g = Geo()
         val rnd = Random(7)
+        g.mat(Shaders.STONE)
         for (i in 0 until 14) {
             val a = rnd.nextFloat() * 6.28f; val d = r * (0.3f + rnd.nextFloat() * 0.8f)
             g.color(if (i % 2 == 0) 0x6d665e else 0x3e3a35).push().at(cos(a) * d, 4.5f, sin(a) * d)
@@ -847,7 +900,7 @@ object Models {
 
     fun reefRock(): Model {
         val g = Geo()
-        g.color(0x3e4a4f).push().scale(1f, 0.6f, 1f).ico(4f).pop()
+        g.mat(Shaders.ROCK).color(0x3e4a4f).push().scale(1f, 0.6f, 1f).ico(4f).pop()
         g.color(0x546a6e).push().at(1.5f, 1f, 0.5f).ico(1.8f).pop()
         return g.build()
     }
