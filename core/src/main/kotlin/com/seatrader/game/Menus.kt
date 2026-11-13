@@ -448,13 +448,21 @@ class Menus(private val g: SeaGame) {
         val hand = ui.blue(if (g.leftHanded) "Способности: слева" else "Способности: справа").also {
             it.onClick { g.leftHanded = !g.leftHanded; g.save(); buildSettings() }
         }
-        val quality = ui.blue(if (g.highQuality) "Графика: высокая" else "Графика: экономная").also {
+        val gfxNames = listOf("Низкая", "Средняя", "Высокая", "Ультра")
+        val quality = ui.blue("Графика: ${gfxNames[g.gfx]}" + if (g.autoGfx) " (авто)" else "").also {
             it.onClick {
-                g.highQuality = !g.highQuality
-                g.fx.limit = if (g.highQuality) 900 else 450
-                g.save(); buildSettings()
+                // по кругу: ультра → высокая → средняя → низкая → авто (ультра)
+                if (!g.autoGfx && g.gfx == 0) { g.autoGfx = true; g.applyGfx(3) }
+                else { g.autoGfx = false; g.applyGfx(if (g.gfx == 0) 3 else g.gfx - 1) }
+                buildSettings()
             }
         }
+        val gfxHint = ui.label(when (g.gfx) {
+            0 -> "Без теней и отражений, простая вода — для слабых телефонов"
+            1 -> "Тени, без отражений, упрощённая вода"
+            2 -> "Тени, отражения, подробная вода"
+            else -> "Всё на максимум: тени 4096, отражения, суперсэмплинг"
+        } + if (g.autoGfx) ". Авто: при тормозах графика снизится сама" else "", ui.small, rgb(0xb9d6f2), wrap = true)
         val auto = ui.blue(if (g.systems.autoFire) "Автострельба: вкл" else "Автострельба: выкл (только прицел)").also {
             it.onClick { g.systems.autoFire = !g.systems.autoFire; g.save(); buildSettings() }
         }
@@ -467,7 +475,9 @@ class Menus(private val g: SeaGame) {
         }
         val back = ui.green("Готово").also { it.onClick { g.save(); current = { buildPause() }; buildPause() } }
         val list = Table()
-        for (bt in listOf(hand, quality, auto, vib, saveBtn, tut, back)) list.add(bt).growX().height(44f).padTop(6f).row()
+        for (bt in listOf(hand, quality)) list.add(bt).growX().height(44f).padTop(6f).row()
+        list.add(gfxHint).growX().padTop(2f).row()
+        for (bt in listOf(auto, vib, saveBtn, tut, back)) list.add(bt).growX().height(44f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
     }
 

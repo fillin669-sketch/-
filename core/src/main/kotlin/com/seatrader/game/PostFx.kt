@@ -39,6 +39,8 @@ class PostFx : Disposable {
     var vignette = 0.35f
     /** Доля разрешения экрана для сцены (на телефоне меньше 1 — экономит видеокарту). */
     var scale = 1f
+    /** Свечение ярких мест (на слабой графике выключено). */
+    var bloomOn = true
     private var outW = 0
     private var maxTex = 0
     private var outH = 0
@@ -84,6 +86,7 @@ class PostFx : Disposable {
         Gdx.gl.glDisable(GL20.GL_BLEND)
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
         // 1) яркие места в уменьшенный буфер
+        if (bloomOn) {
         a.begin()
         sc.colorBufferTexture.bind(0)
         bright.bind(); bright.setUniformi("u_tex", 0); bright.setUniformf("u_threshold", 0.72f)
@@ -97,6 +100,7 @@ class PostFx : Disposable {
         a.begin(); b.colorBufferTexture.bind(0)
         blur.bind(); blur.setUniformi("u_tex", 0); blur.setUniformf("u_dir", 0f, py * 1.5f)
         quad.render(blur, GL20.GL_TRIANGLES); a.end()
+        }
         // 3) сборка на экран
         Gdx.gl.glViewport(0, 0, outW, outH)
         a.colorBufferTexture.bind(1)
@@ -109,7 +113,7 @@ class PostFx : Disposable {
         composite.setUniformf("u_saturation", saturation)
         composite.setUniformf("u_contrast", contrast)
         composite.setUniformf("u_warmth", warmth)
-        composite.setUniformf("u_bloomAmt", bloom)
+        composite.setUniformf("u_bloomAmt", if (bloomOn) bloom else 0f)
         composite.setUniformf("u_vignette", vignette)
         quad.render(composite, GL20.GL_TRIANGLES)
         Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)

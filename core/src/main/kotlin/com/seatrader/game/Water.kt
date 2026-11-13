@@ -61,7 +61,7 @@ class Water : Disposable {
     /** [islands] — ближайшие острова: x, z, r (до 12 штук). */
     fun render(cam: Camera, cx: Float, cz: Float, time: Float, sky: Sky, islands: List<FloatArray>,
                shadowTex: com.badlogic.gdx.graphics.GLTexture? = null, shadowPV: com.badlogic.gdx.math.Matrix4? = null,
-               refl: com.badlogic.gdx.graphics.GLTexture? = null, screenW: Int = 1, screenH: Int = 1) {
+               refl: com.badlogic.gdx.graphics.GLTexture? = null, screenW: Int = 1, screenH: Int = 1, detail: Boolean = true) {
         val ox = Math.round(cx / 10f) * 10f
         val oz = Math.round(cz / 10f) * 10f
         islandBuf.fill(0f)
@@ -103,6 +103,7 @@ class Water : Disposable {
             Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
         } else shader.setUniformf("u_reflOn", 0f)
         shader.setUniformf("u_screen", screenW.toFloat(), screenH.toFloat())
+        shader.setUniformf("u_detail", if (detail) 1f else 0f)
         mesh.render(shader, GL20.GL_TRIANGLES)
     }
 
@@ -189,6 +190,7 @@ uniform float u_shadowOn;
 uniform sampler2D u_refl;
 uniform float u_reflOn;
 uniform vec2 u_screen;
+uniform float u_detail;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_h;
@@ -205,6 +207,7 @@ float shadow() {
     vec3 s = v_shadowUv;
     if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
     float o = 1.0 / 2048.0;
+    if (u_detail < 0.5) return shadowAt(s.xy, s.z);
     float r = 0.0;
     for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) r += shadowAt(s.xy + vec2(float(x), float(y)) * o * 1.5, s.z);
     return r / 9.0;
@@ -240,15 +243,21 @@ void main() {
     dirs[0] = vec2(0.94, 0.34); dirs[1] = vec2(-0.6, 0.8); dirs[2] = vec2(0.17, -0.98);
     dirs[3] = vec2(-0.87, -0.5); dirs[4] = vec2(0.71, 0.71); dirs[5] = vec2(-0.26, 0.97);
     float fr = 0.9; float am = 0.11;
+    int waves = u_detail > 0.5 ? 6 : 2;
     for (int i = 0; i < 6; i++) {
+        if (i >= waves) break;
         float ph = dot(dirs[i], p) * fr + tn * (1.2 + fr * 0.9) + float(i) * 1.7;
         gsum += dirs[i] * (am * fr * cos(ph));
         fr *= 1.42; am *= 0.7;
     }
     float rn = noise(p * 0.35 + vec2(tn * 0.6, tn * 0.4));
     float e = 0.15;
-    float nx = noise(p * 2.2 + vec2(tn * 0.7, 0.0)) - noise(p * 2.2 + vec2(e + tn * 0.7, 0.0));
-    float nz = noise(p * 2.2 + vec2(tn * 0.7, 0.0)) - noise(p * 2.2 + vec2(tn * 0.7, e));
+    float nx = 0.0; float nz = 0.0;
+    if (u_detail > 0.5) {
+        float n0 = noise(p * 2.2 + vec2(tn * 0.7, 0.0));
+        nx = n0 - noise(p * 2.2 + vec2(e + tn * 0.7, 0.0));
+        nz = n0 - noise(p * 2.2 + vec2(tn * 0.7, e));
+    }
     float detail = 0.75 + 0.6 * u_storm;
     vec3 n = normalize(v_normal + vec3(-gsum.x + nx * 0.6, 0.0, -gsum.y + nz * 0.6) * detail);
     vec3 sun = normalize(u_sunDir);
@@ -268,10 +277,12 @@ void main() {
     col = mix(col, vec3(0.62, 0.78, 0.66), smoothstep(10.0, 0.0, d0) * 0.35 * u_day);
 
     // каустика на мелководье
-    float c1 = noise(p * 0.45 + vec2(tn * 0.35, tn * 0.2));
-    float c2 = noise(p * 0.45 * 1.37 - vec2(tn * 0.28, -tn * 0.31));
-    float caus = smoothstep(0.18, 0.0, abs(c1 - c2)) * smoothstep(0.3, 0.9, shore);
-    col += vec3(0.24, 0.3, 0.26) * caus * 0.4 * u_day * (1.0 - u_storm);
+    if (u_detail > 0.5 && shore > 0.3) {
+        float c1 = noise(p * 0.45 + vec2(tn * 0.35, tn * 0.2));
+        float c2 = noise(p * 0.45 * 1.37 - vec2(tn * 0.28, -tn * 0.31));
+        float caus = smoothstep(0.18, 0.0, abs(c1 - c2)) * smoothstep(0.3, 0.9, shore);
+        col += vec3(0.24, 0.3, 0.26) * caus * 0.4 * u_day * (1.0 - u_storm);
+    }
 
     // свет проходит сквозь гребни (подповерхностное рассеяние)
     vec2 sunH = normalize(sun.xz + vec2(0.0001));
@@ -314,7 +325,9 @@ void main() {
     float surfBand = smoothstep(11.0, 0.0, d0) * smoothstep(0.35, 0.95, wavesIn);
     float edge = smoothstep(2.8, -0.8, d0);
     // дорогое кружево пены считаем только там, где пена есть
-    if (crest + surfBand + edge > 0.01) {
+    if (u_detail < 0.5) {
+        col = mix(col, vec3(0.94, 0.97, 1.0) * (0.55 + 0.45 * u_day), clamp(crest * 0.5 + surfBand * 0.6 + edge, 0.0, 1.0) * 0.85);
+    } else if (crest + surfBand + edge > 0.01) {
         float lace = smoothstep(0.08, 0.0, cells(p * 0.55 + vec2(tn * 0.05, tn * 0.03), tn * 0.8));
         float lace2 = smoothstep(0.12, 0.0, cells(p * 1.3 - vec2(tn * 0.07, 0.0), tn * 1.1));
         float foam = clamp(crest * (lace * 0.9 + lace2 * 0.5) * (0.6 + u_storm) + surfBand * (0.45 + 0.55 * lace2) + edge * (0.7 + 0.3 * lace), 0.0, 1.0);

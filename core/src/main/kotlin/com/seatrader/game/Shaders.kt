@@ -76,9 +76,9 @@ vec3 pattern(float id, vec3 p, vec3 n) {
     return vec3(k);
 }
 """
-    fun fragment(): String {
+    fun fragment(detail: Boolean = true): String {
         var f = DefaultShader.getDefaultFragmentShader()
-        f = f.replace("precision mediump float;", "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif")
+        f = f.replace("precision mediump float;", "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif" + if (detail) "" else "\n#define LOW_DETAIL")
         val a = f.indexOf("float getShadowness(vec2 offset)")
         val b = f.indexOf("#endif //shadowMapFlag")
         if (a > 0 && b > a) {
@@ -94,6 +94,9 @@ float getShadow()
 {
     vec2 uv = v_shadowMapUv.xy;
     if (uv.x < 0.01 || uv.y < 0.01 || uv.x > 0.99 || uv.y > 0.99) return 1.0;
+#ifdef LOW_DETAIL
+    return (getShadowness(vec2(u_shadowPCFOffset)) + getShadowness(vec2(-u_shadowPCFOffset))) * 0.5;
+#endif
     float o = u_shadowPCFOffset * 1.6;
     float s = 0.0;
     for (int y = -1; y <= 1; y++)
@@ -132,9 +135,11 @@ float getShadow()
 		diffuse.rgb = mix(diffuse.rgb, vec3(0.95, 0.66, 0.32), glassGlow * 0.6);
 		diffuse.a = 1.0;
 	} else if (pid > 0.5) {
+#ifndef LOW_DETAIL
 		// вдали мелкий рисунок мерцает — плавно гасим
 		float far = smoothstep(60.0, 175.0, 1.0 / gl_FragCoord.w);
 		diffuse.rgb *= mix(pattern(pid, v_lpos, normalize(v_lnrm)), vec3(1.0), far * 0.8);
+#endif
 		diffuse.a = 1.0;
 	}
 #endif
@@ -155,8 +160,8 @@ float getShadow()
                 "#ifdef normalFlag\n\t\tvec3 sn = normalize((u_worldTrans * vec4(a_normal, 0.0)).xyz);\n\t\tvec4 spos = u_shadowMapProjViewTrans * (pos + vec4(sn * 0.22, 0.0));\n#else\n\t\tvec4 spos = u_shadowMapProjViewTrans * pos;\n#endif")
     }
 
-    fun batch(): ModelBatch {
-        val cfg = DefaultShader.Config(vertex(), fragment())
+    fun batch(detail: Boolean = true): ModelBatch {
+        val cfg = DefaultShader.Config(vertex(), fragment(detail))
         cfg.numDirectionalLights = 3
         cfg.numPointLights = 0
         cfg.numSpotLights = 0

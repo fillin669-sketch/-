@@ -113,7 +113,11 @@ class SeaGame : ApplicationAdapter() {
     var streak = 0
     var joySens = 85f
     var leftHanded = false
-    var highQuality = true
+    /** Уровень графики: 0 — низкая, 1 — средняя, 2 — высокая, 3 — ультра. */
+    var gfx = 3
+    val highQuality get() = gfx >= 2
+    private lateinit var detailBatch: ModelBatch
+    private lateinit var plainBatch: ModelBatch
     var heroId = ""
     fun hero(): Hero? = HEROES.firstOrNull { it.id == heroId }
 
@@ -221,9 +225,11 @@ class SeaGame : ApplicationAdapter() {
                 cam.near = 1f
                 cam.far = 700f
                 resize(Gdx.graphics.width, Gdx.graphics.height)
-                modelBatch = Shaders.batch()
+                detailBatch = Shaders.batch(true)
+                plainBatch = Shaders.batch(false)
+                modelBatch = if (gfx >= 1) detailBatch else plainBatch
                 fx = Fx(cam, ui.softDisc, ui.white, ui.streak, ui.gull)
-                val sm = if (highQuality) min(4096, maxTex()) else 1024
+                val sm = shadowSize()
                 @Suppress("DEPRECATION")
                 sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
                 // теневой проход со смещением глубины (убирает полосы «теневых акне»)
@@ -237,7 +243,8 @@ class SeaGame : ApplicationAdapter() {
                 env.shadowMap = sunLight
                 env.add(fillLight)
                 env.add(seaBounce)
-                post = PostFx().also { it.scale = if (highQuality) 1.25f else 1f }
+                post = PostFx().also { it.scale = scaleSteps()[scaleSteps().size - 1]; it.bloomOn = gfx >= 1 }
+                scaleIdx = scaleSteps().size - 1
                 val cr = Random(5)
                 repeat(14) { clouds += floatArrayOf(cr.nextFloat() * 900 - 450, cr.nextFloat() * 900 - 450, 70f + cr.nextFloat() * 90, cr.nextFloat() * 360, cr.nextInt(2).toFloat()) }
                 env.set(fogAttr)
@@ -256,7 +263,7 @@ class SeaGame : ApplicationAdapter() {
                 systems.buildReefsAndWrecks { x, z, m -> isWater(x, z, m) }
                 systems.placeBottles { x, z, m -> isWater(x, z, m) }
                 living.buildWorld { x, z, m -> isWater(x, z, m) }
-                fx.limit = if (highQuality) 900 else 450
+                fx.limit = intArrayOf(250, 450, 700, 900)[gfx]
                 spawnPlayer()
                 startX = player!!.x; startZ = player!!.z
                 repeat(4) { i ->
@@ -366,7 +373,8 @@ class SeaGame : ApplicationAdapter() {
         streak = prefs.getInteger("streak", 0)
         joySens = prefs.getFloat("joySens", 85f)
         leftHanded = prefs.getBoolean("leftHanded", false)
-        highQuality = prefs.getBoolean("hq", true)
+        autoGfx = prefs.getBoolean("autoGfx", true)
+        gfx = if (prefs.contains("gfx")) prefs.getInteger("gfx", 3).coerceIn(0, 3) else if (prefs.getBoolean("hq", true)) 3 else 0
         heroId = prefs.getString("hero", "")
         systems.load(prefs)
         living.load(prefs)
@@ -392,7 +400,8 @@ class SeaGame : ApplicationAdapter() {
         prefs.putInteger("streak", streak)
         prefs.putFloat("joySens", joySens)
         prefs.putBoolean("leftHanded", leftHanded)
-        prefs.putBoolean("hq", highQuality)
+        prefs.putInteger("gfx", gfx)
+        prefs.putBoolean("autoGfx", autoGfx)
         prefs.putString("hero", heroId)
         systems.save(prefs)
         living.save(prefs)
@@ -1956,21 +1965,57 @@ class SeaGame : ApplicationAdapter() {
         cam.update()
     }
 
-    // Динамическое разрешение: держим плавность, качество поднимаем, когда телефон справляется
+    // Динамическое разрешение и автоснижение графики на слабых телефонах
     private var fpsAcc = 0f
     private var fpsFrames = 0
-    private val scaleSteps = floatArrayOf(0.7f, 0.85f, 1f, 1.12f, 1.25f)
-    private var scaleIdx = 4
+    private var scaleIdx = 0
+    private var slowChecks = 0
+    private fun scaleSteps(): FloatArray = when (gfx) {
+        0 -> floatArrayOf(0.5f, 0.6f, 0.7f)
+        1 -> floatArrayOf(0.6f, 0.7f, 0.8f, 0.9f)
+        2 -> floatArrayOf(0.7f, 0.85f, 1f)
+        else -> floatArrayOf(0.85f, 1f, 1.12f, 1.25f)
+    }
+    private fun shadowSize() = when (gfx) { 0, 1 -> 1024; 2 -> 2048; else -> min(4096, maxTex()) }
 
     private fun adaptQuality(dt: Float) {
-        if (!highQuality || !::post.isInitialized) return
+        if (!::post.isInitialized || state == State.LOADING) return
         fpsAcc += dt; fpsFrames++
         if (fpsAcc < 2.5f) return
         val fps = fpsFrames / fpsAcc
         fpsAcc = 0f; fpsFrames = 0
-        if (fps < 42f && scaleIdx > 0) scaleIdx--
-        else if (fps > 57f && scaleIdx < scaleSteps.size - 1) scaleIdx++
-        post.scale = scaleSteps[scaleIdx]
+        val steps = scaleSteps()
+        if (fps < 40f && scaleIdx > 0) scaleIdx--
+        else if (fps > 56f && scaleIdx < steps.size - 1) scaleIdx++
+        // телефон не справляется даже на минимальном разрешении — снижаем уровень графики
+        if (fps < 30f && scaleIdx == 0 && gfx > 0 && autoGfx) {
+            if (++slowChecks >= 2) { slowChecks = 0; applyGfx(gfx - 1); toast("Графика снижена для плавной игры", 2f); return }
+        } else slowChecks = 0
+        post.scale = steps[scaleIdx.coerceAtMost(steps.size - 1)]
+    }
+
+    /** Автоматически снижать графику (выключается, если игрок выбрал уровень сам). */
+    var autoGfx = true
+
+    /** Сменить уровень графики на лету. */
+    fun applyGfx(level: Int) {
+        gfx = level.coerceIn(0, 3)
+        if (!::post.isInitialized) return
+        modelBatch = if (gfx >= 1) detailBatch else plainBatch
+        post.bloomOn = gfx >= 1
+        scaleIdx = scaleSteps().size - 1
+        post.scale = scaleSteps()[scaleIdx]
+        fx.limit = intArrayOf(250, 450, 700, 900)[gfx]
+        val sm = shadowSize()
+        if (sunLight.depthMap.texture.width != sm) {
+            env.remove(sunLight)
+            sunLight.dispose()
+            @Suppress("DEPRECATION")
+            sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
+            env.add(sunLight)
+            env.shadowMap = sunLight
+        }
+        save()
     }
 
     private val nearIslands = ArrayList<FloatArray>()
@@ -1983,8 +2028,9 @@ class SeaGame : ApplicationAdapter() {
 
     /** Зеркальное отражение сцены в воде: та же камера, мир отражён по высоте. */
     private fun renderReflection(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture {
-        val rw = (Gdx.graphics.backBufferWidth * 0.5f).toInt().coerceAtLeast(64)
-        val rh = (Gdx.graphics.backBufferHeight * 0.5f).toInt().coerceAtLeast(64)
+        val rs = if (gfx >= 3) 0.5f else 0.38f
+        val rw = (Gdx.graphics.backBufferWidth * rs).toInt().coerceAtLeast(64)
+        val rh = (Gdx.graphics.backBufferHeight * rs).toInt().coerceAtLeast(64)
         var f = reflFbo
         if (f == null || f.width != rw || f.height != rh) {
             f?.dispose()
@@ -2045,7 +2091,7 @@ class SeaGame : ApplicationAdapter() {
         val lookX = camPos.x; val lookZ = camPos.z - 80
         // Карта теней от солнца (или луны)
         shadowCenter.set(lookX, 0f, lookZ + 30)
-        if (highQuality) {
+        if (gfx >= 1) {
         sunLight.begin(shadowCenter, sunLight.direction)
         shadowBatch.begin(sunLight.camera)
         for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 + isl.r) shadowBatch.render(isl.inst)
@@ -2057,8 +2103,8 @@ class SeaGame : ApplicationAdapter() {
         sunLight.end()
         }
         Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
-        val usePost = highQuality
-        val reflTex = if (highQuality) renderReflection(lookX, lookZ) else null
+        val usePost = true
+        val reflTex = if (gfx >= 2) renderReflection(lookX, lookZ) else null
         if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
@@ -2068,10 +2114,10 @@ class SeaGame : ApplicationAdapter() {
             nearIslands.clear()
             islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
         }
-        val shadows = highQuality && !debugNoShadow
+        val shadows = gfx >= 1 && !debugNoShadow
         env.shadowMap = if (shadows) sunLight else null
         water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans,
-            reflTex, if (usePost) post.sceneW else Gdx.graphics.backBufferWidth, if (usePost) post.sceneH else Gdx.graphics.backBufferHeight)
+            reflTex, if (usePost) post.sceneW else Gdx.graphics.backBufferWidth, if (usePost) post.sceneH else Gdx.graphics.backBufferHeight, gfx >= 2)
 
         modelBatch.begin(cam)
         for ((i, isl) in islands.withIndex()) {

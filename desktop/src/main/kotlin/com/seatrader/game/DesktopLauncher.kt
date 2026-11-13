@@ -110,6 +110,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
             return
         }
         val lv = g.living
+        if (f == 1) System.getenv("SEA_GFX")?.toIntOrNull()?.let { g.autoGfx = false; g.applyGfx(it) }
         if (System.getenv("SEA_AI") != null) { aiTest(f); return }
         if (System.getenv("SEA_ALLY") != null) { allyTest(f); return }
         if (System.getenv("SEA_LEASH") != null) { leashTest(f); return }
