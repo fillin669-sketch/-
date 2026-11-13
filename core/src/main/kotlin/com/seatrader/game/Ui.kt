@@ -64,7 +64,7 @@ class Ui(val scale: Float) : Disposable {
     init {
         val gen = FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans-Bold.ttf"))
         val chars = FreeTypeFontGenerator.DEFAULT_CHARS +
-            "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№·×☠⚓⚔★☆✓▶↺⚙❤⬆✕♪♫⚑⌂≈▲▼"
+            "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№·×☠⚓⚔★☆✓▶↺⚙❤⬆✕♪♫⚑⌂≈▲▼✎⚐"
         fun font(dp: Float, border: Float): BitmapFont {
             val p = FreeTypeFontGenerator.FreeTypeFontParameter().apply {
                 size = (dp * scale).toInt()

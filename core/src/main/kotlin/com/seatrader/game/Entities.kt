@@ -73,6 +73,9 @@ class Ship(
     var homeX = x; var homeZ = z
     var leash = 300f
     var giveUpT = 0f
+    /** Спустил флаг (сдался) и уже проверял, сдаваться ли. */
+    var surrendered = false
+    var surrenderChecked = false
     var escapeT = 0f
     var escA = 0f
     var hunter = false

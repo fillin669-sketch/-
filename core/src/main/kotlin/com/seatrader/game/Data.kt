@@ -4,6 +4,8 @@ package com.seatrader.game
 data class Look(
     val len: Float, val width: Float, val masts: Int,
     val hull: Int, val trim: Int, val sail: Int, val flag: Int,
+    /** Узор парусов (0 — однотонные), второй цвет и рисунок флага 8×6 (палитра FLAG_PALETTE, '.' — цвет флага). */
+    val sailPat: Int = 0, val sail2: Int = -1, val flagPix: String = "",
 )
 
 class ShipDef(
@@ -257,6 +259,8 @@ val XP_REWARD = mapOf("sloop" to 20, "brig" to 40, "frigate" to 80, "galleon" to
 class Achievement(val id: String, val name: String, val desc: String, val stat: String, val goal: Int, val gems: Int)
 
 val ACHIEVEMENTS = listOf(
+    Achievement("relics", "Хранитель реликвий", "Найти 6 артефактов", "artifacts", 6, 12),
+    Achievement("mercy", "Милосердный капитан", "Принять сдачу 3 пиратских кораблей", "surrenders", 3, 6),
     Achievement("bounty3", "Охотник за головами", "Поймать 3 разыскиваемых капитанов", "bounties", 3, 10),
     Achievement("ghost", "Изгоняющий призраков", "Потопить корабль-призрак", "ghosts", 1, 5),
     Achievement("lands10", "Исследователь", "Высадиться на 10 островах", "landings", 10, 6),
@@ -483,3 +487,60 @@ val HEROES = listOf(
         listOf("Цены на рынке выгоднее на 8%", "Улучшения корабля дешевле на 12%", "Опыт капитана +25%"),
         floatArrayOf(0.32f, 0.15f, 0.36f, 0.27f), trade = 0.08f, upgrade = 0.12f, xp = 0.25f),
 )
+
+// ---------- Редактор флага и парусов ----------
+val FLAG_PALETTE = intArrayOf(0x111111, 0xf5f5f5, 0xc62828, 0xffc107, 0x1565c0, 0x2e7d32, 0x6a1b9a, 0xef6c00, 0x8d6e63, 0x90a4ae, 0x00acc1, 0xec407a)
+const val FLAG_W = 8
+const val FLAG_H = 6
+fun flagPixColor(ch: Char): Int = when (ch) { in '0'..'9' -> FLAG_PALETTE[ch - '0']; 'a' -> FLAG_PALETTE[10]; 'b' -> FLAG_PALETTE[11]; else -> -1 }
+fun flagPixChar(i: Int): Char = if (i < 0) '.' else if (i < 10) '0' + i else 'a' + (i - 10)
+
+/** Шаблоны рисунка флага (строки сверху вниз). */
+val FLAG_TEMPLATES = listOf(
+    "Череп" to listOf("..1111..", ".111111.", ".1.11.1.", "..1111..", "1..11..1", ".11..11."),
+    "Якорь" to listOf("...11...", "..1..1..", "...11...", "...11...", "1..11..1", ".111111."),
+    "Звезда" to listOf("...33...", "..3333..", "33333333", ".333333.", "..3..3..", ".3....3."),
+    "Сабли" to listOf("1......1", ".1....1.", "..1..1..", "...11...", "..1..1..", ".3....3."),
+    "Сердце" to listOf(".22..22.", "22222222", "22222222", ".222222.", "..2222..", "...22..."),
+    "Волны" to listOf("........", ".4..4..4", "4.44.44.", "........", ".1..1..1", "1.11.11."),
+)
+
+val SAIL_PATTERNS = listOf("Однотонные", "Полосы", "Вертикальные", "Крест", "Кайма", "Эмблема флага", "Диагональ")
+
+// ---------- Артефакты ----------
+class Artifact(
+    val id: Int, val name: String, val desc: String, val source: String,
+    val dmg: Float = 0f, val reload: Float = 0f, val speed: Float = 0f, val range: Float = 0f, val armor: Float = 0f,
+    val loot: Float = 0f, val xp: Float = 0f, val monster: Float = 0f, val abilityCd: Float = 0f,
+)
+
+const val ARTIFACT_SLOTS = 3
+val ARTIFACTS = listOf(
+    Artifact(0, "Компас Семи Ветров", "Стрелка тянется к кладу: сокровища видны на карте издалека. Скорость +3%.", "клад по карте", speed = 0.03f),
+    Artifact(1, "Колокол утопленников", "Корабли-призраки не нападают первыми.", "затонувший храм"),
+    Artifact(2, "Жемчужина штиля", "Рывок длится на 60% дольше, штиль не замедляет.", "затонувший храм"),
+    Artifact(3, "Проклятый дублон", "+30% добычи, но шторма приходят чаще, а команда нервничает.", "клад по карте", loot = 0.3f),
+    Artifact(4, "Зуб кракена", "+20% урона по морскому змею, кракену и боссам.", "кракен или морской змей", monster = 0.2f),
+    Artifact(5, "Подзорная труба адмирала", "Дальность пушек +15%.", "капитан с наградой за голову", range = 0.15f),
+    Artifact(6, "Бочонок вечного рома", "Дух команды не опускается ниже 40.", "капитан с наградой за голову"),
+    Artifact(7, "Песочные часы штурмана", "Способности перезаряжаются на 20% быстрее.", "затонувший храм", abilityCd = 0.2f),
+    Artifact(8, "Сердце бури", "В шторм корабль быстрее и бьёт сильнее на 15%.", "кракен или морской змей"),
+    Artifact(9, "Медальон удачи", "С каждого потопленного пирата 20% шанс на кристалл.", "капитан с наградой за голову"),
+    Artifact(10, "Чешуйчатый доспех", "Получаемый урон −15%.", "кракен или морской змей", armor = 0.15f),
+    Artifact(11, "Карта Безымянного острова", "Опыт капитана +25%.", "клад по карте", xp = 0.25f),
+)
+
+/** Цвет узора паруса в точке (u — поперёк 0..1, v — снизу вверх 0..1). */
+fun sailPatColor(pat: Int, u: Float, v: Float, c1: Int, second: Int, flagPix: String): Int = when (pat) {
+    1 -> if ((v * 6).toInt() % 2 == 1) second else c1
+    2 -> if ((u * 6).toInt() % 2 == 1) second else c1
+    3 -> if (kotlin.math.abs(u - 0.5f) < 0.09f || kotlin.math.abs(v - 0.55f) < 0.12f) second else c1
+    4 -> if (u < 0.1f || u > 0.9f || v < 0.13f || v > 0.87f) second else c1
+    5 -> {
+        val fx = ((u - 0.25f) / 0.5f * FLAG_W).toInt(); val fy = ((0.85f - v) / 0.7f * FLAG_H).toInt()
+        if (u in 0.25f..0.75f && v in 0.15f..0.85f && flagPix.length == FLAG_W * FLAG_H && fx in 0 until FLAG_W && fy in 0 until FLAG_H)
+            flagPixColor(flagPix[fy * FLAG_W + fx]).let { if (it < 0) c1 else it } else c1
+    }
+    6 -> if (((u + v) * 5).toInt() % 2 == 1) second else c1
+    else -> c1
+}

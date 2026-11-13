@@ -317,6 +317,7 @@ class Hud(private val g: SeaGame) {
                 0f, ayy + 70, Align.center, wDp, c = rgb(0xffe082))
         }
         g.living.drawHud(b)
+        g.extras.drawHud(b)
         // Абордаж
         g.systems.boardTarget?.let {
             val (px, py) = boardPos()
@@ -328,6 +329,11 @@ class Hud(private val g: SeaGame) {
             ui.text(b, ui.small, "нажмите — команда бросит крюки", px - 120, py - 34, Align.center, 240f, c = rgb(0xffcdd2))
         }
         if (g.systems.grappleTarget != null) ui.text(b, ui.big, "Крюки летят — сближаемся…", 0f, hDp * 0.55f, Align.center, wDp, c = rgb(0xffe0b2))
+        if (g.systems.boardTarget == null && g.systems.alignHint != null && g.systems.grappleTarget == null) {
+            val (px, py) = boardPos()
+            ui.round(b, px - 130, py - 22, 260f, 44f, c(0x3e2723, 0.85f))
+            ui.text(b, ui.small, "Для абордажа идите вдоль борта врага\nс той же скоростью", px - 128, py + 14, Align.center, 256f, c = rgb(0xffe0b2))
+        }
 
         // Монеты и кристаллы — одна компактная строка рядом с паузой
         val curY = top - 30f
@@ -380,8 +386,13 @@ class Hud(private val g: SeaGame) {
         if (sy.cargoUsed() > 0) {
             val ct = "Трюм ${sy.cargoUsed()}/${sy.capacity()}"
             ui.text(b, ui.small, ct, lineEnd, ly, Align.left, 120f, c = rgb(0xd7ccc8))
-            lineRight = lineEnd + ui.measure(ui.small, ct)
+            lineRight = lineEnd + ui.measure(ui.small, ct) + 8f
         }
+        // дух команды
+        val ex = g.extras
+        val mt = "Дух ${ex.morale.roundToInt()}"
+        ui.text(b, ui.small, mt, lineRight, ly, Align.left, 80f, c = rgb(ex.moraleColor()))
+        lineRight += ui.measure(ui.small, mt)
 
         drawMinimap()
 
@@ -470,6 +481,7 @@ class Hud(private val g: SeaGame) {
         g.serpent?.let { sp -> if (!sp.dead) pt(sp.x, sp.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 11f, 11f, 0f, c(0x26a69a)) } }
         g.systems.kraken?.let { k -> if (!k.dead) pt(k.x, k.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 14f, 14f, 0f, c(0xd81b60)) } }
         g.treasure?.let { t -> pt(t.x, t.z, true)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 14f, 14f) } }
+        g.extras.lost?.let { l -> pt(l.x, l.z, true)?.let { (x, y) -> val pu = 1f + sin(g.now * 6) * 0.2f; ui.icon(b, ui.coin, x, y, 12f * pu, 12f * pu) } }
         g.systems.waypoint?.let { w -> pt(w[0], w[1], true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 10f, 10f, 0f, c(0x4dd0e1)) } }
         g.questTarget()?.let { t ->
             val pulse = 1f + sin(g.now * 5) * 0.2f

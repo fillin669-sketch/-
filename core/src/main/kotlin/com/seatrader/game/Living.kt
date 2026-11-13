@@ -120,7 +120,7 @@ class Living(private val g: SeaGame) {
 
     fun buyMul() = 1f - off { it.trade } - (hero?.trade ?: 0f) - clamp(rep[0] / 1000f, -0.1f, 0.1f)
     fun sellMul() = 1f + off { it.trade } + (hero?.trade ?: 0f) + clamp(rep[0] / 1000f, -0.1f, 0.1f)
-    fun lootMul() = 1f + off { it.loot } + (hero?.loot ?: 0f)
+    fun lootMul() = 1f + off { it.loot } + (hero?.loot ?: 0f) + g.extras.artLoot()
     fun boardMul() = 1f + off { it.board }
     fun gemBonus() = if (crew.contains(7)) 0.25f else 0f
     fun upgradeMul() = (if (baseFounded) 1f - 0.06f * blev[6] else 1f) * (1f - (hero?.upgrade ?: 0f))
@@ -217,6 +217,8 @@ class Living(private val g: SeaGame) {
                 g.coins += reward; g.gems += c.gems
                 g.systems.addStat("bounties")
                 g.toast("Награда за ${c.name}: +$reward монет, +${c.gems} кристаллов!", 3f)
+                g.extras.grantArtifact(g.extras.bountyArts)
+                g.extras.addMorale(10f)
                 g.sfx.play("treasure")
                 addRep(1, 8); addRep(2, -5)
                 g.save()
@@ -573,6 +575,11 @@ class Living(private val g: SeaGame) {
     private fun updateAction(p: Ship) {
         actionText = null; actionSub = null; actionFn = null
         if (p.sinking || g.systems.boardTarget != null || g.systems.grappleTarget != null) return
+        g.extras.surrenderNear(p)?.let { s ->
+            actionText = "Принять сдачу"; actionSub = "пираты спустили флаг"
+            actionFn = { g.joyActive = false; g.menus.showSurrender(s) }
+            return
+        }
         val li = nearLanding(p)
         if (li >= 0) {
             if (li == mapTarget) { actionText = "Копать клад!"; actionSub = "крест на карте здесь" }
@@ -640,13 +647,14 @@ class Living(private val g: SeaGame) {
             "spring_rest" -> { xp(80); g.dayTime = (g.dayTime + 0.15f) % 1f; "Команда отдохнула и травит байки до вечера. (+80 опыта)" }
             "boat_open" -> { val n = coins(40, 80); "В сундучке $n монет и обрывок карты." + mapPiece() }
             "x_dig" -> { val n = coins(1500, 2500); val gm = Random.nextInt(6, 11); g.gems += gm; visited += idx; mapTarget = -1; g.systems.waypoint = null
-                sy.addStat("treasures"); g.sfx.play("treasure"); "Сундук, полный дублонов! +$n монет и +$gm кристаллов!" }
-            "dive_swim" -> if (Random.nextFloat() < 0.7f) { val n = coins(300, 450); g.gems += 4; "Ныряльщики подняли золотую чашу с алтаря: +$n монет и 4 кристалла!" }
+                sy.addStat("treasures"); g.sfx.play("treasure"); "Сундук, полный дублонов! +$n монет и +$gm кристаллов!" + (g.extras.grantArtifact(g.extras.treasureArts) ?: "") }
+            "dive_swim" -> if (Random.nextFloat() < 0.7f) { val n = coins(300, 450); g.gems += 4; "Ныряльщики подняли золотую чашу с алтаря: +$n монет и 4 кристалла!" + (g.extras.grantArtifact(g.extras.templeArts, 0.6f) ?: "") }
                 else { p?.let { it.hp = max(1f, it.hp - it.maxHp * 0.2f) }; g.gems += 1; "Акулы! Матросы еле выбрались, прихватив один кристалл." }
-            "dive_bell" -> { if (g.coins >= 200) { g.coins -= 200; val n = coins(550, 700); g.gems += 3; "Колокол спокойно опустился к алтарю: +$n монет и 3 кристалла." } else { dived -= idx; "Колокол стоит 200 монет — не хватает." } }
+            "dive_bell" -> { if (g.coins >= 200) { g.coins -= 200; val n = coins(550, 700); g.gems += 3; "Колокол спокойно опустился к алтарю: +$n монет и 3 кристалла." + (g.extras.grantArtifact(g.extras.templeArts, 0.6f) ?: "") } else { dived -= idx; "Колокол стоит 200 монет — не хватает." } }
             "dive_leave" -> { xp(50); "Вы оставили храм в покое. Матросы долго смотрят в воду… (+50 опыта)" }
             else -> { "Вы вернулись на корабль." }
         }
+        if (!act.startsWith("leave") && act != "dive_leave") g.extras.addMorale(2f)
         g.save()
         return text
     }

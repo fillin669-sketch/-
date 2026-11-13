@@ -2,6 +2,7 @@ package com.seatrader.game
 
 import com.badlogic.gdx.Gdx
 import kotlin.math.abs
+import kotlin.math.max
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
@@ -100,6 +101,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val f = frame - base
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
+        if (System.getenv("SEA_FEAT") != null) { featTest(f); return }
         if (System.getenv("SEA_BOARD") != null) {
             if (f == 3) press("Выбрать"); if (f == 5) press("Забрать"); if (f == 8) g.menus.close()
             if (f == 12) { val p = g.player!!; g.menus.showBoarding(g.spawnEnemy("sloop", p.x + 30f, p.z)) }
@@ -302,6 +304,8 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         lastNano = now
         val p = g.player ?: run { issue("нет корабля игрока"); return }
+        // в сценарных шагах игрок не должен случайно погибнуть (кроме проверки гибели и «обезьяны»)
+        if (!stepName.startsWith("гибель") && stepName != "обезьяна" && !p.sinking && !stepName.startsWith("абордаж")) p.hp = max(p.hp, p.maxHp * 0.6f)
         if (p.x.isNaN() || p.z.isNaN() || p.hp.isNaN()) issue("NaN у игрока")
         if (abs(p.x) > WORLD + 60 || abs(p.z) > WORLD + 60) issue("игрок за краем мира")
         if (g.coins < 0) issue("монеты < 0"); if (g.gems < 0) issue("кристаллы < 0")
@@ -338,10 +342,14 @@ class TestScript(private val g: SeaGame, private val out: String) {
         // абордаж
         var e2: Ship? = null
         step("абордаж", 40) { tp(350f, -350f); g.player!!.h = 0f; e2 = spawnSide("sloop", 30f).also { it.hp = it.maxHp * 0.3f } }
-        step("абордаж", 90) { val t = g.systems.boardTarget; if (t == null) issue("нет кнопки абордажа рядом с ослабленным пиратом") else g.systems.throwGrapples(t) }
+        step("абордаж", 90) {
+            val t = g.systems.boardTarget ?: g.systems.alignHint
+            if (t == null) issue("нет ни кнопки абордажа, ни подсказки рядом с ослабленным пиратом") else g.systems.throwGrapples(t)
+        }
         step("абордаж", 110) { }
         step("абордаж", 10) { if (g.state != SeaGame.State.DIALOG) issue("абордаж не начался: ${g.state} цель hp=${e2?.hp} тонет=${e2?.sinking} крюки=${g.systems.grappleTarget != null}") }
-        for (k in 0..2) step("абордаж", 25) { press("Удар") }
+        for (k in 0..2) step("абордаж", 25) { press(listOf("Натиск", "Залп", "Оборона")[k]) }
+        step("абордаж", 30) { if (findButton("Натиск") != null) issue("после 3 раундов схватка не закончилась") }
         step("абордаж", 15) { for (b in listOf("Захватить", "Разграбить", "Продолжить")) if (findButton(b) != null) { press(b); break } }
         step("абордаж", 10) { if (g.state != SeaGame.State.PLAY) { issue("после абордажа не вернулись в игру: ${g.state}"); g.menus.close() } }
         // порт: всё купить и проверить
@@ -403,8 +411,8 @@ class TestScript(private val g: SeaGame, private val out: String) {
         step("крепость", 300) { val f0 = g.systems.fortresses.first(); tp(f0.x + f0.r + 60f, f0.z) }
         step("охотник", 200) { tp(600f, 600f); lv.acceptBounty(1) }
         // гибель и возрождение
-        step("гибель", 120) { tp(200f, 200f); val p = g.player!!; g.damage(p, p.hp + 10f, null, false) }
-        step("гибель", 5) { if (g.state != SeaGame.State.DEAD) issue("нет экрана гибели: ${g.state}"); press("Вернуться") }
+        step("гибель", 120) { if (g.state != SeaGame.State.PLAY) g.menus.close(); tp(200f, 200f); val p = g.player!!; log.append("перед гибелью: state=${g.state} hp=${p.hp} sinking=${p.sinking}\n"); g.damage(p, p.hp + 10f, null, false); log.append("после урона: hp=${p.hp} sinking=${p.sinking} таймер=${g.deathTimer}\n") }
+        step("гибель", 5) { if (g.state != SeaGame.State.DEAD) issue("нет экрана гибели: ${g.state} hp=${g.player?.hp} тонет=${g.player?.sinking} таймер=${g.deathTimer} окна=${g.stage.root.children.size}"); press("Вернуться") }
         step("гибель", 30) { if (g.state != SeaGame.State.PLAY || g.player!!.sinking) issue("не возродились: ${g.state}") }
         // сохранение
         step("сохранение", 5) {
@@ -514,6 +522,62 @@ class TestScript(private val g: SeaGame, private val out: String) {
         val post = field(g, "post")!!
         for (k in listOf("bright", "blur", "composite")) (field(post, k) as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("post_$k", it) }
         log.append("dumped $n\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
+    }
+
+    private var featE: Ship? = null
+    private fun featTest(f: Int) {
+        val ex = g.extras
+        val p = g.player
+        when (f) {
+            3 -> press("Выбрать: Fin"); 5 -> press("Забрать"); 8 -> g.menus.close()
+            10 -> { g.coins = 50000; g.gems = 100; g.openPort(0) }
+            14 -> press("Вид")
+            20 -> press("Флаг")
+            30 -> shot("f01_flag_editor")
+            31 -> press("Череп")
+            36 -> { press("Поднять") }
+            40 -> press("Паруса")
+            46 -> press("Эмблема")
+            52 -> shot("f02_sail_editor")
+            53 -> press("Поставить")
+            100 -> shot("f03_ship_flag")
+            101 -> { g.menus.close(); g.closePort() }
+            110 -> { tp(300f, -300f); p!!.h = 0f; featE = spawnSide("brig", 28f).also { it.hp = it.maxHp * 0.4f }; g.systems.throwGrapples(featE!!) }
+            200 -> shot("f04_boarding")
+            201 -> press("Натиск"); 215 -> press("Залп"); 230 -> press("Оборона")
+            260 -> shot("f05_board_result")
+            261 -> { for (b in listOf("Отпустить", "Продолжить")) if (findButton(b) != null) { press(b); break }; if (g.state != SeaGame.State.PLAY) g.menus.close() }
+            270 -> { tp(300f, -750f); p!!.hp = p.maxHp * 0.2f
+                repeat(2) { k -> g.spawnEnemy("brig", p.x + 40f + k * 20f, p.z + 30f).also { it.ai = AiState.ATTACK; it.target = p } } }
+            285 -> { log.append("пираты: " + g.ships.filter { it.faction == Faction.PIRATE }.joinToString { "${it.type} d=${Math.hypot((it.x - p!!.x).toDouble(), (it.z - p.z).toDouble()).toInt()} ai=${it.ai} sink=${it.sinking}" } + " state=${g.state} combat=${g.combatT}\n") }
+            in 271..299 -> { p!!.hp = p.maxHp * 0.2f; for (s in g.ships) if (s.faction == Faction.PIRATE) { s.ai = AiState.ATTACK; s.target = p } }
+            300 -> { shot("f06_white_flag_btn"); log.append("flag=${ex.flagAvailable} price=${ex.ransomPrice()}\n"); val (fx, fy) = ex.flagPos(); touch("down", fx, g.hDp - fy); touch("up", fx, g.hDp - fy) }
+            310 -> shot("f07_white_flag_dialog")
+            311 -> press("Откупиться")
+            330 -> { log.append("после откупа: монеты=${g.coins} атакуют=${g.ships.count { it.faction == Faction.PIRATE && it.ai == AiState.ATTACK }}\n") }
+            340 -> { tp(700f, -700f); p!!.hp = p.maxHp; featE = spawnSide("sloop", 30f).also { it.surrendered = true; it.hp = it.maxHp * 0.2f } }
+            360 -> { shot("f08_surrender"); log.append("action=${g.living.actionText}\n"); val (ax, ay) = g.living.actionPos(); touch("down", ax, g.hDp - ay); touch("up", ax, g.hDp - ay) }
+            370 -> shot("f09_surrender_dialog")
+            371 -> press("выкуп")
+            380 -> { shot("f10_surrender_result"); press("Продолжить") }
+            390 -> { tp(-800f, 500f); g.combatT = 0f; ex.morale = 5f; ex.mutinyCd = 0f }
+            410 -> log.append("мораль=${ex.morale} state=${g.state} combat=${g.combatT} cd=${ex.mutinyCd}\n")
+            420 -> { shot("f11_mutiny"); press("ром") }
+            430 -> { shot("f12_mutiny_result"); press("Продолжить") }
+            440 -> { g.systems.cargo[1] = 8; g.systems.cargo[3] = 4; tp(900f, 900f); g.damage(p!!, p.hp + 10f, null, false) }
+            520 -> { shot("f13_death"); log.append("lost=${ex.lost != null} coins=${ex.lostCoins()}\n"); press("Вернуться") }
+            530 -> { g.menus.showMap() }
+            545 -> { shot("f14_map_lost"); g.menus.close() }
+            550 -> { val l = ex.lost!!; tp(l.x + 60f, l.z) }
+            600 -> { shot("f15_lost_cargo"); log.append("падальщиков: ${g.ships.count { it.faction == Faction.PIRATE }}\n"); val l = ex.lost; if (l != null) tp(l.x, l.z) }
+            620 -> { log.append("груз поднят=${ex.lost == null} трюм=${g.systems.cargo.toList()}\n") }
+            630 -> { ex.owned.addAll(ARTIFACTS.indices); ex.equipped.clear(); ex.equipped.addAll(listOf(0, 5, 10)); g.rebuildPlayer(); g.openPause() }
+            640 -> press("Капитан")
+            655 -> shot("f16_artifacts")
+            660 -> { g.menus.close(); ex.morale = 82f; g.systems.cargo[0] = 5 }
+            700 -> shot("f17_hud_morale")
+            710 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+        }
     }
 
     /** Нажатие на вкладку порта: ищем кнопку по тексту. */

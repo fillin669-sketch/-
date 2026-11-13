@@ -262,6 +262,30 @@ class Geo {
         return this
     }
 
+    /** Парус с узором: цвет каждой клетки сетки 12×8 задаёт узор (полосы, крест, кайма, эмблема флага…). */
+    fun sailPattern(w: Float, h: Float, bulge: Float, c1: Int, c2: Int, pat: Int, flagPix: String, flagBase: Int): Geo {
+        if (pat == 0 || c2 < 0 && pat != 5) return color(c1).sail(w, h, bulge)
+        val keep = variation
+        variation = 0.02f
+        val sx = 12; val sy = 8
+        val pts = Array(sy + 1) { j ->
+            Array(sx + 1) { i ->
+                val x = i.toFloat() / sx; val y = j.toFloat() / sy
+                Vector3((x - 0.5f) * w, (y - 0.5f) * h, (-sin(x * PI) * bulge * (0.6 + 0.4 * sin(y * PI))).toFloat())
+            }
+        }
+        val back = Vector3(0f, -h, 50f)
+        val second = if (c2 >= 0) c2 else flagBase
+        for (j in 0 until sy) for (i in 0 until sx) {
+            val u = (i + 0.5f) / sx; val v = (j + 0.5f) / sy
+            val col = sailPatColor(pat, u, v, c1, second, flagPix)
+            color(col)
+            quad(pts[j][i], pts[j][i + 1], pts[j + 1][i + 1], pts[j + 1][i], back)
+        }
+        variation = keep
+        return this
+    }
+
     fun flatRing(rIn: Float, rOut: Float, seg: Int): Geo {
         val below = Vector3(0f, -1f, 0f)
         for (i in 0 until seg) {
@@ -423,7 +447,16 @@ object Models {
             }
             g.color(look.hull).push().at(0f, top + h * 0.86f, mz).cylinder(0.7f, 0.55f, 0.5f, 6).pop()
             tops += Vector3(0f, top + h, mz)
-            if (i == n - 1) g.color(look.flag).push().at(0f, top + h + 0.5f, mz + 1.1f).box(0.08f, 1.3f, 2.2f).pop()
+            if (i == n - 1) {
+                if (look.flagPix.length == FLAG_W * FLAG_H) {
+                    // рисованный флаг: 8×6 клеток
+                    val cw = 2.2f / FLAG_W; val ch = 1.3f / FLAG_H
+                    for (fy in 0 until FLAG_H) for (fx in 0 until FLAG_W) {
+                        val c = flagPixColor(look.flagPix[fy * FLAG_W + fx]).let { if (it < 0) look.flag else it }
+                        g.color(c).push().at(0f, top + h + 0.5f + 0.65f - (fy + 0.5f) * ch, mz + (fx + 0.5f) * cw).box(0.08f, ch * 1.02f, cw * 1.02f).pop()
+                    }
+                } else g.color(look.flag).push().at(0f, top + h + 0.5f, mz + 1.1f).box(0.08f, 1.3f, 2.2f).pop()
+            }
         }
         // Такелаж: штаги между мачтами и ванты к бортам
         g.color(0x2b2118)
@@ -556,7 +589,7 @@ object Models {
                 val sh = h * (if (k == 0) 0.36f else 0.26f)
                 val sy = top + h * (if (k == 0) 0.36f else 0.72f)
                 val ww = sw * (if (k == 0) 1f else 0.8f)
-                val sg = Geo().mat(Shaders.CLOTH).color(look.sail).sail(ww, sh, W * 0.28f)
+                val sg = Geo().mat(Shaders.CLOTH).sailPattern(ww, sh, W * 0.28f, look.sail, look.sail2, look.sailPat, look.flagPix, look.flag)
                 val node = mb.node()
                 node.id = "sail${idx++}"
                 node.translation.set(0f, sy, mz - 0.25f)

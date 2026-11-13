@@ -222,7 +222,7 @@ class Systems(private val g: SeaGame) {
 
     // ===================== Капитан =====================
     fun gainXp(n0: Int, x: Float, z: Float) {
-        val n = (n0 * (1f + (g.hero()?.xp ?: 0f))).roundToInt()
+        val n = (n0 * (1f + (g.hero()?.xp ?: 0f) + g.extras.artXp())).roundToInt()
         if (n <= 0) return
         xp += n
         g.floatText(x, 9f, z, "+$n опыта", rgb(0x81d4fa), g.ui.small)
@@ -484,6 +484,7 @@ class Systems(private val g: SeaGame) {
     }
 
     private fun damageKraken(dmg: Float) {
+        @Suppress("NAME_SHADOWING") val dmg = dmg * g.extras.monsterMul()
         val k = kraken ?: return
         if (k.dead) return
         k.hp -= dmg
@@ -492,6 +493,7 @@ class Systems(private val g: SeaGame) {
         g.floatText(k.x, 12f, k.z, "-${dmg.roundToInt()}", Color.WHITE, g.ui.mid)
         if (k.hp <= 0) {
             k.deadT = 0.001f
+            g.extras.grantArtifact(g.extras.monsterArts, 0.8f)
             repeat(5) { g.fx.explosion(k.x + rand(-8f, 8f), 3f, k.z + rand(-8f, 8f), 2f) }
             g.fx.splash(k.x, k.z, 3f)
             g.sfx.play("roar")
@@ -792,7 +794,9 @@ class Systems(private val g: SeaGame) {
 
     // ---------- Абордаж ----------
     /** Можно ли взять корабль на абордаж (без учёта расстояния). */
-    fun boardable(s: Ship) = s.faction == Faction.PIRATE && !s.sinking && s.type != "admiral" && s.hp <= s.maxHp * 0.5f
+    fun boardable(s: Ship) = s.faction == Faction.PIRATE && !s.sinking && !s.surrendered && s.type != "admiral" && s.hp <= s.maxHp * 0.5f
+    /** Враг рядом, но курс не вдоль борта — подсказка вместо кнопки абордажа. */
+    var alignHint: Ship? = null
 
     private fun updateBoarding(p: Ship, dt: Float) {
         // крюки уже летят: стягиваем корабли
@@ -814,6 +818,7 @@ class Systems(private val g: SeaGame) {
             return
         }
         boardTarget = null
+        alignHint = null
         if (p.sinking) return
         var best: Ship? = null; var bd = Float.MAX_VALUE
         for (s in g.ships) {
@@ -824,7 +829,9 @@ class Systems(private val g: SeaGame) {
                 g.toast("Враг ослаблен — его можно взять на абордаж!\nПодплывите ближе 30 м и жмите «Абордаж!»\nВблизи автоогонь его не добивает — добить можно прицелом", 4.5f)
             }
             if (d > p.radius + s.radius + 30) continue
-            if (hypot(s.vx - p.vx, s.vz - p.vz) > 14) continue
+            // крюки летят, только если корабли идут почти вдоль друг друга и с похожей скоростью
+            val aligned = abs(cos(s.h - p.h)) > 0.6f
+            if (!aligned || hypot(s.vx - p.vx, s.vz - p.vz) > 12) { alignHint = s; continue }
             if (d < bd) { bd = d; best = s }
         }
         boardTarget = best
@@ -842,7 +849,7 @@ class Systems(private val g: SeaGame) {
     /** Сила абордажной команды игрока относительно врага (≈1 — равные силы). */
     fun boardingRatio(t: Ship): Float {
         val p = g.player ?: return 1f
-        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul()
+        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul() * g.extras.boardMul()
         val theirs = t.stats.mass * 10 * (0.35f + t.hp / t.maxHp)
         return mine / theirs
     }

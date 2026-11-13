@@ -373,6 +373,14 @@ class Menus(private val g: SeaGame) {
     }
 
     private fun paintCards(content: Table) {
+        val ed = card(0x2b1d12)
+        ed.add(ui.label("Свой флаг и узор парусов", ui.big)).left().row()
+        ed.add(ui.label("Нарисуйте флаг пальцем и выберите узор парусов — всё сразу видно на корабле в доке.", ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+        val row = Table()
+        row.add(ui.blue("✎ Флаг").also { it.onClick { open(SeaGame.State.PORT) { buildFlagEditor() } } }).growX().height(46f).padRight(6f)
+        row.add(ui.blue("✎ Паруса").also { it.onClick { open(SeaGame.State.PORT) { buildSailEditor() } } }).growX().height(46f)
+        ed.add(row).growX().padTop(8f).row()
+        content.add(ed).growX().padBottom(10f).row()
         for ((title, list, owned, selected) in listOf(
             Quad("Цвет парусов", SAIL_COLORS, g.ownedSails, g.sailIdx),
             Quad("Цвет флага", FLAG_COLORS, g.ownedFlags, g.flagIdx),
@@ -517,15 +525,14 @@ class Menus(private val g: SeaGame) {
 
     private fun buildDeath() {
         stage.clear()
-        val loss = (g.coins * 0.15f).toInt()
         val root = overlay()
         val panel = panelTable()
         panel.add(ui.label("☠ Корабль потоплен!", ui.big, align = Align.center)).growX().row()
-        panel.add(ui.label("Вы потеряли $loss монет. Корабль отбуксируют в порт «${PORTS[g.homePort].name}».",
+        val lostTxt = if (g.extras.lost != null) "Груз и ${g.extras.lostCoins()} монет остались на месте крушения — отметка на карте. Успейте их забрать: если погибнете снова, груз пропадёт.\n" else ""
+        panel.add(ui.label(lostTxt + "Корабль отбуксируют в порт «${PORTS[g.homePort].name}».",
             ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 12f, 0f).row()
         val btn = ui.green("⚓  Вернуться в порт")
         btn.onClick {
-            g.coins -= loss
             g.spawnPlayer()
             val p = g.player!!
             g.ships.removeAll { it.faction == Faction.PIRATE && hypot(it.x - p.x, it.z - p.z) < 280 }
@@ -646,6 +653,15 @@ class Menus(private val g: SeaGame) {
             ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(6f).row()
         rc.add(priceButton("Откуп пиратам 300", 0, g.coins >= 300).also { it.onClick { lv.tribute(); refreshAny() } }).growX().height(46f).padTop(6f).row()
         content.add(rc).growX().padBottom(10f).row()
+        val mc = card(0x3e2a1a)
+        mc.add(ui.label("Дух команды: ${g.extras.morale.roundToInt()} — ${g.extras.moraleLabel()}", ui.mid, rgb(g.extras.moraleColor()), wrap = true)).growX().row()
+        mc.add(Bar(ui, g.extras.morale / 100f, g.extras.moraleColor())).growX().height(14f).padTop(4f).row()
+        mc.add(ui.label("Победы, добыча, песни и порт поднимают дух; поражения, шторма и долгое плавание без добычи — опускают. Бодрая команда быстрее заряжает пушки и сильнее в абордаже, а при упадке может взбунтоваться.",
+            ui.small, rgb(0xd7ccc8), wrap = true)).growX().padTop(4f).row()
+        mc.add(priceButton("Ром для команды 80", 0, g.coins >= 80).also {
+            it.onClick { if (g.coins < 80) g.toast("Не хватает монет") else { g.coins -= 80; g.extras.addMorale(15f); g.sfx.play("coin"); g.save(); refreshAny() } }
+        }).growX().height(46f).padTop(6f).row()
+        content.add(mc).growX().padBottom(10f).row()
         // Команда
         val cc = card(0x1d3b2e)
         cc.add(ui.label("Офицеры на борту", ui.big)).left().row()
@@ -798,6 +814,178 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(min(g.wDp - 24, 460f))
     }
 
+    // ===================== Белый флаг, бунт, сдача пиратов =====================
+    private fun simpleDialog(title: String, text: String, options: List<Pair<String, () -> String?>>) {
+        stage.clear()
+        val root = overlay()
+        val panel = Table().also { it.background = ui.panel(0x3e2a1a); it.pad(18f) }
+        panel.add(ui.label(title, ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
+        panel.add(ui.label(text, ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(10f, 0f, 10f, 0f).row()
+        for ((label, fn) in options) {
+            val b = ui.button(label, 0x8d6e4a, 0x6d4c2f, ui.mid).wrapping()
+            b.onClick {
+                val res = fn()
+                if (res == null) close() else simpleDialog(title, res, listOf<Pair<String, () -> String?>>("Продолжить" to { null }))
+            }
+            panel.add(b).growX().minHeight(48f).padTop(6f).row()
+        }
+        root.add(panel).width(min(g.wDp - 24, 460f))
+    }
+
+    fun showWhiteFlag() = open(SeaGame.State.DIALOG) {
+        val ex = g.extras
+        val refuse = ex.refusesRansom()
+        if (refuse != null) simpleDialog("⚐ Белый флаг", refuse, listOf<Pair<String, () -> String?>>("Биться до конца" to { null }))
+        else simpleDialog("⚐ Белый флаг", "Корабль едва держится. Можно предложить выкуп или спустить флаг и отдать груз — пираты уйдут.", listOf<Pair<String, () -> String?>>(
+            "Откупиться: ${ex.ransomPrice()} монет" to { ex.payOff(false); null },
+            "Сдаться: отдать весь груз и 40% монет" to { ex.payOff(true); null },
+            "Продолжить бой" to { null },
+        ))
+    }
+
+    fun showMutiny() = open(SeaGame.State.DIALOG) {
+        val ex = g.extras
+        simpleDialog("Ропот на борту", "Команда собралась у грот-мачты. Матросы недовольны: мало добычи и много опасностей. Нужно действовать, пока ропот не перерос в бунт.", listOf<Pair<String, () -> String?>>(
+            "Выкатить бочонок рома (100 монет)" to { ex.resolveMutiny(0) },
+            "Раздать долю (10% казны)" to { ex.resolveMutiny(1) },
+            ("Усмирить силой" + if (g.living.crew[0] >= 0) " (поможет боцман)" else "") to { ex.resolveMutiny(2) },
+        ))
+    }
+
+    fun showSurrender(s: Ship) = open(SeaGame.State.DIALOG) {
+        val ex = g.extras
+        val canTake = g.allies.size < MAX_ALLIES && s.type in listOf("sloop", "brig", "frigate")
+        simpleDialog("⚐ Пираты сдаются", "${s.name} спустил флаг. Капитан пиратов ждёт вашего решения.", listOf<Pair<String, () -> String?>>(
+            "Отпустить (уважение пиратов)" to { ex.acceptSurrender(s, 0) },
+            "Забрать выкуп" to { ex.acceptSurrender(s, 1) },
+            (if (canTake) "Забрать корабль во флот" else "Забрать корабль (во флоте нет места — выкуп)") to { ex.acceptSurrender(s, 2) },
+        ))
+    }
+
+    // ===================== Редактор флага и парусов =====================
+    private var editPix = CharArray(FLAG_W * FLAG_H) { '.' }
+    private var brush = 1
+
+    private inner class FlagGrid : Actor() {
+        init {
+            addListener(object : com.badlogic.gdx.scenes.scene2d.InputListener() {
+                override fun touchDown(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean { paint(x, y); return true }
+                override fun touchDragged(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float, pointer: Int) { paint(x, y) }
+            })
+        }
+        fun paint(x: Float, y: Float) {
+            val cx = (x / width * FLAG_W).toInt(); val cy = ((height - y) / height * FLAG_H).toInt()
+            if (cx in 0 until FLAG_W && cy in 0 until FLAG_H) editPix[cy * FLAG_W + cx] = flagPixChar(brush)
+        }
+        override fun draw(batch: Batch, parentAlpha: Float) {
+            val base = g.playerLook().flag
+            val cw = width / FLAG_W; val ch = height / FLAG_H
+            ui.rect(batch, x - 3, y - 3, width + 6, height + 6, rgb(0x3e2723))
+            for (fy in 0 until FLAG_H) for (fx in 0 until FLAG_W) {
+                val c = flagPixColor(editPix[fy * FLAG_W + fx]).let { if (it < 0) base else it }
+                ui.rect(batch, x + fx * cw + 1, y + height - (fy + 1) * ch + 1, cw - 2, ch - 2, rgb(c))
+            }
+            batch.color = Color.WHITE
+        }
+    }
+
+    private fun buildFlagEditor() {
+        stage.clear()
+        if (g.flagPix.length == FLAG_W * FLAG_H) editPix = g.flagPix.toCharArray() else if (editPix.all { it == '.' }) editPix = CharArray(FLAG_W * FLAG_H) { '.' }
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("✎ Свой флаг", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label("Проведите пальцем по клеткам. Ластик — цвет основы флага (его меняют во вкладке «Вид»).", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(6f).row()
+        val gw = min(g.wDp - 60f, 320f)
+        panel.add(FlagGrid()).size(gw, gw * FLAG_H / FLAG_W).padBottom(8f).row()
+        val pal = Table()
+        for (i in -1 until FLAG_PALETTE.size) {
+            val sw = if (i < 0) ui.button("✕", 0x37474f, 0x263238, ui.small) else ui.button(" ", FLAG_PALETTE[i], FLAG_PALETTE[i], ui.small)
+            if (i == brush) sw.label.setText(if (i < 0) "✕" else "✓")
+            sw.onClick { brush = i; buildFlagEditor0() }
+            pal.add(sw).size(min(36f, (g.wDp - 60f) / 7f), 34f).pad(2f)
+            if (i == 5) pal.row()
+        }
+        panel.add(pal).padBottom(6f).row()
+        val tpl = Table()
+        for ((k, t) in FLAG_TEMPLATES.withIndex()) {
+            tpl.add(ui.button(t.first, 0x164266, 0x123a5c, ui.small).also { it.onClick { editPix = t.second.joinToString("").toCharArray(); buildFlagEditor0() } }).growX().height(34f).pad(2f)
+            if (k == 2) tpl.row()
+        }
+        panel.add(tpl).growX().padBottom(6f).row()
+        val row = Table()
+        row.add(ui.gray("Очистить").also { it.onClick { editPix = CharArray(FLAG_W * FLAG_H) { '.' }; buildFlagEditor0() } }).growX().height(46f).padRight(6f)
+        row.add(ui.green("Поднять флаг").also {
+            it.onClick {
+                g.flagPix = if (editPix.all { c -> c == '.' }) "" else String(editPix)
+                g.rebuildPlayer(); g.save(); g.toast("Новый флаг поднят!", 1.5f)
+                portTab = 6; g.portView.select(6); current = { buildPort() }; buildPort()
+            }
+        }).growX().height(46f)
+        panel.add(row).growX().row()
+        panel.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
+        root.add(panel).width(min(g.wDp - 16, 460f))
+    }
+
+    /** Перерисовать редактор, сохранив текущие клетки. */
+    private fun buildFlagEditor0() { val keep = editPix; val fp = g.flagPix; g.flagPix = String(keep); buildFlagEditor(); g.flagPix = fp; editPix = keep }
+
+    private var editPat = 0
+    private var editSail2 = -1
+
+    private inner class SailPreview : Actor() {
+        override fun draw(batch: Batch, parentAlpha: Float) {
+            val look = g.playerLook()
+            val c1 = look.sail
+            val second = if (editSail2 >= 0) FLAG_PALETTE[editSail2] else look.flag
+            val nx = 24; val ny = 16
+            val cw = width / nx; val ch = height / ny
+            ui.rect(batch, x + width / 2 - 2, y - 10, 4f, height + 20, rgb(0x5d4037))
+            for (j in 0 until ny) for (i in 0 until nx) {
+                val u = (i + 0.5f) / nx; val v = (j + 0.5f) / ny
+                val bow = kotlin.math.sin(u * Math.PI).toFloat() * 6f
+                ui.rect(batch, x + i * cw, y + j * ch - bow, cw + 0.5f, ch + 0.5f, rgb(sailPatColor(editPat, u, v, c1, second, g.flagPix)))
+            }
+            ui.rect(batch, x - 6, y + height - 2, width + 12, 5f, rgb(0x5d4037))
+            batch.color = Color.WHITE
+        }
+    }
+
+    private fun buildSailEditor() {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("✎ Узор парусов", ui.big, align = Align.center)).growX().row()
+        val pw = min(g.wDp - 80f, 260f)
+        panel.add(SailPreview()).size(pw, pw * 0.7f).pad(10f, 0f, 14f, 0f).row()
+        val pats = Table()
+        for ((i, name) in SAIL_PATTERNS.withIndex()) {
+            val b = if (i == editPat) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
+            b.onClick { editPat = i; buildSailEditor() }
+            pats.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
+            if (i % 3 == 2) pats.row()
+        }
+        panel.add(pats).growX().padBottom(6f).row()
+        panel.add(ui.label("Второй цвет узора (✕ — цвет флага):", ui.small, rgb(0xb9d6f2))).left().row()
+        val pal = Table()
+        for (i in -1 until FLAG_PALETTE.size) {
+            val sw = if (i < 0) ui.button(if (editSail2 < 0) "✓" else "✕", 0x37474f, 0x263238, ui.small) else ui.button(if (i == editSail2) "✓" else " ", FLAG_PALETTE[i], FLAG_PALETTE[i], ui.small)
+            sw.onClick { editSail2 = i; buildSailEditor() }
+            pal.add(sw).size(min(36f, (g.wDp - 60f) / 7f), 34f).pad(2f)
+            if (i == 5) pal.row()
+        }
+        panel.add(pal).padBottom(8f).row()
+        panel.add(ui.green("Поставить паруса").also {
+            it.onClick {
+                g.sailPat = editPat; g.sail2Idx = editSail2
+                g.rebuildPlayer(); g.save(); g.toast("Новые паруса подняты!", 1.5f)
+                portTab = 6; g.portView.select(6); current = { buildPort() }; buildPort()
+            }
+        }).growX().height(48f).row()
+        panel.add(ui.blue("Назад").also { it.onClick { current = { buildPort() }; buildPort() } }).growX().height(42f).padTop(6f).row()
+        root.add(panel).width(min(g.wDp - 16, 460f))
+    }
+
     // ===================== Бортовой журнал =====================
     fun showJournal(q: Quest) = open(SeaGame.State.DIALOG) { buildJournal(q) }
 
@@ -837,41 +1025,85 @@ class Menus(private val g: SeaGame) {
 
     fun showBoarding(target: Ship) = open(SeaGame.State.DIALOG) { buildBoarding(target) }
 
+    private val tactics = listOf("Натиск", "Залп мушкетов", "Оборона")
+    private val tacticHints = listOf("Пираты строятся для рукопашной…", "Пираты заряжают мушкеты…", "Пираты прячутся за бочками…")
+
+    /**
+     * Абордажная схватка: 3 раунда, в каждом выбираете тактику.
+     * Натиск бьёт оборону, оборона гасит натиск? — нет: натиск сильнее залпа, залп сильнее обороны, оборона сильнее натиска.
+     * Перед раундом видно, что затевают пираты (не всегда верно).
+     */
     private fun buildBoarding(target: Ship) {
-        stage.clear()
         val ratio = g.systems.boardingRatio(target)
-        val zone = (0.2f * ratio).coerceIn(0.08f, 0.42f)
-        val root = overlay()
-        val panel = panelTable()
-        panel.add(ui.label("Абордаж!", ui.huge, align = Align.center)).growX().row()
-        val mine = (20 * ratio).roundToInt().coerceIn(4, 60)
-        panel.add(ui.label("${target.name}", ui.mid, rgb(0xffcdd2), align = Align.center)).growX().padTop(4f).row()
-        panel.add(ui.label("Ваши бойцы: $mine  ·  Пираты: 20", ui.mid, if (ratio >= 1) rgb(0x3ddc84) else rgb(0xff8a65), align = Align.center)).growX().padTop(4f).row()
-        panel.add(ui.label("Жмите «Удар!», когда жёлтый маркер внутри зелёной зоны. Чем сильнее команда, тем шире зона. Нужно 2 удачных удара из 3.",
-            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(6f, 0f, 12f, 0f).row()
-        val bar = BoardBar(ui, zone)
-        panel.add(bar).growX().height(30f).padBottom(10f).row()
-        val status = ui.label("Удар 1 из 3", ui.mid, align = Align.center)
-        panel.add(status).growX().padBottom(10f).row()
+        val enemyStart = when (target.type) { "brig" -> 24f; "frigate", "navy" -> 30f; "galleon", "flagship", "ghost" -> 40f; else -> 18f }
+        val mineStart = (enemyStart * ratio).coerceIn(5f, 80f)
+        var mine = mineStart; var theirs = enemyStart
         var round = 0
-        var hits = 0
-        val strike = ui.button("⚔  Удар!", 0xd32f2f, 0xb71c1c, ui.big)
-        strike.onClick {
-            if (round >= 3) return@onClick
-            val ok = kotlin.math.abs(bar.pos - 0.5f) < zone / 2
-            if (ok) hits++
-            round++
-            g.sfx.play(if (ok) "hit" else "splash")
-            g.systems.vibrate(if (ok) 60 else 20)
-            bar.speed *= 1.3f
-            status.setText((if (ok) "Попали!" else "Промах!") + "   $hits из $round" + if (round < 3) " · удар ${round + 1} из 3" else "")
-            if (round >= 3) {
-                bar.frozen = true
-                stage.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.delay(0.6f, com.badlogic.gdx.scenes.scene2d.actions.Actions.run { boardingResult(target, hits >= 2) }))
+        var log = "Крюки впились в борт — команда готова к броску!"
+        var enemyNext = kotlin.random.Random.nextInt(3)
+        var hint = if (kotlin.random.Random.nextFloat() < 0.75f) enemyNext else kotlin.random.Random.nextInt(3)
+        var volleyBonus = 1f
+        fun build() {
+            stage.clear()
+            val root = overlay()
+            val panel = panelTable()
+            panel.add(ui.label("⚔ Абордаж", ui.big, align = Align.center)).growX().row()
+            panel.add(ui.label(target.name, ui.mid, rgb(0xffcdd2), align = Align.center)).growX().padBottom(6f).row()
+            fun crewRow(name: String, v: Float, max: Float, col: Int) {
+                val r = Table()
+                r.add(ui.label(name, ui.small, rgb(0xcfe3f7))).width(92f).left()
+                r.add(Bar(ui, v / max, col)).growX().height(16f).padRight(6f)
+                r.add(ui.label("${v.roundToInt()}", ui.small, align = Align.right)).width(36f).right()
+                panel.add(r).growX().padTop(2f).row()
             }
+            crewRow("Ваши бойцы", mine, max(mineStart, enemyStart), 0x3ddc84)
+            crewRow("Пираты", theirs, max(mineStart, enemyStart), 0xff5a5f)
+            panel.add(ui.label("Раунд ${min(round + 1, 3)} из 3 · дух команды: ${g.extras.moraleLabel()}", ui.small, rgb(0xffc93c), align = Align.center)).growX().padTop(6f).row()
+            panel.add(ui.label(log, ui.small, rgb(0xfff3e0), wrap = true, align = Align.center)).growX().pad(6f, 0f, 6f, 0f).row()
+            panel.add(ui.label(tacticHints[hint], ui.mid, rgb(0xffab91), wrap = true, align = Align.center)).growX().padBottom(8f).row()
+            panel.add(ui.label("Натиск сильнее залпа · залп сильнее обороны · оборона сильнее натиска", ui.small, rgb(0x90a4ae), wrap = true, align = Align.center)).growX().padBottom(8f).row()
+            val cols = intArrayOf(0xd32f2f, 0x6d4c41, 0x1565c0)
+            for (t in 0..2) {
+                val btn = ui.button(tactics[t], cols[t], cols[t], ui.mid)
+                btn.onClick {
+                    val e = enemyNext
+                    // матрица: натиск > залп > оборона > натиск
+                    val win = (t == 0 && e == 1) || (t == 1 && e == 2) || (t == 2 && e == 0)
+                    val lose = (e == 0 && t == 1) || (e == 1 && t == 2) || (e == 2 && t == 0)
+                    val r = kotlin.random.Random
+                    var dealt = when (t) { 0 -> mine * r.nextFloat().let { 0.35f + it * 0.2f } * volleyBonus; 1 -> theirs * (0.18f + r.nextFloat() * 0.1f); else -> mine * (0.12f + r.nextFloat() * 0.08f) }
+                    var taken = when (e) { 0 -> theirs * (0.3f + r.nextFloat() * 0.15f); 1 -> mine * (0.12f + r.nextFloat() * 0.08f); else -> theirs * (0.08f + r.nextFloat() * 0.06f) }
+                    if (t == 2) taken *= 0.55f
+                    if (win) dealt *= 1.6f
+                    if (lose) taken *= 1.6f
+                    volleyBonus = if (t == 1) 1.25f else 1f
+                    theirs = max(0f, theirs - dealt); mine = max(0f, mine - taken)
+                    g.sfx.play(if (win) "hit" else if (lose) "splash" else "cannon")
+                    g.systems.vibrate(if (win) 60 else 25)
+                    log = "Вы: ${tactics[t].lowercase()}, пираты: ${tactics[e].lowercase()}. " +
+                        (if (win) "Удачный ход! " else if (lose) "Пираты переиграли вас! " else "") +
+                        "Врагов выбыло ${dealt.roundToInt()}, наших — ${taken.roundToInt()}."
+                    round++
+                    val over = round >= 3 || theirs <= 0.5f || mine <= 0.5f
+                    if (!over) {
+                        enemyNext = r.nextInt(3)
+                        hint = if (r.nextFloat() < 0.75f) enemyNext else r.nextInt(3)
+                    }
+                    build()
+                    if (over) {
+                        // итог — после перерисовки (stage.clear() снял бы отложенное действие)
+                        val won = theirs <= 0.5f || (mine > 0.5f && mine / mineStart > theirs / enemyStart)
+                        current = { boardingResult(target, won) }
+                        stage.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.delay(0.7f, com.badlogic.gdx.scenes.scene2d.actions.Actions.run { boardingResult(target, won) }))
+                    }
+                }
+                if (round >= 3 || theirs <= 0.5f || mine <= 0.5f) btn.isDisabled = true
+                panel.add(btn).growX().height(50f).padTop(4f).row()
+            }
+            root.add(panel).width(min(g.wDp - 24, 440f))
         }
-        panel.add(strike).growX().height(64f).row()
-        root.add(panel).width(min(g.wDp - 24, 440f))
+        current = { build() }
+        build()
     }
 
     private fun boardingResult(target: Ship, win: Boolean) {
@@ -880,6 +1112,7 @@ class Menus(private val g: SeaGame) {
         val panel = panelTable()
         val p = g.player
         if (!win) {
+            g.extras.addMorale(-8f)
             if (p != null) p.hp = max(1f, p.hp - p.maxHp * 0.25f)
             target.hp = min(target.maxHp, target.hp + target.maxHp * 0.15f)
             if (p != null) { target.vx += (target.x - p.x) * 0.5f; target.vz += (target.z - p.z) * 0.5f }
@@ -889,6 +1122,7 @@ class Menus(private val g: SeaGame) {
             panel.add(ok).growX().height(52f).row()
         } else {
             g.systems.addStat("boards")
+            g.extras.addMorale(6f)
             g.systems.gainXp(70, target.x, target.z)
             g.questEvent(QType.BOARD, "", false)
             panel.add(ui.label("Корабль взят!", ui.big, align = Align.center)).growX().row()
@@ -922,6 +1156,20 @@ class Menus(private val g: SeaGame) {
                 }
             }
             panel.add(loot).growX().height(52f).row()
+            val release = ui.blue("Отпустить команду").also {
+                it.onClick {
+                    g.ships.remove(target); g.living.addRep(2, 4); g.extras.addMorale(2f)
+                    g.toast("Пираты отпущены. В тавернах заговорят о вашем благородстве.", 2.2f); g.save(); close()
+                }
+            }
+            panel.add(release).growX().height(46f).padTop(8f).row()
+            val sinkIt = ui.gray("Потопить корабль").also {
+                it.onClick {
+                    target.sinkT = 0.001f; g.living.addRep(1, 2); g.living.addRep(2, -2)
+                    g.systems.gainXp(40, target.x, target.z); g.sfx.play("sink"); g.save(); close()
+                }
+            }
+            panel.add(sinkIt).growX().height(46f).padTop(6f).row()
         }
         root.add(panel).width(min(g.wDp - 24, 420f))
     }
@@ -947,6 +1195,27 @@ class Menus(private val g: SeaGame) {
             hc.add(ui.blue("Сменить капитана").also { it.onClick { current = { buildHeroSelect(false) }; buildHeroSelect(false) } }).colspan(2).growX().height(44f).padTop(6f).row()
             content.add(hc).growX().padBottom(10f).row()
         }
+        val ex = g.extras
+        val ac = card(0x2b1d12)
+        ac.add(ui.label("Артефакты · найдено ${ex.owned.size} из ${ARTIFACTS.size} · надето ${ex.equipped.size}/$ARTIFACT_SLOTS", ui.mid, rgb(0xffe082), wrap = true)).growX().row()
+        for (a in ARTIFACTS) {
+            val r = Table().also { it.background = ui.panel(if (a.id in ex.equipped) 0x1d5a46 else 0x3e2a1a); it.pad(8f) }
+            val t = Table()
+            if (a.id in ex.owned) {
+                t.add(ui.label(a.name, ui.mid)).left().row()
+                t.add(ui.label(a.desc, ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+                r.add(t).growX()
+                val b = if (a.id in ex.equipped) ui.button("Снять", 0x6d4c41, 0x5d4037, ui.small) else ui.green("Надеть")
+                b.onClick { if (ex.toggleEquip(a.id)) buildCaptain() }
+                r.add(b).width(92f).height(40f).padLeft(6f)
+            } else {
+                t.add(ui.label("??? Неизвестный артефакт", ui.mid, rgb(0x90a4ae))).left().row()
+                t.add(ui.label("Где искать: ${a.source}", ui.small, rgb(0xa1887f), wrap = true)).growX().row()
+                r.add(t).growX()
+            }
+            ac.add(r).growX().padTop(5f).row()
+        }
+        content.add(ac).growX().padBottom(10f).row()
         for ((i, sk) in SKILLS.withIndex()) {
             val c = card()
             val info = Table()
@@ -1139,6 +1408,7 @@ class Menus(private val g: SeaGame) {
             for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) ui.icon(batch, ui.disc, sx(w.x), sy(w.z), 8f, 8f, 0f, rgb(0xb3e5fc))
             for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) ui.text(batch, ui.mid, "♪", sx(bt.x) - 10, sy(bt.z) + 8, Align.center, 20f, c = rgb(0xffe082))
             g.treasure?.let { ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 14f, 14f) }
+            g.extras.lost?.let { l -> ui.icon(batch, ui.coin, sx(l.x), sy(l.z), 20f, 20f); ui.text(batch, ui.small, "ваш груз", sx(l.x) - 40, sy(l.z) - 12, Align.center, 80f, c = rgb(0xffe082)) }
             val lv = g.living
             ui.text(batch, ui.mid, "⚑", sx(lv.baseX) - 12, sy(lv.baseZ) + 9, Align.center, 24f, c = rgb(if (lv.baseFounded) 0x2e7d32 else 0x5d4037))
             for (r in lv.ruins) if (ex.seen(r.x, r.z) && r.idx !in lv.dived) ui.text(batch, ui.small, "⌂", sx(r.x) - 10, sy(r.z) + 7, Align.center, 20f, c = rgb(0xffc93c))
@@ -1271,6 +1541,12 @@ class Menus(private val g: SeaGame) {
             "Своя база" to "Остров Надежды рядом с Гаванью Ветров (⚑ на карте). Заплывите в круг у острова, основайте базу и стройте: плантация и таверна приносят доход, склад копит деньги и расширяет трюм, батарея защищает, верфь удешевляет улучшения.",
             "Флот" to "Если есть наёмники, слева появляются кнопки приказов: ⚓ колонна (корабли идут точно по вашему следу и стреляют бортами на ходу), ⚔ атака (флот бьёт врагов в большом радиусе), ↺ отход (плотная колонна).",
             "Высадки и клады" to "Остановитесь у дикого острова — появится кнопка «Высадиться». На островах — тайники, засады и куски карты. Три куска дают карту сокровищ. У колонн затонувших храмов можно нырнуть.",
+            "Абордаж" to "Ослабьте пирата до половины прочности, подойдите вдоль его борта с той же скоростью — появится кнопка «Абордаж!». В схватке 3 раунда: натиск сильнее залпа мушкетов, залп сильнее обороны, оборона сильнее натиска. Перед раундом видно, что затевают пираты (не всегда верно). После победы корабль можно взять во флот, разграбить, отпустить или потопить.",
+            "Белый флаг" to "Если корабль почти потоплен, появится кнопка «Белый флаг»: откупитесь монетами или сдайтесь, отдав груз. Охотники за головами и призраки выкуп не берут. Почти потопленные пираты тоже иногда сдаются — подплывите и примите сдачу.",
+            "Потерянный груз" to "После гибели груз и часть монет остаются на месте крушения (отметка на карте). Обломки стерегут падальщики. Если погибнете снова, не подобрав их, груз пропадёт.",
+            "Дух команды" to "Победы, добыча, песни и порт поднимают дух, поражения и долгое плавание без добычи — опускают. Бодрая команда быстрее заряжает пушки и сильнее в абордаже. Ром в таверне поднимает дух. Если дух упадёт совсем низко — начнётся ропот.",
+            "Артефакты" to "12 редких предметов: в затонувших храмах, кладах по карте, у капитанов с наградой и у морских чудовищ. Носить можно 3 — меню «Капитан».",
+            "Свой флаг" to "Во вкладке «Вид» порта: нарисуйте флаг пальцем по клеткам и выберите узор парусов, например эмблему с флага.",
             "Погода" to "Туман прячет вас от пиратов, штиль замедляет, водовороты затягивают (уходите полным ходом), а в Ледяном море дрейфуют айсберги. Ночью бродят корабли-призраки.",
         )
         for ((t, d) in sections) {
