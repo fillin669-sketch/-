@@ -848,6 +848,22 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(min(g.wDp - 24, 460f))
     }
 
+    /** Причина прошлого вылета: игрок может прислать скриншот. */
+    fun showError(text: String) = open(SeaGame.State.DIALOG) {
+        stage.clear()
+        val root = overlay()
+        val panel = Table().also { it.background = ui.panel(0x3e2a1a); it.pad(16f) }
+        panel.add(ui.label("Игра закрылась с ошибкой", ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
+        panel.add(ui.label("Пришлите, пожалуйста, скриншот этого окна — по нему ошибку можно исправить.", ui.small, rgb(0xfff3e0), wrap = true)).growX().padTop(6f).row()
+        val lines = text.lines().filter { it.isNotBlank() }
+        val head = lines.take(2) + lines.filter { it.contains("seatrader") || it.startsWith("Caused") || it.contains("Exception") || it.contains("Error") }.distinct().take(12)
+        val body = ui.label(head.distinct().joinToString("\n") { it.trim().take(140) }, ui.small, rgb(0xffab91), wrap = true)
+        panel.add(ScrollPane(body)).growX().height(min(g.hDp * 0.5f, 340f)).padTop(8f).row()
+        val ok = ui.button("Продолжить", 0x8d6e4a, 0x6d4c2f, ui.mid).also { it.onClick { close(); if (g.guilds.guild < 0) g.startPrologue(true) } }
+        panel.add(ok).growX().minHeight(48f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 24, 520f))
+    }
+
     fun showWhiteFlag() = open(SeaGame.State.DIALOG) {
         val ex = g.extras
         val refuse = ex.refusesRansom()

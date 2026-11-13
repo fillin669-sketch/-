@@ -101,6 +101,14 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val f = frame - base
         if (System.getenv("SEA_PROLOGUE") != null) { prologueTest(f); return }
+        if (System.getenv("SEA_CRASH") != null) {
+            if (f == 10) shot("c1_crash_dialog")
+            if (f == 12) press("Продолжить")
+            if (f == 40) { shot("c2_after"); g.debugThrow = true }
+            if (f == 42) shot("c3_error_overlay")
+            if (f == 80) { shot("c4_still_running"); log.append("state=${g.state}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
         if (System.getenv("SEA_FEAT") != null) { featTest(f); return }
         if (System.getenv("SEA_BOARD") != null) {
@@ -315,7 +323,8 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (g.loot.size > 250) issue("слишком много добычи")
         for (s in g.ships) if (s.x.isNaN() || s.hp.isNaN()) { issue("NaN у корабля ${s.type}"); break }
         val actors = g.stage.root.children.size
-        if (g.state != SeaGame.State.PLAY && g.state != SeaGame.State.LOADING && actors == 0) { if (++softFrames == 30) issue("зависание: состояние ${g.state} без окна") } else softFrames = 0
+        if (g.state == SeaGame.State.CUTSCENE) { if (f % 40 == 0) touch("down", g.wDp / 2, g.hDp / 2); softFrames = 0 }
+        else         if (g.state != SeaGame.State.PLAY && g.state != SeaGame.State.LOADING && actors == 0) { if (++softFrames == 30) issue("зависание: состояние ${g.state} без окна") } else softFrames = 0
         if (g.state == SeaGame.State.PLAY && actors > 0) issue("в игре осталось окно поверх экрана")
         val fps = Gdx.graphics.framesPerSecond
         if (f > 200 && fps in 1 until minFps) minFps = fps

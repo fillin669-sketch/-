@@ -7,6 +7,15 @@ import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 class AndroidLauncher : AndroidApplication() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // при вылете сохраняем причину: игра покажет её при следующем запуске
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val sw = java.io.StringWriter(); e.printStackTrace(java.io.PrintWriter(sw))
+                java.io.File(filesDir, "crash.txt").writeText("Версия ${packageManager.getPackageInfo(packageName, 0).versionName}, Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MODEL}\n" + sw.toString().take(4000))
+            } catch (_: Throwable) { }
+            prev?.uncaughtException(t, e)
+        }
         val config = AndroidApplicationConfiguration().apply {
             useImmersiveMode = true
             useAccelerometer = false

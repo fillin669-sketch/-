@@ -8,6 +8,7 @@ import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.InputMultiplexer
 import com.badlogic.gdx.Preferences
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.PerspectiveCamera
@@ -137,6 +138,8 @@ class SeaGame : ApplicationAdapter() {
     val prologue = Prologue(this)
     /** Тесты на ПК пропускают предысторию. */
     var skipPrologue = false
+    /** Тест защиты от вылетов: бросить ошибку в кадре. */
+    var debugThrow = false
     var player: Ship? = null
     val balls = ArrayList<Ball>()
     val loot = ArrayList<Loot>()
@@ -210,7 +213,15 @@ class SeaGame : ApplicationAdapter() {
         hud = Hud(this)
         menus = Menus(this)
         prefs = Gdx.app.getPreferences("seawolves")
-        load()
+        try {
+            val f = Gdx.files.local("crash.txt")
+            if (f.exists()) { lastCrash = f.readString("UTF-8"); f.delete() }
+        } catch (_: Throwable) { }
+        try { load() } catch (e: Throwable) {
+            // повреждённое сохранение не должно ломать запуск
+            Gdx.app.error("SeaGame", "load", e)
+            lastCrash = "Сохранение не прочиталось: " + describe(e)
+        }
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
         Gdx.input.inputProcessor = InputMultiplexer(stage, input)
     }
@@ -328,7 +339,9 @@ class SeaGame : ApplicationAdapter() {
                 }
                 spawnGulls()
                 state = State.PLAY
-                if (guilds.guild < 0) { if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else { checkDaily(); checkJournal() }
+                lastCrash?.let { t -> lastCrash = null; menus.showError(t) ; return@let }
+                if (state == State.DIALOG) Unit
+                else if (guilds.guild < 0) { if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else { checkDaily(); checkJournal() }
             }
         }
         loadStep++
@@ -2272,7 +2285,44 @@ class SeaGame : ApplicationAdapter() {
     }
     private val glowCol = Color()
 
+    // ---------- Защита от вылетов ----------
+    private var errText = ""
+    private var errT = 0f
+    private var errCount = 0
+    /** Причина прошлого вылета (с телефона) — покажем после загрузки. */
+    private var lastCrash: String? = null
+
+    private fun describe(e: Throwable): String {
+        val frames = e.stackTrace.filter { it.className.startsWith("com.seatrader") }.take(4)
+            .joinToString("\n") { "  ${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        val cause = e.cause?.let { "\nПричина: ${it.javaClass.simpleName}: ${it.message?.take(120)}" } ?: ""
+        return "${e.javaClass.simpleName}: ${e.message?.take(160) ?: ""}\n$frames$cause"
+    }
+
     override fun render() {
+        try { render0() } catch (e: Throwable) {
+            Gdx.app.error("SeaGame", "render", e)
+            errCount++
+            errText = describe(e); errT = 12f
+            try { if (batch.isDrawing) batch.end() } catch (_: Throwable) { }
+            try { modelBatch.end() } catch (_: Throwable) { }
+            try { com.badlogic.gdx.graphics.glutils.FrameBuffer.unbind() } catch (_: Throwable) { }
+            try { if (errCount <= 3 && state != State.LOADING) prefs.putString("lastError", "v${'$'}errCount ${'$'}errText").flush() } catch (_: Throwable) { }
+            // ошибка в сценке — просто заканчиваем её
+            if (state == State.CUTSCENE) try { cutClear(); endPrologue(guilds.guild < 0) } catch (_: Throwable) { state = State.PLAY }
+        }
+        if (errT > 0f) try {
+            errT -= min(0.05f, Gdx.graphics.deltaTime)
+            Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
+            batch.projectionMatrix = hudCam.combined
+            batch.begin()
+            ui.rect(batch, 0f, hDp - safeTop - 150f, wDp, 150f, Color(0f, 0f, 0f, 0.75f))
+            ui.text(batch, ui.small, "Ошибка в игре (пришлите скриншот):\n$errText", 8f, hDp - safeTop - 8f, Align.left, wDp - 16f, true, Color(1f, 0.6f, 0.5f, 1f))
+            batch.end()
+        } catch (_: Throwable) { try { if (batch.isDrawing) batch.end() } catch (_: Throwable) { } }
+    }
+
+    private fun render0() {
         val dt = min(0.05f, Gdx.graphics.deltaTime)
         if (state == State.LOADING) {
             loadNext()

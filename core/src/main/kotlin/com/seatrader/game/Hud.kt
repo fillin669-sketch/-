@@ -119,6 +119,7 @@ class Hud(private val g: SeaGame) {
         val top = g.hDp - g.safeTop
         val wDp = g.wDp; val hDp = g.hDp
 
+        if (g.debugThrow) { g.debugThrow = false; error("Проверка защиты от вылета") }
         if (g.portView.active) return
         if (g.state == SeaGame.State.CUTSCENE) {
             if (g.lightning > 0) ui.rect(b, 0f, 0f, wDp, hDp, c(0xffffff, g.lightning * 1.2f))
