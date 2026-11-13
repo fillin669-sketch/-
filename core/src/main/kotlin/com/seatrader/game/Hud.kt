@@ -388,6 +388,10 @@ class Hud(private val g: SeaGame) {
             ui.text(b, ui.small, ct, lineEnd, ly, Align.left, 120f, c = rgb(0xd7ccc8))
             lineRight = lineEnd + ui.measure(ui.small, ct) + 8f
         }
+        g.guilds.contract?.let { ct ->
+            val left = ct.timeLeft.toInt()
+            ui.text(b, ui.small, "⚖ ${ct.delivered}/${ct.amount} ${GOODS[ct.good].name} → ${PORTS[ct.port].name} · ${left / 60}:${"%02d".format(left % 60)}", 12f, ly - 18f, Align.left, 300f, c = rgb(0xffe082))
+        }
         // дух команды
         val ex = g.extras
         val mt = "Дух ${ex.morale.roundToInt()}"

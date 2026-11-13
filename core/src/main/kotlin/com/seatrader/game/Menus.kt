@@ -253,6 +253,13 @@ class Menus(private val g: SeaGame) {
             statRow(c, "Пушки", st.cannons.toFloat(), 12f, "${st.cannons}×2")
             statRow(c, "Урон", st.dmg, 24f, st.dmg.roundToInt().toString())
             statRow(c, "Таран", sdef.mass, 5f, String.format(java.util.Locale.US, "%.1f", sdef.mass))
+            if (isOwned) {
+                val xp = g.guilds.shipXp[sdef.id] ?: 0
+                val lvl = shipLevelFor(xp)
+                val nextXp = SHIP_LEVEL_XP.getOrNull(lvl)
+                c.add(ui.label("Уровень корабля $lvl из $SHIP_MAX_LEVEL" + if (nextXp != null) " · опыт $xp / $nextXp" else " · максимум", ui.small, rgb(0xffe082))).left().padTop(4f).row()
+                if (nextXp != null) c.add(Bar(ui, (xp - SHIP_LEVEL_XP[lvl - 1]).toFloat() / (nextXp - SHIP_LEVEL_XP[lvl - 1]), 0xffc93c)).growX().height(8f).padTop(2f).row()
+            }
             val btn: TextButton = when {
                 current -> ui.gray("✓ Ваш корабль").also { it.isDisabled = true }
                 isOwned -> ui.blue("Выбрать").also { it.onClick { g.shipId = sdef.id; g.rebuildPlayer(); g.save(); refreshPort() } }
@@ -287,6 +294,7 @@ class Menus(private val g: SeaGame) {
         head.add(ui.label(def.cls.uppercase(), ui.small, rgb(0xffc93c))).left().row()
         head.add(ui.label(def.name, ui.big)).left().row()
         head.add(ui.label("Корабль стоит в доке — улучшения сразу видны на нём. Проведите пальцем по сцене, чтобы облететь его.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        head.add(ui.label("Уровень корабля ${g.guilds.shipLevel()} из $SHIP_MAX_LEVEL: высокие улучшения требуют опытного корабля (бои и плавания дают опыт).", ui.small, rgb(0xffe082), wrap = true)).growX().padTop(4f).row()
         val partNames = listOf("Корпус", "Паруса", "Пушки", "Заряжание")
         val seen = (0..3).filter { u[it] > 0 }.map { k -> "${partNames[k]}: " + UPGRADE_LOOKS[k][u[k] - 1] }
         if (seen.isNotEmpty()) head.add(ui.label("Видно на корабле:\n" + seen.joinToString("\n"), ui.small, rgb(0xffe082), wrap = true)).growX().padTop(6f).row()
@@ -303,7 +311,10 @@ class Menus(private val g: SeaGame) {
             info.add(ui.label("+${(upg.per * 100).roundToInt()}% ${upg.text} за уровень", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
             if (lvl < MAX_LEVEL) info.add(ui.label("Вид: " + UPGRADE_LOOKS[i][lvl], ui.small, rgb(0xffe082), wrap = true)).growX().row()
             c.add(info).growX()
-            val btn: TextButton = if (lvl >= MAX_LEVEL) ui.gray("МАКС").also { it.isDisabled = true } else {
+            val needShip = shipLevelForUpgrade(lvl + 1)
+            val btn: TextButton = if (lvl >= MAX_LEVEL) ui.gray("МАКС").also { it.isDisabled = true }
+            else if (g.guilds.shipLevel() < needShip) ui.gray("Ур. корабля $needShip").wrapping().also { it.isDisabled = true }
+            else {
                 val cost = (upgradeCost(def, lvl) * g.living.upgradeMul()).roundToInt()
                 priceButton(fmt(cost), 0, g.coins >= cost).also { it.onClick { buyUpgrade(i) } }
             }
@@ -316,6 +327,7 @@ class Menus(private val g: SeaGame) {
         val def = g.playerDef()
         val u = g.ensureUp(def.id)
         if (u[i] >= MAX_LEVEL) return
+        if (g.guilds.shipLevel() < shipLevelForUpgrade(u[i] + 1)) { g.toast("Нужен уровень корабля ${shipLevelForUpgrade(u[i] + 1)}: плавайте и сражайтесь"); return }
         val cost = (upgradeCost(def, u[i]) * g.living.upgradeMul()).roundToInt()
         if (g.coins < cost) { g.toast("Не хватает монет"); return }
         g.coins -= cost
@@ -618,6 +630,7 @@ class Menus(private val g: SeaGame) {
         val q = g.quest()
         if (q.type == QType.DELIVER) head.add(ui.label("Заказ: ${q.text} (${g.qprog}/${q.n})", ui.small, rgb(0xffc93c), wrap = true)).growX().padTop(4f).row()
         content.add(head).growX().padBottom(10f).row()
+        contractCard(content, portIndex)
         for ((gi, good) in GOODS.withIndex()) {
             val buy = sy.buyPrice(portIndex, gi)
             val sell = sy.sellPrice(portIndex, gi)
@@ -640,6 +653,7 @@ class Menus(private val g: SeaGame) {
     // ===================== Таверна =====================
     private fun tavernCards(content: Table, port: Int) {
         val lv = g.living
+        guildCard(content)
         // Репутация
         val rc = card()
         rc.add(ui.label("Репутация", ui.big)).left().row()
@@ -987,6 +1001,91 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(min(g.wDp - 16, 460f))
     }
 
+    // ===================== Фракции =====================
+    fun showGuildSelect(change: Boolean = false) = open(SeaGame.State.DIALOG) { buildGuildSelect(change) }
+
+    private fun buildGuildSelect(change: Boolean) {
+        stage.clear()
+        val gs = g.guilds
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label(if (change) "Сменить фракцию" else "Выберите фракцию", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label(if (change) "Смена стоит 2000 монет. Прогресс по всем путям сохраняется, меняются только бонусы ранга."
+            else "Фракция даёт бонусы за ранги. Ранг растёт от ваших дел; на 3-м ранге каждой фракции открывается свой капитан — прогресс по всем путям идёт всегда.",
+            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(8f).row()
+        val content = Table().top()
+        for ((i, gd) in GUILDS.withIndex()) {
+            val c = card(if (gs.guild == i) 0x1d5a46 else 0x164266)
+            val top = Table()
+            top.add(ui.label(gd.emblem, ui.huge, rgb(gd.color))).width(48f).padRight(8f)
+            val t = Table()
+            t.add(ui.label(gd.name, ui.big)).left().row()
+            t.add(ui.label(gd.desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            top.add(t).growX()
+            c.add(top).growX().row()
+            val hero = HEROES.first { it.id == gd.hero }
+            val how = when (gd.metric) { "contracts" -> "выполнить ${gd.thresholds[gd.heroRank - 1]} контрактов гильдии"; "explored" -> "открыть ${gd.thresholds[gd.heroRank - 1]}% карты"; else -> "потопить ${gd.thresholds[gd.heroRank - 1]} кораблей" }
+            c.add(ui.label("Капитан ${hero.name}: $how", ui.small, rgb(0xffc93c), wrap = true)).growX().padTop(4f).row()
+            c.add(ui.label("Бонус фракции — ${gd.perRank}", ui.small, rgb(0x3ddc84), wrap = true)).growX().row()
+            val b = if (gs.guild == i) ui.gray("✓ Ваша фракция").also { it.isDisabled = true }
+                else ui.green(if (change) "Перейти (2000)" else "Вступить").wrapping().also {
+                    it.onClick {
+                        gs.join(i, !change)
+                        if (!change) { close(); g.checkDaily() } else { close() }
+                    }
+                }
+            c.add(b).growX().height(48f).padTop(8f).row()
+            content.add(c).growX().padBottom(10f).row()
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        if (change) panel.add(ui.blue("Назад").also { it.onClick { close() } }).growX().height(46f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 16, 480f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+    }
+
+    private fun guildCard(content: Table) {
+        val gs = g.guilds
+        val c = card(0x1d3b2e)
+        c.add(ui.label(if (gs.guild >= 0) "${GUILDS[gs.guild].emblem} ${GUILDS[gs.guild].name} · ${gs.rankTitle(gs.guild)}" else "Фракция не выбрана", ui.mid, wrap = true)).growX().row()
+        for ((i, gd) in GUILDS.withIndex()) {
+            val r = Table()
+            val next = gs.nextThreshold(i)
+            val v = gs.metric(gd)
+            r.add(ui.label(gd.emblem, ui.mid, rgb(gd.color))).width(26f)
+            val t = Table()
+            t.add(ui.label("${gd.name}: ${gs.rankTitle(i)}", ui.small, rgb(0xe3f2fd))).left().row()
+            val unit = when (gd.metric) { "contracts" -> "контр."; "explored" -> "% карты"; else -> "потоплено" }
+            t.add(ui.label(if (next != null) "$v / $next $unit" else "$v $unit · высший ранг", ui.small, rgb(0x90a4ae))).left().row()
+            r.add(t).growX()
+            val h = HEROES.first { it.id == gd.hero }
+            r.add(ui.label(if (gs.heroUnlocked(h.id)) "${h.name} ✓" else "${h.name} 🔒".replace("🔒", "—"), ui.small, rgb(if (gs.heroUnlocked(h.id)) 0x3ddc84 else 0x90a4ae))).width(80f).right()
+            c.add(r).growX().padTop(4f).row()
+            if (next != null) c.add(Bar(ui, v.toFloat() / next, gd.color)).growX().height(8f).padTop(2f).row()
+        }
+        c.add(ui.blue(if (gs.guild >= 0) "Сменить фракцию" else "Выбрать фракцию").also { it.onClick { showGuildSelect(gs.guild >= 0) } }).growX().height(44f).padTop(8f).row()
+        content.add(c).growX().padBottom(10f).row()
+    }
+
+    private fun contractCard(content: Table, port: Int) {
+        val gs = g.guilds
+        val c = card(0x2b1d12)
+        c.add(ui.label("⚖ Контракт торговой гильдии", ui.mid, rgb(0xffe082))).left().row()
+        val active = gs.contract
+        if (active != null) {
+            val left = active.timeLeft.toInt()
+            c.add(ui.label("Доставить ${active.amount} × ${GOODS[active.good].name} в «${PORTS[active.port].name}». Доставлено ${active.delivered}. Осталось ${left / 60}:${"%02d".format(left % 60)}. Награда ${fmt(active.reward)}.",
+                ui.small, rgb(0xfff3e0), wrap = true)).growX().row()
+            if (active.port == port) c.add(ui.label("Это порт назначения — продайте товар на рынке.", ui.small, rgb(0x3ddc84), wrap = true)).growX().padTop(2f).row()
+        } else {
+            val o = gs.offerFor(port)
+            c.add(ui.label("Доставить ${o.amount} × ${GOODS[o.good].name} в «${PORTS[o.port].name}» за ${(o.timeLeft / 60).toInt()} мин. Награда: ${fmt(o.reward)} монет и ранг гильдии.",
+                ui.small, rgb(0xfff3e0), wrap = true)).growX().row()
+            c.add(ui.green("Взять контракт").also { it.onClick { gs.accept(o); refreshAny() } }).growX().height(44f).padTop(6f).row()
+        }
+        c.add(ui.label("Выполнено контрактов: ${gs.contractsDone} · ранг: ${gs.rankTitle(0)}", ui.small, rgb(0x90a4ae))).left().padTop(4f).row()
+        content.add(c).growX().padBottom(10f).row()
+    }
+
     // ===================== Бортовой журнал =====================
     fun showJournal(q: Quest) = open(SeaGame.State.DIALOG) { buildJournal(q) }
 
@@ -1124,6 +1223,7 @@ class Menus(private val g: SeaGame) {
         } else {
             g.systems.addStat("boards")
             g.extras.addMorale(6f)
+            g.guilds.addShipXp(50)
             g.systems.gainXp(70, target.x, target.z)
             g.questEvent(QType.BOARD, "", false)
             panel.add(ui.label("Корабль взят!", ui.big, align = Align.center)).growX().row()
@@ -1196,6 +1296,13 @@ class Menus(private val g: SeaGame) {
             hc.add(ui.blue("Сменить капитана").also { it.onClick { current = { buildHeroSelect(false) }; buildHeroSelect(false) } }).colspan(2).growX().height(44f).padTop(6f).row()
             content.add(hc).growX().padBottom(10f).row()
         }
+        if (g.hero() == null) {
+            val hc = card(0x1d3b2e)
+            hc.add(ui.label("Безымянный капитан", ui.big)).left().row()
+            hc.add(ui.label("Капитан-герой ещё не выбран. Поднимайте ранги фракций — откроются Hope, Fin и Mihael.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            hc.add(ui.blue("Капитаны").also { it.onClick { current = { buildHeroSelect(false) }; buildHeroSelect(false) } }).growX().height(44f).padTop(6f).row()
+            content.add(hc).growX().padBottom(10f).row()
+        }
         val ex = g.extras
         val ac = card(0x2b1d12)
         ac.add(ui.label("Артефакты · найдено ${ex.owned.size} из ${ARTIFACTS.size} · надето ${ex.equipped.size}/$ARTIFACT_SLOTS", ui.mid, rgb(0xffe082), wrap = true)).growX().row()
@@ -1231,6 +1338,9 @@ class Menus(private val g: SeaGame) {
             c.add(btn).width(72f).height(46f).padLeft(8f)
             content.add(c).growX().padBottom(8f).row()
         }
+        // по ширине панели: длинные описания артефактов не раздвигают окно
+        val cw = min(g.wDp - 16, 460f) - 34f
+        for (cell in content.cells) cell.width(cw).minWidth(0f)
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
@@ -1246,7 +1356,7 @@ class Menus(private val g: SeaGame) {
         val root = overlay()
         val panel = panelTable()
         panel.add(ui.label(if (first) "Выберите капитана" else "Сменить капитана", ui.big, align = Align.center)).growX().row()
-        panel.add(ui.label("У каждого капитана свои сильные стороны. Сменить капитана можно в меню «Капитан».", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(8f).row()
+        panel.add(ui.label("Капитаны открываются за ранги фракций: Hope — торговая гильдия, Fin — братство мореходов, Mihael — береговое братство.", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(8f).row()
         val content = Table().top()
         for (h in HEROES) {
             val isCur = h.id == g.heroId
@@ -1260,7 +1370,11 @@ class Menus(private val g: SeaGame) {
             for (pk in h.perks) t.add(ui.label("✓ $pk", ui.small, rgb(0x3ddc84), wrap = true)).growX().left().row()
             t.add(ui.label(h.story, ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(4f).row()
             c.add(t).growX().top().row()
-            val btn = if (isCur && !first) ui.gray("✓ Ваш капитан").also { it.isDisabled = true }
+            val gd = GUILDS.firstOrNull { it.hero == h.id }
+            val open = g.guilds.heroUnlocked(h.id)
+            if (!open) img.color = Color(0.25f, 0.25f, 0.3f, 1f)
+            val btn = if (!open && gd != null) ui.gray("Закрыт: ${gd.name}, ранг «${gd.ranks[gd.heroRank - 1]}»").wrapping().also { it.isDisabled = true }
+                else if (isCur && !first) ui.gray("✓ Ваш капитан").also { it.isDisabled = true }
                 else ui.green("Выбрать: ${h.name}").also {
                     it.onClick {
                         g.heroId = h.id
@@ -1543,6 +1657,7 @@ class Menus(private val g: SeaGame) {
             "Флот" to "Если есть наёмники, слева появляются кнопки приказов: ⚓ колонна (корабли идут точно по вашему следу и стреляют бортами на ходу), ⚔ атака (флот бьёт врагов в большом радиусе), ↺ отход (плотная колонна).",
             "Высадки и клады" to "Остановитесь у дикого острова — появится кнопка «Высадиться». На островах — тайники, засады и куски карты. Три куска дают карту сокровищ. У колонн затонувших храмов можно нырнуть.",
             "Абордаж" to "Ослабьте пирата до половины прочности, подойдите вдоль его борта с той же скоростью — появится кнопка «Абордаж!». В схватке 3 раунда: натиск сильнее залпа мушкетов, залп сильнее обороны, оборона сильнее натиска. Перед раундом видно, что затевают пираты (не всегда верно). После победы корабль можно взять во флот, разграбить, отпустить или потопить.",
+            "Пиратская фракция" to "Игрок Берегового братства может нападать на любые суда: купцов, рыбаков и патрули флота. Автоогонь бьёт только пиратов — мирное судно атакуйте прицельным залпом, после первого попадания по нему стреляет и автоогонь. Купцы удирают, патрули отвечают огнём. Добыча богаче, но торговцы и флот это запомнят.",
             "Белый флаг" to "Если корабль почти потоплен, появится кнопка «Белый флаг»: откупитесь монетами или сдайтесь, отдав груз. Охотники за головами и призраки выкуп не берут. Почти потопленные пираты тоже иногда сдаются — подплывите и примите сдачу.",
             "Потерянный груз" to "После гибели груз и часть монет остаются на месте крушения (отметка на карте). Обломки стерегут падальщики. Если погибнете снова, не подобрав их, груз пропадёт.",
             "Дух команды" to "Победы, добыча, песни и порт поднимают дух, поражения и долгое плавание без добычи — опускают. Бодрая команда быстрее заряжает пушки и сильнее в абордаже. Ром в таверне поднимает дух. Если дух упадёт совсем низко — начнётся ропот.",

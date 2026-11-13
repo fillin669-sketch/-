@@ -129,6 +129,7 @@ val PORTS = listOf(
     PortDef("Вулканий порт", 1450f, 150f, 50f),
     PortDef("Приют контрабандистов", -1450f, -150f, 48f),
     PortDef("Последний маяк", -150f, 1450f, 50f),
+    PortDef("Гавань Лугань", 860f, 130f, 52f),
 )
 
 /** Морские крепости пиратов. */
@@ -230,6 +231,7 @@ val PORT_PRICES = listOf(
     floatArrayOf(1.5f, 1.3f, 1.6f, 0.6f, 1.6f, 0.6f),
     floatArrayOf(1.2f, 0.7f, 1.0f, 1.1f, 0.6f, 1.3f),
     floatArrayOf(1.6f, 1.5f, 1.7f, 1.6f, 1.5f, 1.2f),
+    floatArrayOf(0.8f, 1.1f, 0.65f, 1.3f, 0.9f, 1.15f),
 )
 
 /** Вместимость трюма по кораблям. */
@@ -336,7 +338,7 @@ class Paint(val name: String, val color: Int, val price: Int)
 val SAIL_COLORS = listOf(
     Paint("Классика", 0xf6f0e0, 0), Paint("Алые", 0xc62828, 400), Paint("Небесные", 0x64b5f6, 400),
     Paint("Изумрудные", 0x2e7d32, 600), Paint("Золотые", 0xffc107, 900), Paint("Королевские", 0x6a1b9a, 1200),
-    Paint("Чёрные", 0x262626, 1500),
+    Paint("Чёрные", 0x262626, 1500), Paint("Антрацит", 0x2b2f33, 700),
 )
 val FLAG_COLORS = listOf(
     Paint("Свой", -1, 0), Paint("Алый", 0xd32f2f, 200), Paint("Синий", 0x1565c0, 200), Paint("Зелёный", 0x2e7d32, 200),
@@ -544,3 +546,29 @@ fun sailPatColor(pat: Int, u: Float, v: Float, c1: Int, second: Int, flagPix: St
     6 -> if (((u + v) * 5).toInt() % 2 == 1) second else c1
     else -> c1
 }
+
+// ---------- Фракции ----------
+/** metric: contracts — выполненные контракты гильдии, explored — % открытой карты, kills — потопленные корабли. */
+class Guild(
+    val id: String, val name: String, val emblem: String, val color: Int, val desc: String, val metric: String,
+    val ranks: List<String>, val thresholds: IntArray, val hero: String, val heroRank: Int, val perRank: String,
+)
+
+val GUILDS = listOf(
+    Guild("merchants", "Торговая гильдия", "⚖", 0x2e7d32, "Купцы девяти портов. Контракты на доставку товаров, лучшие цены и вместительные трюмы.",
+        "contracts", listOf("Лоточник", "Торговец", "Купец", "Негоциант", "Магнат"), intArrayOf(0, 2, 5, 9, 14), "hope", 3,
+        "за каждый ранг: цены выгоднее на 2%, +5 мест в трюме"),
+    Guild("navigators", "Братство мореходов", "✦", 0x1565c0, "Исследователи морей. Открывайте карту мира, ищите острова и храмы.",
+        "explored", listOf("Юнга", "Матрос", "Штурман", "Лоцман", "Первооткрыватель"), intArrayOf(0, 10, 35, 55, 75), "fin", 3,
+        "за каждый ранг: скорость +2%, опыт +4%"),
+    Guild("pirates", "Береговое братство", "☠", 0xb71c1c, "Вольные корсары. Топите корабли, берите на абордаж, живите добычей.",
+        "kills", listOf("Салага", "Рубака", "Корсар", "Капер", "Гроза морей"), intArrayOf(0, 15, 50, 100, 200), "mihael", 3,
+        "за каждый ранг: добыча +4%, абордаж +5%"),
+)
+
+// ---------- Уровни кораблей ----------
+const val SHIP_MAX_LEVEL = 10
+val SHIP_LEVEL_XP = intArrayOf(0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200)
+fun shipLevelFor(xp: Int) = SHIP_LEVEL_XP.count { xp >= it }.coerceIn(1, SHIP_MAX_LEVEL)
+/** Улучшение до уровня [upLevel] требует опытного корабля. */
+fun shipLevelForUpgrade(upLevel: Int) = upLevel * 2 - 1

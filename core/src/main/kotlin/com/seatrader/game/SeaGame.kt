@@ -60,6 +60,7 @@ class SeaGame : ApplicationAdapter() {
     val living = Living(this)
     val portView = PortView(this)
     val extras = Extras(this)
+    val guilds = Guilds(this)
     val chestModelPublic get() = chestModel
     val chestReady get() = ::chestModel.isInitialized
     /** Свой рисунок флага, узор и второй цвет парусов (индекс палитры, -1 — нет). */
@@ -126,7 +127,7 @@ class SeaGame : ApplicationAdapter() {
     private lateinit var detailBatch: ModelBatch
     private lateinit var plainBatch: ModelBatch
     var heroId = ""
-    fun hero(): Hero? = HEROES.firstOrNull { it.id == heroId }
+    fun hero(): Hero? = HEROES.firstOrNull { it.id == heroId && guilds.heroUnlocked(it.id) }
 
     // ---------- Мир ----------
     var state = State.LOADING
@@ -324,7 +325,7 @@ class SeaGame : ApplicationAdapter() {
                 }
                 spawnGulls()
                 state = State.PLAY
-                if (hero() == null) menus.showHeroSelect(true) else { checkDaily(); checkJournal() }
+                if (guilds.guild < 0) menus.showGuildSelect() else { checkDaily(); checkJournal() }
             }
         }
         loadStep++
@@ -431,6 +432,7 @@ class SeaGame : ApplicationAdapter() {
         heroId = prefs.getString("hero", "")
         systems.load(prefs)
         living.load(prefs)
+        guilds.load(prefs)
         extras.load(prefs)
         flagPix = prefs.getString("flagPix", "").takeIf { it.length == FLAG_W * FLAG_H } ?: ""
         sailPat = prefs.getInteger("sailPat", 0).coerceIn(0, SAIL_PATTERNS.size - 1)
@@ -463,6 +465,7 @@ class SeaGame : ApplicationAdapter() {
         systems.save(prefs)
         living.save(prefs)
         extras.save(prefs)
+        guilds.save(prefs)
         prefs.putString("flagPix", flagPix)
         prefs.putInteger("sailPat", sailPat)
         prefs.putInteger("sail2", sail2Idx)
@@ -556,11 +559,11 @@ class SeaGame : ApplicationAdapter() {
         val sk = systems
         val ex = extras
         return Stats(
-            hp = Math.round(b.hp * (1 + 0.06f * sk.skill("carpenter"))),
-            speed = b.speed * (1 + 0.03f * sk.skill("navigator") + ex.artSpeed()),
+            hp = Math.round(b.hp * (1 + 0.06f * sk.skill("carpenter")) * guilds.shipStatMul()),
+            speed = b.speed * (1 + 0.03f * sk.skill("navigator") + ex.artSpeed() + guilds.speedBonus()),
             turn = b.turn * (1 + 0.05f * sk.skill("navigator")),
             cannons = b.cannons,
-            dmg = b.dmg * sk.gunMul() * (1 + ex.artDmg()),
+            dmg = b.dmg * sk.gunMul() * (1 + ex.artDmg()) * guilds.shipStatMul(),
             reload = b.reload * (1 - 0.05f * sk.skill("boatswain")) * ex.reloadMul() * (1 - ex.artReload()),
             range = b.range * (1 + ex.artRange()),
             mass = b.mass,
@@ -579,11 +582,18 @@ class SeaGame : ApplicationAdapter() {
 
     fun rebuildPlayer() {
         val old = player ?: return
+        val atSea = state == State.PLAY && !old.inPort
         removeShip(old)
         val def = playerDef()
-        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), old.x, old.z, old.h, false, ensureUp(def.id))
-            .also { it.inPort = true }
+        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), old.x, old.z, old.h, false, ensureUp(def.id)).also {
+            it.inPort = old.inPort || !atSea
+            // в море корабль сохраняет повреждения и ход
+            if (atSea) { it.hp = it.maxHp * (old.hp / old.maxHp).coerceIn(0.05f, 1f); it.vx = old.vx; it.vz = old.vz; it.boostCd = old.boostCd }
+        }
     }
+
+    /** Пересобрать корабль в море (новый уровень корабля), не трогая состояние. */
+    fun rebuildPlayerKeepState() = rebuildPlayer()
 
     /** Корабли сопровождения появляются рядом с игроком. */
     fun spawnAllies() {
@@ -1089,6 +1099,7 @@ class SeaGame : ApplicationAdapter() {
         val p = player
         if (s.faction == Faction.NEUTRAL && s.type != "navy") return
         if (s.surrendered) return
+        val pirateMe = guilds.isPirate
         if (s === p && !systems.autoFire) return
         val mode = when {
             s.faction == Faction.PLAYER || s.faction == Faction.NEUTRAL -> 1
@@ -1107,7 +1118,9 @@ class SeaGame : ApplicationAdapter() {
                 if (o === systems.grappleTarget || o.surrendered) continue
                 // автоогонь не добивает ослабленного врага вплотную — даём взять его на абордаж
                 if (s === p && systems.boardable(o) && hypot(o.x - s.x, o.z - s.z) < 45f) continue
-                if (mode == 1 && o.faction != Faction.PIRATE) continue
+                // своим автоогнём игрок-пират бьёт и спровоцированных мирных; спровоцированный патруль бьёт игрока
+                if (mode == 1 && o.faction != Faction.PIRATE && !(s === p && pirateMe && o.provoked && o.faction == Faction.NEUTRAL) &&
+                    !(s.faction == Faction.NEUTRAL && s.provoked && o === p)) continue
                 if (mode == 2 && !((o.faction == Faction.PLAYER || o.type == "merchant" || (o.type == "navy" && o.faction == Faction.NEUTRAL)) && !(o === p && p.safe))) continue
                 val dx = o.x - s.x; val dz = o.z - s.z; val d = hypot(dx, dz)
                 if (d > s.stats.range || d < 2) continue
@@ -1201,8 +1214,9 @@ class SeaGame : ApplicationAdapter() {
     private fun checkBallHit(b: Ball): Boolean {
         for (s in ships) {
             if (s.faction == b.faction || s.sinking) continue
-            if (s.faction == Faction.NEUTRAL && b.faction == Faction.PLAYER) continue
-            if (s.faction == Faction.PLAYER && b.faction == Faction.NEUTRAL) continue
+            // мирные суда: попадают только ядра игрока-пирата; мирные стреляют по игроку, только если он напал
+            if (s.faction == Faction.NEUTRAL && b.faction == Faction.PLAYER && !(guilds.isPirate && (b.owner === player || s.provoked))) continue
+            if (s.faction == Faction.PLAYER && b.faction == Faction.NEUTRAL && b.owner?.provoked != true) continue
             val dx = b.x - s.x; val dz = b.z - s.z
             if (dx * dx + dz * dz > (s.len * 0.6f) * (s.len * 0.6f)) continue
             val fxv = sin(s.h); val fzv = -cos(s.h)
@@ -1287,6 +1301,11 @@ class SeaGame : ApplicationAdapter() {
         }
         s.hp -= amount
         if (s.faction == Faction.PIRATE && s.hp > 0 && (src === player || src?.ally == true)) extras.maybeSurrender(s)
+        if (s.faction == Faction.NEUTRAL && src === player && !s.provoked) {
+            s.provoked = true
+            if (s.type == "navy") { living.addRep(1, -8); toast("Вы атаковали патруль флота!", 1.8f) }
+            else { living.addRep(0, -3); living.addRep(1, -2); living.addRep(2, 1) }
+        }
         s.lastHit = now
         if (s.faction == Faction.PLAYER || src?.faction == Faction.PLAYER) combatT = 8f
         if (!silent) {
@@ -1306,6 +1325,7 @@ class SeaGame : ApplicationAdapter() {
             dropLoot(s.x, s.z, (Random.nextInt(s.coinsMin, s.coinsMax + 1) * systems.luckMul() * living.lootMul()).roundToInt(), s.gems * (1f + living.gemBonus()))
             if (src == null || src.faction == Faction.PLAYER) {
                 extras.addMorale(3f)
+                guilds.addShipXp(XP_REWARD[s.type] ?: 30)
                 if (extras.hasArt(9) && Random.nextFloat() < 0.2f) { gems++; floatText(s.x, 12f, s.z, "+1 кристалл", rgb(0xce93d8), ui.small) }
                 kills++
                 systems.addStat("kills")
@@ -1322,6 +1342,19 @@ class SeaGame : ApplicationAdapter() {
             }
         } else if (s.faction == Faction.NEUTRAL) {
             if (systems.protect === s) toast("Купец потоплен…", 1.6f)
+            if (src === player) {
+                kills++
+                systems.addStat("kills")
+                guilds.addShipXp(25)
+                // добыча с мирного судна
+                val c = when (s.type) { "merchant" -> Random.nextInt(180, 360); "navy" -> Random.nextInt(200, 320); else -> Random.nextInt(30, 70) }
+                dropLoot(s.x, s.z, (c * systems.luckMul() * living.lootMul()).roundToInt(), if (s.type == "navy") 0.6f else 0.2f)
+                if (s.type == "merchant") {
+                    val gi = Random.nextInt(GOODS.size)
+                    val got = systems.addCargo(gi, Random.nextInt(3, 9))
+                    if (got > 0) floatText(s.x, 10f, s.z, "+$got ${GOODS[gi].name}", rgb(0xffe082), ui.small)
+                }
+            }
         } else if (s.ally) {
             extras.addMorale(-8f)
             allies.remove(s.mercId)
@@ -2016,6 +2049,7 @@ class SeaGame : ApplicationAdapter() {
         systems.update(dt)
         living.update(dt)
         extras.update(dt)
+        guilds.update(dt)
         if (aimActive) updateAim()
         for (i in abilityCd.indices) if (abilityCd[i] > 0) abilityCd[i] -= dt
         if (ammoT > 0) { ammoT -= dt; if (ammoT <= 0) ammo = Ammo.NORMAL }

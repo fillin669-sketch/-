@@ -103,14 +103,14 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
         if (System.getenv("SEA_FEAT") != null) { featTest(f); return }
         if (System.getenv("SEA_BOARD") != null) {
-            if (f == 3) press("Выбрать"); if (f == 5) press("Забрать"); if (f == 8) g.menus.close()
+            if (f == 3) press("Вступить"); if (f == 5) press("Забрать"); if (f == 8) g.menus.close()
             if (f == 12) { val p = g.player!!; g.menus.showBoarding(g.spawnEnemy("sloop", p.x + 30f, p.z)) }
             if (f == 20) shot("board"); if (f == 21) { repeat(3) { press("Удар") } }
             if (f == 40) shot("board_result")
             if (f == 41) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
-        if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Выбрать"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 20) { g.autoGfx = false; g.applyGfx(0) }; if (f == 40) g.openPort(0); if (f == 60) { g.menus.close(); g.closePort(); g.applyGfx(3) }; if (f == 80) g.openPort(0); if (f == 120) { dumpShaders(); Gdx.app.exit() }; return }
+        if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Вступить"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 20) { g.autoGfx = false; g.applyGfx(0) }; if (f == 40) g.openPort(0); if (f == 60) { g.menus.close(); g.closePort(); g.applyGfx(3) }; if (f == 80) g.openPort(0); if (f == 120) { dumpShaders(); Gdx.app.exit() }; return }
         if (landscape) {
             when (f) {
                 3 -> { g.menus.close() }
@@ -132,7 +132,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
         when (f) {
             2 -> shot("00_hero")
-            3 -> press("Выбрать: Hope")
+            3 -> press("Вступить")
             5 -> shot("00_daily")
             6 -> { press("Забрать") }
             10 -> { press("швартовы") }
@@ -192,7 +192,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     /** Проверка навигации ботов: застревают ли у островов. */
     private fun aiTest(f: Int) {
         when (f) {
-            2 -> press("Выбрать: Fin")
+            2 -> press("Вступить")
             4 -> press("Забрать")
             8 -> g.menus.close()
             10 -> {
@@ -242,7 +242,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private fun allyTest(f: Int) {
         val p = g.player ?: return
         when (f) {
-            2 -> press("Выбрать: Fin")
+            2 -> press("Вступить")
             4 -> press("Забрать")
             8 -> { g.menus.close(); for (s in ArrayList(g.ships)) if (s !== p) g.ships.remove(s); p.x = 300f; p.z = 300f; p.inPort = false
                 g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies() }
@@ -267,7 +267,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private fun leashTest(f: Int) {
         val p = g.player ?: return
         when (f) {
-            2 -> press("Выбрать: Fin")
+            2 -> press("Вступить")
             4 -> press("Забрать")
             8 -> { g.menus.close(); for (s in ArrayList(g.ships)) if (s !== p) g.ships.remove(s)
                 p.x = 400f; p.z = 400f; p.inPort = false; p.h = 0f
@@ -328,7 +328,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
 
     private fun buildPlan() {
         val lv = g.living
-        step("старт", 3) { press("Выбрать: Mihael") }
+        step("старт", 3) { press("Вступить") }
         step("старт", 3) { press("Забрать") }
         step("старт", 3) { if (findButton("швартовы") != null) press("швартовы") }
         step("старт", 20) { g.menus.close(); g.coins = 200000; g.gems = 2000; tp(250f, -250f); g.player!!.h = 0f }
@@ -525,11 +525,12 @@ class TestScript(private val g: SeaGame, private val out: String) {
     }
 
     private var featE: Ship? = null
+    private var featN: Ship? = null
     private fun featTest(f: Int) {
         val ex = g.extras
         val p = g.player
         when (f) {
-            3 -> press("Выбрать: Fin"); 5 -> press("Забрать"); 8 -> g.menus.close()
+            3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
             10 -> { g.coins = 50000; g.gems = 100; g.openPort(0) }
             14 -> press("Вид")
             20 -> press("Флаг")
@@ -576,7 +577,27 @@ class TestScript(private val g: SeaGame, private val out: String) {
             655 -> shot("f16_artifacts")
             660 -> { g.menus.close(); ex.morale = 82f; g.systems.cargo[0] = 5 }
             700 -> shot("f17_hud_morale")
-            710 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            720 -> { g.openPort(0) }
+            726 -> press("Таверна")
+            760 -> shot("f18_guilds")
+            761 -> press("Рынок")
+            790 -> { shot("f19_contract"); press("Взять контракт") }
+            795 -> { log.append("контракт=${g.guilds.contract?.let { "${it.amount} ${GOODS[it.good].name} -> ${PORTS[it.port].name}" }}\n"); val c = g.guilds.contract!!
+                g.systems.cargo[c.good] = c.amount; g.guilds.onSell(c.port, c.good, c.amount); log.append("контрактов=${g.guilds.contractsDone}\n") }
+            800 -> { g.menus.close(); g.closePort(); g.kills = 60; g.guilds.contractsDone = 5 }
+            900 -> { log.append("открыты капитаны: ${g.guilds.unlocked} ранги: ${GUILDS.indices.map { g.guilds.rankTitle(it) }}\n"); g.openPause() }
+            905 -> press("Капитан")
+            915 -> press("Капитаны")
+            930 -> shot("f20_heroes")
+            931 -> { g.menus.close(); val pt = g.ports[9]; tp(pt.rx, pt.rz + 40f); g.player!!.h = 0f }
+            990 -> { shot("f21_lugan"); g.openPort(9) }
+            1040 -> { shot("f22_lugan_port"); log.append("порт: ${PORTS[9].name}\n") }
+            1050 -> { g.menus.close(); g.closePort(); g.guilds.join(2, true); tp(-300f, -300f); g.player!!.h = 0f
+                featE = g.spawnNeutral("merchant", g.player!!.x + 35f, g.player!!.z).also { it.h = 0f; it.wx = 1500f; it.wz = 1500f }
+                g.damage(featE!!, 5f, g.player, false) }
+            1060 -> { val n = g.spawnNeutral("navy", g.player!!.x - 60f, g.player!!.z + 20f); g.damage(n, 5f, g.player, false); featN = n }
+            1250 -> { shot("f23_pirate_attack"); log.append("купец: hp=${featE?.hp?.toInt()} тонет=${featE?.sinking} спровоцирован=${featE?.provoked}; патруль: ai=${featN?.ai} цель-игрок=${featN?.target === g.player}; kills=${g.kills} репутация=${g.living.rep.toList()}\n") }
+            1260 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
         }
     }
 

@@ -118,9 +118,9 @@ class Living(private val g: SeaGame) {
         mass = b.mass,
     )
 
-    fun buyMul() = 1f - off { it.trade } - (hero?.trade ?: 0f) - clamp(rep[0] / 1000f, -0.1f, 0.1f)
-    fun sellMul() = 1f + off { it.trade } + (hero?.trade ?: 0f) + clamp(rep[0] / 1000f, -0.1f, 0.1f)
-    fun lootMul() = 1f + off { it.loot } + (hero?.loot ?: 0f) + g.extras.artLoot()
+    fun buyMul() = 1f - off { it.trade } - (hero?.trade ?: 0f) - g.guilds.tradeBonus() - clamp(rep[0] / 1000f, -0.1f, 0.1f)
+    fun sellMul() = 1f + off { it.trade } + (hero?.trade ?: 0f) + g.guilds.tradeBonus() + clamp(rep[0] / 1000f, -0.1f, 0.1f)
+    fun lootMul() = 1f + off { it.loot } + (hero?.loot ?: 0f) + g.extras.artLoot() + g.guilds.lootBonus()
     fun boardMul() = 1f + off { it.board }
     fun gemBonus() = if (crew.contains(7)) 0.25f else 0f
     fun upgradeMul() = (if (baseFounded) 1f - 0.06f * blev[6] else 1f) * (1f - (hero?.upgrade ?: 0f))
@@ -298,6 +298,7 @@ class Living(private val g: SeaGame) {
     fun navyAI(s: Ship, dt: Float) {
         if (s.sinking) return
         val p = g.player ?: return
+        if (s.provoked && g.player?.sinking == false) { s.ai = AiState.ATTACK; s.target = g.player; g.attackMove(s, g.player!!, dt); return }
         var foe: Ship? = null; var fd = 200f
         for (o in g.ships) if (o.faction == Faction.PIRATE && !o.sinking) { val d = hypot(o.x - s.x, o.z - s.z); if (d < fd) { fd = d; foe = o } }
         if (foe != null) { s.ai = AiState.ATTACK; s.target = foe; g.attackMove(s, foe, dt); return }

@@ -222,7 +222,7 @@ class Systems(private val g: SeaGame) {
 
     // ===================== Капитан =====================
     fun gainXp(n0: Int, x: Float, z: Float) {
-        val n = (n0 * (1f + (g.hero()?.xp ?: 0f) + g.extras.artXp())).roundToInt()
+        val n = (n0 * (1f + (g.hero()?.xp ?: 0f) + g.extras.artXp() + g.guilds.xpBonus())).roundToInt()
         if (n <= 0) return
         xp += n
         g.floatText(x, 9f, z, "+$n опыта", rgb(0x81d4fa), g.ui.small)
@@ -266,7 +266,7 @@ class Systems(private val g: SeaGame) {
     }
 
     // ===================== Торговля =====================
-    fun capacity() = (CARGO[g.shipId] ?: 20) + g.living.extraCargo()
+    fun capacity() = (CARGO[g.shipId] ?: 20) + g.living.extraCargo() + g.guilds.cargoBonus()
     fun cargoUsed() = cargo.sum()
     private fun basePrice(port: Int, gi: Int) = GOODS[gi].base * PORT_PRICES[port][gi] * fluct[port][gi]
     fun buyPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (1.06f - 0.02f * skill("trader")) * g.living.buyMul()).roundToInt())
@@ -297,6 +297,7 @@ class Systems(private val g: SeaGame) {
         val q = g.quest()
         if (q.type == QType.DELIVER && q.good == gi && q.port == port) g.questEvent(QType.DELIVER, "", false, k)
         g.living.onTrade(port, k)
+        g.guilds.onSell(port, gi, k)
         return k
     }
 
@@ -374,7 +375,7 @@ class Systems(private val g: SeaGame) {
         }
         // пройденное расстояние
         distAcc += hypot(p.vx, p.vz) * dt
-        if (distAcc > 100) { addStat("distance", distAcc.toInt()); distAcc = 0f }
+        if (distAcc > 100) { addStat("distance", distAcc.toInt()); g.guilds.addShipXp(distAcc.toInt() / 100); distAcc = 0f }
     }
 
     private var distAcc = 0f
@@ -716,7 +717,11 @@ class Systems(private val g: SeaGame) {
         }
         var pirate: Ship? = null; var pd = 90f
         for (o in g.ships) if (o.faction == Faction.PIRATE && !o.sinking) { val d = hypot(o.x - s.x, o.z - s.z); if (d < pd) { pd = d; pirate = o } }
-        if (pirate != null && s.lastHit > g.now - 8) {
+        val pl = g.player
+        if (s.provoked && pl != null && hypot(pl.x - s.x, pl.z - s.z) < 220f) {
+            // купец удирает от напавшего игрока
+            s.desired = atan2(s.x - pl.x, -(s.z - pl.z)); s.throttle = 1f
+        } else if (pirate != null && s.lastHit > g.now - 8) {
             s.desired = atan2(s.x - pirate.x, -(s.z - pirate.z)); s.throttle = 1f
         } else {
             s.desired = atan2(s.wx - s.x, -(s.wz - s.z)); s.throttle = 0.7f
@@ -849,7 +854,7 @@ class Systems(private val g: SeaGame) {
     /** Сила абордажной команды игрока относительно врага (≈1 — равные силы). */
     fun boardingRatio(t: Ship): Float {
         val p = g.player ?: return 1f
-        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul() * g.extras.boardMul()
+        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul() * g.extras.boardMul() * (1f + g.guilds.boardBonus())
         val theirs = t.stats.mass * 10 * (0.35f + t.hp / t.maxHp)
         return mine / theirs
     }

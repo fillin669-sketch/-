@@ -75,6 +75,8 @@ class Ship(
     var giveUpT = 0f
     /** Спустил флаг (сдался) и уже проверял, сдаваться ли. */
     var surrendered = false
+    /** Мирное судно, на которое напал игрок-пират: защищается или удирает. */
+    var provoked = false
     var surrenderChecked = false
     var escapeT = 0f
     var escA = 0f
