@@ -156,8 +156,6 @@ object Models2 {
     private fun platform(g: Geo, x0: Float, x1: Float, z0: Float, z1: Float, y: Float = 2.2f) {
         g.color(0x9c7449).push().at((x0 + x1) / 2, y, (z0 + z1) / 2).box(x1 - x0, 0.5f, z1 - z0).pop()
         g.color(0x6d4c2f)
-        var x = x0 + 0.6f
-        while (x < x1) { g.push().at(x, y + 0.26f, (z0 + z1) / 2).box(0.08f, 0.03f, z1 - z0 - 0.3f).pop(); x += 1.6f }
         var px = x0 + 0.5f
         while (px <= x1) {
             var pz = z0 + 0.5f

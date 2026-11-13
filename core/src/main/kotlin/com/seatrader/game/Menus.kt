@@ -166,8 +166,10 @@ class Menus(private val g: SeaGame) {
         // верхняя плашка
         val top = Table().also { it.background = ui.panel(0x0b2238, 0.82f); it.pad(8f, 10f, 8f, 10f) }
         val head = Table()
-        head.add(ui.label(title, ui.big)).left().growX()
-        head.add(currencyRow()).right()
+        val tl = ui.label(title, ui.big)
+        tl.setEllipsis(true)
+        head.add(tl).left().growX().minWidth(0f)
+        head.add(currencyRow()).right().padLeft(8f)
         top.add(head).growX().row()
         val tabs = Table()
         chips.forEachIndexed { i, name ->
@@ -175,7 +177,7 @@ class Menus(private val g: SeaGame) {
             b.pad(5f, 3f, 5f, 3f)
             b.onClick { sheetCollapsed = false; onChip(i) }
             tabs.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
-            if (i == 3 && chips.size > 4) tabs.row()
+            if (i == 2 && chips.size > 4) tabs.row()
         }
         top.add(tabs).growX().padTop(6f).row()
         // панель места

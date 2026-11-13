@@ -33,7 +33,7 @@ class Geo {
     private val tmpC = Color()
     private val vary = Random(1234)
     /** Насколько сильно меняется яркость соседних треугольников (фактура). */
-    var variation = 0.07f
+    var variation = 0.045f
     val m = Matrix4()
     private val stack = ArrayList<Matrix4>()
 
@@ -82,6 +82,29 @@ class Geo {
         }
     }
 
+    private val na0 = Vector3()
+    private val nb0 = Vector3()
+    private val nc0 = Vector3()
+
+    /** Треугольник с нормалями в вершинах (плавное освещение круглых деталей). */
+    fun triN(a: Vector3, b: Vector3, c: Vector3, an: Vector3, bn: Vector3, cn: Vector3) {
+        t1.set(b).sub(a); t2.set(c).sub(a)
+        if (t1.crs(t2).len2() < 1e-10f) return
+        pa.set(a).mul(m); pb.set(b).mul(m); pc.set(c).mul(m)
+        na0.set(an).rot(m).nor(); nb0.set(bn).rot(m).nor(); nc0.set(cn).rot(m).nor()
+        val col = if (variation > 0) {
+            val f = 1f + (vary.nextFloat() * 2 - 1) * variation * 0.6f
+            tmpC.set((base.r * f).coerceIn(0f, 1f), (base.g * f).coerceIn(0f, 1f), (base.b * f).coerceIn(0f, 1f), 1f).toFloatBits()
+        } else packed
+        data.add(pa.x, pa.y, pa.z); data.add(na0.x, na0.y, na0.z); data.add(col)
+        data.add(pb.x, pb.y, pb.z); data.add(nb0.x, nb0.y, nb0.z); data.add(col)
+        data.add(pc.x, pc.y, pc.z); data.add(nc0.x, nc0.y, nc0.z); data.add(col)
+    }
+
+    private fun quadN(a: Vector3, b: Vector3, c: Vector3, d: Vector3, an: Vector3, bn: Vector3, cn: Vector3, dn: Vector3) {
+        triN(a, b, c, an, bn, cn); triN(a, c, d, an, cn, dn)
+    }
+
     private val ctr = Vector3()
     private fun quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, center: Vector3?) {
         tri(a, b, c, center); tri(a, c, d, center)
@@ -110,9 +133,13 @@ class Geo {
         ctr.setZero()
         val ct = Vector3(0f, h / 2, 0f)
         val cb = Vector3(0f, -h / 2, 0f)
+        val smooth = seg >= 6
+        val slope = if (h > 1e-4f) (rBot - rTop) / h else 0f
+        val nrm = Array(seg) { i -> val a = 2 * PI * i / seg; Vector3(cos(a).toFloat(), slope, sin(a).toFloat()).nor() }
         for (i in 0 until seg) {
             val k = (i + 1) % seg
-            quad(bot[i], bot[k], top[k], top[i], ctr)
+            if (smooth) quadN(bot[i], bot[k], top[k], top[i], nrm[i], nrm[k], nrm[k], nrm[i])
+            else quad(bot[i], bot[k], top[k], top[i], ctr)
             if (caps) {
                 if (rTop > 0) tri(ct, top[i], top[k], Vector3(0f, -1f, 0f))
                 if (rBot > 0) tri(cb, bot[i], bot[k], Vector3(0f, 1f, 0f))
@@ -133,8 +160,8 @@ class Geo {
         for (p in v) p.nor().scl(r)
         val f = intArrayOf(0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
             3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1)
-        ctr.setZero()
-        for (i in f.indices step 3) tri(v[f[i]], v[f[i + 1]], v[f[i + 2]], ctr)
+        val nv = Array(v.size) { Vector3(v[it]).nor() }
+        for (i in f.indices step 3) triN(v[f[i]], v[f[i + 1]], v[f[i + 2]], nv[f[i]], nv[f[i + 1]], nv[f[i + 2]])
         return this
     }
 
@@ -151,9 +178,22 @@ class Geo {
             tri(topC, Vector3(a.x, y1, a.y), Vector3(b.x, y1, b.y), Vector3(cx, y1 - 1f, cz))
         }
         color(sideColor)
+        // нормали в вершинах — среднее соседних граней: корпус выглядит округлым
+        val sz = outline.size
+        val en = Array(sz) { i ->
+            val a = outline[i]; val b = outline[(i + 1) % sz]
+            val nx = b.y - a.y; val nz = -(b.x - a.x)
+            val v = Vector3(nx, 0f, nz).nor()
+            if (v.x * ((a.x + b.x) / 2 - cx) + v.z * ((a.y + b.y) / 2 - cz) < 0) v.scl(-1f)
+            v
+        }
+        val vn = Array(sz) { i -> Vector3(en[i]).add(en[(i - 1 + sz) % sz]).nor() }
         for (i in outline.indices) {
-            val a = outline[i]; val b = outline[(i + 1) % outline.size]
-            quad(Vector3(a.x, y0, a.y), Vector3(b.x, y0, b.y), Vector3(b.x, y1, b.y), Vector3(a.x, y1, a.y), center)
+            val k = (i + 1) % sz
+            val a = outline[i]; val b = outline[k]
+            if (en[i].dot(en[(i - 1 + sz) % sz]) > 0.6f && en[i].dot(en[k]) > 0.6f || sz > 12)
+                quadN(Vector3(a.x, y0, a.y), Vector3(b.x, y0, b.y), Vector3(b.x, y1, b.y), Vector3(a.x, y1, a.y), vn[i], vn[k], vn[k], vn[i])
+            else quad(Vector3(a.x, y0, a.y), Vector3(b.x, y0, b.y), Vector3(b.x, y1, b.y), Vector3(a.x, y1, a.y), center)
         }
         return this
     }

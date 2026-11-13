@@ -213,23 +213,23 @@ class SeaGame : ApplicationAdapter() {
                 cam.near = 1f
                 cam.far = 700f
                 resize(Gdx.graphics.width, Gdx.graphics.height)
-                modelBatch = ModelBatch()
+                modelBatch = Shaders.batch()
                 fx = Fx(cam, ui.softDisc, ui.white, ui.streak, ui.gull)
                 val sm = if (highQuality) 2048 else 1024
                 @Suppress("DEPRECATION")
-                sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 600f)
+                sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
                 // теневой проход со смещением глубины (убирает полосы «теневых акне»)
                 val dsCfg = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.Config()
                 val vs = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.getDefaultVertexShader()
                 val end = vs.lastIndexOf('}')
-                dsCfg.vertexShader = vs.substring(0, end) + "\n    gl_Position.z += 0.006 * gl_Position.w;\n}\n"
+                dsCfg.vertexShader = vs.substring(0, end) + "\n    gl_Position.z += 0.004 * gl_Position.w;\n}\n"
                 shadowBatch = ModelBatch(com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider(dsCfg))
                 env.set(ambient)
                 env.add(sunLight)
                 env.shadowMap = sunLight
                 env.add(fillLight)
                 env.add(seaBounce)
-                post = PostFx().also { it.scale = if (Gdx.app.type == Application.ApplicationType.Android) 0.8f else 1f }
+                post = PostFx().also { it.scale = 1f }
                 val cr = Random(5)
                 repeat(14) { clouds += floatArrayOf(cr.nextFloat() * 900 - 450, cr.nextFloat() * 900 - 450, 70f + cr.nextFloat() * 90, cr.nextFloat() * 360, cr.nextInt(2).toFloat()) }
                 env.set(fogAttr)
