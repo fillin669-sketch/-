@@ -350,26 +350,28 @@ object Models {
         val gl = u[2]
         val gunCol = when { gl >= 4 -> 0x1c1c1c; gl >= 2 -> 0xb5873a; else -> 0x2a2a2a }
         val ringCol = when { gl >= 4 -> 0xd4a017; gl >= 2 -> 0x8a6a2a; else -> 0x4a4a4a }
-        val gunLen = 1.6f + gl * 0.18f
-        val gunR = 0.28f + gl * 0.017f
+        // размер пушек — по размеру корабля, чтобы на шлюпе они не выглядели огромными
+        val gs = clamp(W / 7f, 0.6f, 1f)
+        val gunLen = (1.3f + gl * 0.1f) * gs
+        val gunR = (0.19f + gl * 0.012f) * gs
         for (sx in intArrayOf(-1, 1)) for (i in 0 until guns) {
             val gz = -L * 0.25f + L * 0.5f * i / max(1, guns - 1)
-            g.color(gunCol).push().at(sx * (W * 0.5f + gunLen * 0.25f), top + 0.15f, gz)
-                .rotZ(90f).cylinder(gunR, gunR * 1.3f, gunLen, 7).pop()
-            if (gl >= 1) g.color(ringCol).push().at(sx * (W * 0.5f + gunLen * 0.68f), top + 0.15f, gz).rotZ(90f).cylinder(gunR * 1.25f, gunR * 1.25f, 0.18f, 7).pop()
-            if (gl >= 2) g.color(0x5d4037).push().at(sx * (W * 0.42f), top - 0.25f, gz).box(0.7f, 0.35f, 0.8f).pop()
+            val hw = halfWidthAt(L, W, gz)
+            g.color(gunCol).push().at(sx * (hw + gunLen * 0.12f), top + 0.32f, gz)
+                .rotZ(90f).cylinder(gunR, gunR * 1.35f, gunLen, 7).pop()
+            if (gl >= 1) g.color(ringCol).push().at(sx * (hw + gunLen * 0.58f), top + 0.32f, gz).rotZ(90f).cylinder(gunR * 1.2f, gunR * 1.2f, 0.1f * gs, 7).pop()
+            if (gl >= 2) g.color(0x5d4037).push().at(sx * (hw - gunLen * 0.35f), top + 0.12f, gz).box(0.45f * gs, 0.25f * gs, 0.55f * gs).pop()
             if (gl >= 5) {
                 // нижняя батарейная палуба
-                val hw = halfWidthAt(L, W, gz)
-                g.color(0x1d1410).push().at(sx * (hw + 0.02f), top - H * 0.36f, gz).box(0.1f, 0.75f, 0.85f).pop()
-                g.color(gunCol).push().at(sx * (hw + 0.45f), top - H * 0.36f, gz).rotZ(90f).cylinder(gunR * 0.9f, gunR * 1.1f, 1.2f, 7).pop()
+                g.color(0x1d1410).push().at(sx * (hw + 0.02f), top - H * 0.36f, gz).box(0.1f, 0.55f * gs, 0.6f * gs).pop()
+                g.color(gunCol).push().at(sx * (hw + 0.25f * gs), top - H * 0.36f, gz).rotZ(90f).cylinder(gunR * 0.85f, gunR * 1.05f, 0.7f * gs, 7).pop()
             }
         }
         if (gl >= 4) {
             // вертлюжные пушки на носу и корме
             for (pz in floatArrayOf(-L * 0.4f, L * 0.42f)) for (sx in intArrayOf(-1, 1)) {
                 val hw = halfWidthAt(L, W, pz)
-                g.color(0xb5873a).push().at(sx * hw * 0.85f, top + 1.45f, pz).rotY(sx * 60f).rotZ(90f).cylinder(0.12f, 0.16f, 1.1f, 6).pop()
+                g.color(0xb5873a).push().at(sx * hw * 0.85f, top + 1.35f, pz).rotY(sx * 60f).rotZ(90f).cylinder(0.08f * gs, 0.11f * gs, 0.75f * gs, 6).pop()
                 g.color(0x3e2723).push().at(sx * hw * 0.85f, top + 1.0f, pz).box(0.12f, 0.8f, 0.12f).pop()
             }
         }
