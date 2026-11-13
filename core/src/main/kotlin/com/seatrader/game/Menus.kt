@@ -189,7 +189,8 @@ class Menus(private val g: SeaGame) {
             // узкий экран: длинное название вкладки чуть мельче
             val avail = (if (landscape) min(g.wDp * 0.5f, 540f) else g.wDp - 12f) / (if (i < 3 || chips.size <= 4) 3f else 4f) - 10f
             val tw = ui.measure(ui.small, name)
-            if (tw > avail - 26f) b.label.setFontScale(((avail - 26f) / tw).coerceAtLeast(0.66f))
+            // масштаб задаётся абсолютно, поэтому учитываем базовый масштаб шрифта (1/плотность экрана)
+            if (tw > avail - 26f) b.label.setFontScale(ui.small.data.scaleX * ((avail - 26f) / tw).coerceAtLeast(0.66f))
             b.onClick { sheetCollapsed = false; onChip(i) }
             tabs.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
             if (i == 2 && chips.size > 4) tabs.row()
