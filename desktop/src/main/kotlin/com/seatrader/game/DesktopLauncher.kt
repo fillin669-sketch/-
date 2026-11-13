@@ -96,6 +96,11 @@ class TestScript(private val g: SeaGame, private val out: String) {
 
     private fun step() {
         frame++
+        if (System.getenv("SEA_LOADSHOT") != null) {
+            if (g.state == SeaGame.State.LOADING) { if (frame == 12) shot("load12") }
+            else { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (base < 0) {
             if (g.state == SeaGame.State.LOADING) return
             base = frame
@@ -118,6 +123,12 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 40) { press("Капитаны") }
             if (f == 46) shot("g5_heroes")
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_SPLASH") != null) {
+            if (f == 5) { g.autoGfx = false; g.applyGfx(3); g.startPrologue(false, splash = true) }
+            if (f in listOf(150, 200, 260)) shot("splash$f")
+            if (f == 262) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
         if (System.getenv("SEA_PAINT") != null) {
@@ -585,6 +596,9 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private fun prologueTest(f: Int) {
         // сценка идёт сама; снимки ключевых кадров, в конце — повтор из паузы
         if (f % 60 == 0 && f <= 4800 && g.state == SeaGame.State.CUTSCENE) shot("p%04d".format(f))
+        // реплики листаются нажатием: «читаем» по 2.5 с каждую (кроме проверки, что сама не листается)
+        if (f == 300) log.append("без нажатий: кадр сценки ${g.prologue.debugIdx}\n")
+        if (f > 320 && f % 130 == 0 && g.state == SeaGame.State.CUTSCENE) { touch("down", g.wDp / 2, g.hDp / 2); touch("down", g.wDp / 2, g.hDp / 2) }
         if (f % 60 == 0) log.append("f=$f state=${g.state} ships=${g.ships.size} balls=${g.balls.size} fps=${Gdx.graphics.framesPerSecond}\n")
         if (f > 60 && g.state != SeaGame.State.CUTSCENE && done < 0) { done = f; shot("p_after"); log.append("после сценки: state=${g.state} ships=${g.ships.size}\n") }
         if (done > 0 && f == done + 20) press("Вступить")

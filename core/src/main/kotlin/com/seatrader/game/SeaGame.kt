@@ -347,6 +347,7 @@ class SeaGame : ApplicationAdapter() {
                 }
                 spawnGulls()
                 state = State.PLAY
+                hud.disposeSplash()
                 lastCrash?.let { t -> lastCrash = null; menus.showError(t) ; return@let }
                 if (state == State.DIALOG) Unit
                 else if (guilds.guild < 0) { if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else { checkDaily(); checkJournal() }
@@ -2080,14 +2081,14 @@ class SeaGame : ApplicationAdapter() {
     private val cutSaved = FloatArray(4)
 
     /** Запустить сценки предыстории ([first] — новая игра: после неё выбор фракции). */
-    fun startPrologue(first: Boolean) {
+    fun startPrologue(first: Boolean, splash: Boolean = false) {
         stage.clear()
         joyActive = false; aimActive = false
         cutBackup.clear(); cutBackup.addAll(ships)
         ships.clear(); balls.clear()
         cutSaved[0] = dayTime; cutSaved[1] = stormLevel; cutSaved[2] = stormTarget; cutSaved[3] = living.fogK
         state = State.CUTSCENE
-        prologue.start(first)
+        if (splash) prologue.startSplash() else prologue.start(first)
     }
 
     fun endPrologue(first: Boolean) {
@@ -2364,6 +2365,7 @@ class SeaGame : ApplicationAdapter() {
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
             batch.projectionMatrix = hudCam.combined
             batch.begin(); hud.drawLoading(); batch.end()
+            afterRender?.invoke()
             return
         }
         if (state == State.PLAY) update(dt) else if (state == State.CUTSCENE) cutsceneUpdate(dt) else now += dt * 0.3f

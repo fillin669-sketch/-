@@ -100,17 +100,56 @@ class Hud(private val g: SeaGame) {
         return (g.wDp - 10 - mapR) to (top - 10 - mapR)
     }
 
+    private var splash: com.badlogic.gdx.graphics.Texture? = null
+    private var splashFail = false
+    private var splashT = 0f
+
+    /** Заставка загрузки: эскадра под парусами на закате (кадр из самой игры). */
     fun drawLoading() {
         val b = g.batch
         val w = g.wDp; val h = g.hDp
-        ui.text(b, ui.huge, "Пираты Семи Ветров", 0f, h * 0.58f, Align.center, w)
-        ui.text(b, ui.small, "Поднимаем паруса…", 0f, h * 0.58f - 44, Align.center, w, c = rgb(0x9cc3e6))
+        splashT += min(0.05f, com.badlogic.gdx.Gdx.graphics.deltaTime)
+        if (splash == null && !splashFail) splash = try {
+            com.badlogic.gdx.graphics.Texture(com.badlogic.gdx.Gdx.files.internal("splash.jpg")).also {
+                it.setFilter(com.badlogic.gdx.graphics.Texture.TextureFilter.Linear, com.badlogic.gdx.graphics.Texture.TextureFilter.Linear)
+            }
+        } catch (_: Throwable) { splashFail = true; null }
+        val tex = splash
+        if (tex != null) {
+            // картинка во весь экран с медленным наездом камеры
+            val zoom = 1.04f + splashT * 0.006f
+            val k = maxOf(w / tex.width, h / tex.height) * zoom
+            val iw = tex.width * k; val ih = tex.height * k
+            b.color = Color.WHITE
+            b.draw(tex, (w - iw) / 2, (h - ih) / 2 - splashT * 0.4f, iw, ih)
+            // затемнение сверху (под название) и снизу (под полосу загрузки)
+            val gr = gradient()
+            b.color = cTmp2.set(0.02f, 0.06f, 0.11f, 0.75f)
+            b.draw(gr, 0f, h, w, -h * 0.32f)
+            b.color = cTmp2.set(0.02f, 0.06f, 0.11f, 0.85f)
+            b.draw(gr, 0f, 0f, w, h * 0.24f)
+        } else ui.icon(b, ui.sails, w / 2, h * 0.6f, 110f, 110f, 0f, c(0xffffff, 0.9f))
+        val ty = h - g.safeTop - h * 0.08f
+        ui.text(b, ui.huge, "Пираты", 0f, ty, Align.center, w, c = rgb(0xffe082))
+        ui.text(b, ui.huge, "Семи Ветров", 0f, ty - 48f, Align.center, w, c = rgb(0xffe082))
         val bw = min(260f, w - 60)
-        ui.pill(b, w / 2 - bw / 2, h * 0.45f, bw, 12f, c(0x0b2238))
-        ui.pill(b, w / 2 - bw / 2, h * 0.45f, max(12f, bw * g.loadProgress), 12f, c(0x3ddc84))
-        ui.icon(b, ui.sails, w / 2, h * 0.7f, 110f, 110f, 0f, c(0xffffff, 0.9f))
+        val by = g.safeBottom + h * 0.08f
+        ui.text(b, ui.small, "Поднимаем паруса…", 0f, by + 34f, Align.center, w, c = rgb(0xd7e7f5))
+        ui.pill(b, w / 2 - bw / 2, by, bw, 12f, c(0x0b2238, 0.9f))
+        ui.pill(b, w / 2 - bw / 2, by, max(12f, bw * g.loadProgress), 12f, c(0x3ddc84))
         b.color = Color.WHITE
     }
+
+    private var grad: com.badlogic.gdx.graphics.Texture? = null
+    /** Плавный вертикальный градиент: сверху прозрачно, книзу — сплошной цвет. */
+    private fun gradient(): com.badlogic.gdx.graphics.Texture = grad ?: run {
+        val pm = com.badlogic.gdx.graphics.Pixmap(1, 64, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888)
+        for (y in 0 until 64) { pm.setColor(1f, 1f, 1f, y / 63f); pm.drawPixel(0, y) }
+        com.badlogic.gdx.graphics.Texture(pm).also { pm.dispose(); it.setFilter(com.badlogic.gdx.graphics.Texture.TextureFilter.Linear, com.badlogic.gdx.graphics.Texture.TextureFilter.Linear); grad = it }
+    }
+
+    /** После загрузки заставка не нужна — освобождаем память. */
+    fun disposeSplash() { splash?.dispose(); splash = null; splashFail = true; grad?.dispose(); grad = null }
 
     private fun bar(x: Float, y: Float, w: Float, h: Float, frac: Float, color: Int) {
         val b = g.batch

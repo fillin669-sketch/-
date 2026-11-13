@@ -76,6 +76,9 @@ class Ui(val scale: Float) : Disposable {
                 minFilter = Texture.TextureFilter.Linear
                 magFilter = Texture.TextureFilter.Linear
                 kerning = true
+                // все буквы — на одной странице: со второй страницы крупный шрифт на телефонах терял буквы
+                val page = if (size > 52) 2048 else 1024
+                packer = com.badlogic.gdx.graphics.g2d.PixmapPacker(page, page, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888, 2, false)
             }
             return gen.generateFont(p).also {
                 it.data.setScale(1f / scale)

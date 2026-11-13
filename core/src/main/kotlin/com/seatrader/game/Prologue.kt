@@ -30,6 +30,7 @@ class Prologue(private val g: SeaGame) {
         private set
     private var first = true
     private var idx = 0
+    val debugIdx get() = idx
     private var t = 0f
     private var total = 0f
     private var fade = 1f
@@ -56,8 +57,28 @@ class Prologue(private val g: SeaGame) {
 
     private val faces = HashMap<String, TextureRegion?>()
 
+    /** Кадр для заставки загрузки (снимается на ПК): эскадра на закате, без интерфейса. */
+    var splash = false
+        private set
+
+    fun startSplash() {
+        start(false)
+        splash = true
+        shots.clear(); idx = 0; t = 0f; fade = 0f; bars = 0f
+        g.cutClear()
+        g.dayTime = 0.476f; g.stormLevel = 0f; g.stormTarget = 0f; g.living.fogK = 0f
+        val m = g.cutShip("«Гром»", MIHAEL_LOOK.copy(flagSize = 1), Faction.PLAYER, cx, cz, H_EAST - 0.25f, 15f, 6)
+        val f = g.cutShip("«Попутный ветер»", FIN_LOOK, Faction.PLAYER, cx - 34f, cz + 26f, H_EAST - 0.25f, 15f, 3)
+        val h = g.cutShip("«Путеводная звезда»", HOPE_LOOK, Faction.PLAYER, cx - 30f, cz - 30f, H_EAST - 0.25f, 15f, 4)
+        for (sh in listOf(m, f, h)) place(sh, sh.x, sh.z, sh.h, 7f, 0.5f)
+        shots += Shot("splash", "", 999f, true, { }, { for (sh in listOf(m, f, h)) sh.desired = H_EAST - 0.25f },
+            { _ -> look(m.x + 40f, 5f, m.z + 36f, m.x + 2f, 10f, m.z - 2f) })
+        snap = true
+    }
+
     fun start(first: Boolean) {
         this.first = first
+        splash = false
         active = true
         idx = -1; total = 0f; fade = 1f; fadeOut = false; bars = 0f; battle = false
         boat = null; fin = null; mihael = null; hope = null; gull = null
@@ -182,7 +203,7 @@ class Prologue(private val g: SeaGame) {
                 val b = boat ?: return@Shot
                 place(harpoon, b.x - 12f, b.z - 70f, PI.toFloat(), 4f, 0.3f)
             },
-            { _ -> boat?.let { steer(harpoon, it.x, it.z, 0.3f) } },
+            { _ -> boat?.let { steer(harpoon, it.x, it.z, if (hypot(harpoon.x - it.x, harpoon.z - it.z) < 32f) 0f else 0.3f) } },
             { tt ->
                 val b = boat ?: merchant
                 look(b.x + 4f, 4.2f + tt * 0.1f, b.z + 17f, b.x - 3f, 3.5f + tt * 0.5f, b.z - 24f)
@@ -342,11 +363,13 @@ class Prologue(private val g: SeaGame) {
         s.tick(t)
         s.cam(t)
         // смена на рассвет и финал — через затемнение
-        val nextFade = idx + 1 < shots.size && (idx + 1 == 9) || idx == shots.size - 1
-        fadeOut = nextFade && t > s.dur - 1f
-        fade = if (fadeOut) min(1f, fade + dt * 1.1f) else maxOf(0f, fade - dt * 0.9f)
+        // реплики листаются только нажатием; смена места и финал — через затемнение
+        if (fadeOut) {
+            fade = min(1f, fade + dt * 1.4f)
+            if (fade >= 1f) { fadeOut = false; next(); return }
+        } else fade = maxOf(0f, fade - dt * 0.9f)
         // кровавая луна над ночным морем
-        if (idx < 9) {
+        if (idx < 9 && !splash) {
             val dx = camL.x - camP.x; val dz = camL.z - camP.z
             val l = hypot(dx, dz).coerceAtLeast(0.01f)
             val mx = camP.x + dx / l * 320f + dz / l * 90f; val mz = camP.z + dz / l * 320f - dx / l * 90f
@@ -354,7 +377,6 @@ class Prologue(private val g: SeaGame) {
             g.fx.glow(mx, camP.y + 120f, mz, 110f, moonCol.set(0.9f, 0.15f, 0.1f, 0.25f))
             g.living.fogK = 0.3f
         }
-        if (t >= s.dur) next()
     }
     private val moonCol = Color()
 
@@ -397,11 +419,11 @@ class Prologue(private val g: SeaGame) {
         val r = skipRect()
         if (x > r[0] - 10 && x < r[0] + r[2] + 10 && y > r[1] - 10 && y < r[1] + r[3] + 10) { g.sfx.play("click"); finish(); return }
         val s = shots[idx]
+        if (fadeOut) return
         if (typed(s) < s.text.length) { t = maxOf(t, s.text.length / 42f + 0.01f); return }
         // реплику можно пролистать, но не раньше чем через полсекунды
         if (t > 0.5f) {
-            if (idx + 1 == 9 && fade < 0.9f) { t = maxOf(t, s.dur - 1f); return }
-            next()
+            if (idx + 1 == 9 || idx == shots.size - 1) fadeOut = true else next()
         }
     }
 
@@ -413,7 +435,7 @@ class Prologue(private val g: SeaGame) {
     }
 
     fun draw() {
-        if (!active || idx !in shots.indices) return
+        if (!active || idx !in shots.indices || splash) return
         val b = g.batch; val ui = g.ui
         val w = g.wDp; val h = g.hDp
         val s = shots[idx]
@@ -432,7 +454,10 @@ class Prologue(private val g: SeaGame) {
         val r = skipRect()
         ui.pill(b, r[0], r[1], r[2], r[3], c(0x000000, 0.55f))
         ui.text(b, ui.small, "Пропустить ▶", r[0], r[1] + r[3] * 0.5f + 7f, Align.center, r[2], c = c(0xffffff, 0.85f))
-        if (s.text.isEmpty()) { b.color = Color.WHITE; return }
+        if (s.text.isEmpty()) {
+            if (t > 1.2f && !fadeOut) ui.text(b, ui.mid, "Нажмите, чтобы начать", 0f, barH + 40f + g.safeBottom, Align.center, w, c = c(0xffffff, 0.55f + 0.35f * sin(total * 3f)))
+            b.color = Color.WHITE; return
+        }
         // субтитр с портретом
         val portrait = s.who.isNotEmpty()
         val bw = min(w - 20f, 640f)
@@ -443,7 +468,7 @@ class Prologue(private val g: SeaGame) {
         val shown = s.text.substring(0, typed(s))
         val lay = com.badlogic.gdx.graphics.g2d.GlyphLayout(ui.small, s.text, Color.WHITE, tw, Align.left, true)
         val nameH = if (portrait) 24f else 0f
-        val boxH = maxOf(ph + pad * 2, lay.height + nameH + pad * 2 + 6f)
+        val boxH = maxOf(ph + pad * 2 + 16f, lay.height + nameH + pad * 2 + 22f)
         val bx = (w - bw) / 2; val by = 10f + g.safeBottom
         ui.round(b, bx, by, bw, boxH, c(0x081723, 0.86f))
         val top = by + boxH - pad
@@ -466,8 +491,8 @@ class Prologue(private val g: SeaGame) {
         }
         ui.text(b, ui.small, shown, tx, top - nameH, Align.left, tw, true,
             c = if (portrait) c(0xffffff) else c(0xe0d6c8))
-        if (typed(s) >= s.text.length && (total * 2.2f).toInt() % 2 == 0)
-            ui.text(b, ui.small, "▼", bx + bw - pad - 14f, by + pad + 12f, c = c(0xffffff, 0.7f))
+        if (typed(s) >= s.text.length && t > 0.5f && !fadeOut)
+            ui.text(b, ui.small, "нажмите ▼", bx + bw - pad - 100f, by + pad + 6f, Align.right, 92f, c = c(0xffffff, 0.45f + 0.35f * sin(total * 4f)))
         b.color = Color.WHITE
     }
 
