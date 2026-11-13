@@ -467,7 +467,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         step("крепость", 300) { val f0 = g.systems.fortresses.first(); tp(f0.x + f0.r + 60f, f0.z) }
         step("охотник", 200) { tp(600f, 600f); lv.acceptBounty(1) }
         // гибель и возрождение
-        step("гибель", 120) { if (g.state != SeaGame.State.PLAY) g.menus.close(); tp(200f, 200f); val p = g.player!!; log.append("перед гибелью: state=${g.state} hp=${p.hp} sinking=${p.sinking}\n"); g.damage(p, p.hp + 10f, null, false); log.append("после урона: hp=${p.hp} sinking=${p.sinking} таймер=${g.deathTimer}\n") }
+        step("гибель", 120) { if (g.state != SeaGame.State.PLAY) g.menus.close(); tp(200f, 200f); val p = g.player!!; log.append("перед гибелью: state=${g.state} hp=${p.hp} sinking=${p.sinking}\n"); g.damage(p, p.hp * 2f + 10f, null, false); log.append("после урона: hp=${p.hp} sinking=${p.sinking} таймер=${g.deathTimer}\n") }
         step("гибель", 5) { if (g.state != SeaGame.State.DEAD) issue("нет экрана гибели: ${g.state} hp=${g.player?.hp} тонет=${g.player?.sinking} таймер=${g.deathTimer} окна=${g.stage.root.children.size}"); press("Вернуться") }
         step("гибель", 30) { if (g.state != SeaGame.State.PLAY || g.player!!.sinking) issue("не возродились: ${g.state}") }
         // сохранение
