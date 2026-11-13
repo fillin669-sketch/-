@@ -340,7 +340,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         step("абордаж", 40) { tp(350f, -350f); g.player!!.h = 0f; e2 = spawnSide("sloop", 30f).also { it.hp = it.maxHp * 0.3f } }
         step("абордаж", 90) { val t = g.systems.boardTarget; if (t == null) issue("нет кнопки абордажа рядом с ослабленным пиратом") else g.systems.throwGrapples(t) }
         step("абордаж", 110) { }
-        step("абордаж", 10) { if (g.state != SeaGame.State.DIALOG) issue("абордаж не начался: ${g.state}") }
+        step("абордаж", 10) { if (g.state != SeaGame.State.DIALOG) issue("абордаж не начался: ${g.state} цель hp=${e2?.hp} тонет=${e2?.sinking} крюки=${g.systems.grappleTarget != null}") }
         for (k in 0..2) step("абордаж", 25) { press("Удар") }
         step("абордаж", 15) { for (b in listOf("Захватить", "Разграбить", "Продолжить")) if (findButton(b) != null) { press(b); break } }
         step("абордаж", 10) { if (g.state != SeaGame.State.PLAY) { issue("после абордажа не вернулись в игру: ${g.state}"); g.menus.close() } }

@@ -806,7 +806,7 @@ class Systems(private val g: SeaGame) {
                 gt.vx = -dx / d * pull * 0.7f; gt.vz = -dz / d * pull * 0.7f
                 p.vx = dx / d * pull * 0.3f; p.vz = dz / d * pull * 0.3f
             } else { gt.vx *= 0.8f; gt.vz *= 0.8f; p.vx *= 0.8f; p.vz *= 0.8f }
-            if (gt.sinking || !g.ships.contains(gt)) { grappleTarget = null; return }
+            if (gt.sinking || !g.ships.contains(gt)) { grappleTarget = null; g.toast("Абордаж сорван", 1.4f); return }
             if (grappleT > 1.4f && d < want + 4f || grappleT > 3f) {
                 grappleTarget = null
                 g.menus.showBoarding(gt)
@@ -821,7 +821,7 @@ class Systems(private val g: SeaGame) {
             val d = hypot(s.x - p.x, s.z - p.z)
             if (!boardHintShown && d < 160) {
                 boardHintShown = true
-                g.toast("Враг ослаблен — его можно взять на абордаж!\nПодплывите ближе 30 м и жмите «Абордаж!»", 3.5f)
+                g.toast("Враг ослаблен — его можно взять на абордаж!\nПодплывите ближе 30 м и жмите «Абордаж!»\nВблизи автоогонь его не добивает — добить можно прицелом", 4.5f)
             }
             if (d > p.radius + s.radius + 30) continue
             if (hypot(s.vx - p.vx, s.vz - p.vz) > 14) continue

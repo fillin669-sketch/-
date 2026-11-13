@@ -1085,6 +1085,8 @@ class SeaGame : ApplicationAdapter() {
                 if (o.sinking) continue
                 // по кораблю, который берём на абордаж, не стреляем
                 if (o === systems.grappleTarget) continue
+                // автоогонь не добивает ослабленного врага вплотную — даём взять его на абордаж
+                if (s === p && systems.boardable(o) && hypot(o.x - s.x, o.z - s.z) < 45f) continue
                 if (mode == 1 && o.faction != Faction.PIRATE) continue
                 if (mode == 2 && !((o.faction == Faction.PLAYER || o.type == "merchant" || (o.type == "navy" && o.faction == Faction.NEUTRAL)) && !(o === p && p.safe))) continue
                 val dx = o.x - s.x; val dz = o.z - s.z; val d = hypot(dx, dz)
@@ -1254,6 +1256,8 @@ class SeaGame : ApplicationAdapter() {
     fun damage(s: Ship, amount: Float, src: Ship?, ram: Boolean, silent: Boolean = false) {
         if (s.sinking) return
         val amount = if (s.trait == "armored") amount * 0.6f else amount
+        // корабль на крюках не тонет до абордажной схватки (горение, ядра в полёте)
+        if (s === systems.grappleTarget && s.hp - amount < 1f) { s.hp = 1f; return }
         s.hp -= amount
         s.lastHit = now
         if (s.faction == Faction.PLAYER || src?.faction == Faction.PLAYER) combatT = 8f
