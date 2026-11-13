@@ -6,7 +6,9 @@ import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Touchable
+import com.badlogic.gdx.scenes.scene2d.ui.Button
 import com.badlogic.gdx.scenes.scene2d.ui.Image
+import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Slider
 import com.badlogic.gdx.scenes.scene2d.ui.Table
@@ -58,6 +60,20 @@ class Menus(private val g: SeaGame) {
         it.background = ui.flat(0x05141f, 0.72f)
         it.touchable = Touchable.enabled
         stage.addActor(it)
+    }
+
+    /** Список в прокрутке строго по ширине окна: длинные строки переносятся, а не раздвигают карточки за края. */
+    private fun fitList(content: Table, panelW: Float) {
+        val cw = panelW - 28f - 6f
+        for (cell in content.cells) cell.width(cw).minWidth(0f)
+        fun walk(t: Table) {
+            for (cell in t.cells) {
+                val a = cell.actor
+                if (a is Label && !a.wrap && cell.prefWidthValue !is com.badlogic.gdx.scenes.scene2d.ui.Value.Fixed) { a.wrap = true; cell.growX().minWidth(0f) }
+                else if (a is Table && a !is Button) { cell.minWidth(0f); walk(a) }
+            }
+        }
+        for (cell in content.cells) (cell.actor as? Table)?.let { walk(it) }
     }
 
     private fun panelTable() = Table().also { it.background = ui.panel(0x10304d); it.pad(14f) }
@@ -670,7 +686,7 @@ class Menus(private val g: SeaGame) {
         rc.add(priceButton("Откуп пиратам 300", 0, g.coins >= 300).also { it.onClick { lv.tribute(); refreshAny() } }).growX().height(46f).padTop(6f).row()
         content.add(rc).growX().padBottom(10f).row()
         val mc = card(0x3e2a1a)
-        mc.add(ui.label("Дух команды: ${g.extras.morale.roundToInt()} — ${g.extras.moraleLabel()}", ui.mid, rgb(g.extras.moraleColor()), wrap = true)).growX().row()
+        mc.add(ui.label("Дух команды: ${g.extras.morale.roundToInt()} — команда ${g.extras.moraleLabel()}", ui.mid, rgb(g.extras.moraleColor()), wrap = true)).growX().row()
         mc.add(Bar(ui, g.extras.morale / 100f, g.extras.moraleColor())).growX().height(14f).padTop(4f).row()
         mc.add(ui.label("Победы, добыча, песни и порт поднимают дух; поражения, шторма и долгое плавание без добычи — опускают. Бодрая команда быстрее заряжает пушки и сильнее в абордаже, а при упадке может взбунтоваться.",
             ui.small, rgb(0xd7ccc8), wrap = true)).growX().padTop(4f).row()
@@ -1057,6 +1073,7 @@ class Menus(private val g: SeaGame) {
             c.add(b).growX().height(48f).padTop(8f).row()
             content.add(c).width(cardW).minWidth(0f).padBottom(10f).row()
         }
+        fitList(content, min(g.wDp - 16, 460f))
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         if (change) panel.add(ui.blue("Назад").also { it.onClick { close() } }).growX().height(46f).padTop(8f).row()
@@ -1171,14 +1188,16 @@ class Menus(private val g: SeaGame) {
             panel.add(ui.label(target.name, ui.mid, rgb(0xffcdd2), align = Align.center)).growX().padBottom(6f).row()
             fun crewRow(name: String, v: Float, max: Float, col: Int) {
                 val r = Table()
-                r.add(ui.label(name, ui.small, rgb(0xcfe3f7))).width(92f).left()
+                // ширина подписи по самому длинному названию: полоска не наезжает на текст
+                val nameW = maxOf(ui.measure(ui.small, "Ваши бойцы"), ui.measure(ui.small, "Пираты")) + 10f
+                r.add(ui.label(name, ui.small, rgb(0xcfe3f7))).width(nameW).left()
                 r.add(Bar(ui, v / max, col)).growX().height(16f).padRight(6f)
                 r.add(ui.label("${v.roundToInt()}", ui.small, align = Align.right)).width(36f).right()
                 panel.add(r).growX().padTop(2f).row()
             }
             crewRow("Ваши бойцы", mine, max(mineStart, enemyStart), 0x3ddc84)
             crewRow("Пираты", theirs, max(mineStart, enemyStart), 0xff5a5f)
-            panel.add(ui.label("Раунд ${min(round + 1, 3)} из 3 · дух команды: ${g.extras.moraleLabel()}", ui.small, rgb(0xffc93c), align = Align.center)).growX().padTop(6f).row()
+            panel.add(ui.label("Раунд ${min(round + 1, 3)} из 3 · команда ${g.extras.moraleLabel()}", ui.small, rgb(0xffc93c), align = Align.center)).growX().padTop(6f).row()
             panel.add(ui.label(log, ui.small, rgb(0xfff3e0), wrap = true, align = Align.center)).growX().pad(6f, 0f, 6f, 0f).row()
             panel.add(ui.label(tacticHints[hint], ui.mid, rgb(0xffab91), wrap = true, align = Align.center)).growX().padBottom(8f).row()
             panel.add(ui.label("Натиск сильнее залпа · залп сильнее обороны · оборона сильнее натиска", ui.small, rgb(0x90a4ae), wrap = true, align = Align.center)).growX().padBottom(8f).row()
@@ -1361,6 +1380,7 @@ class Menus(private val g: SeaGame) {
         // по ширине панели: длинные описания артефактов не раздвигают окно
         val cw = min(g.wDp - 16, 460f) - 34f
         for (cell in content.cells) cell.width(cw).minWidth(0f)
+        fitList(content, min(g.wDp - 16, 460f))
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
@@ -1386,7 +1406,7 @@ class Menus(private val g: SeaGame) {
             c.add(img).size(120f, 160f).padRight(10f).top()
             val t = Table()
             t.add(ui.label(h.name, ui.big)).left().row()
-            t.add(ui.label(h.title.uppercase(), ui.small, rgb(0xffc93c))).left().padBottom(4f).row()
+            t.add(ui.label(h.title, ui.small, rgb(0xffc93c))).left().padBottom(4f).row()
             for (pk in h.perks) t.add(ui.label("✓ $pk", ui.small, rgb(0x3ddc84), wrap = true)).growX().left().row()
             t.add(ui.label(h.story, ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(4f).row()
             c.add(t).growX().top().row()
@@ -1408,6 +1428,7 @@ class Menus(private val g: SeaGame) {
             c.add(btn).colspan(2).growX().height(48f).padTop(8f).row()
             content.add(c).growX().padBottom(10f).row()
         }
+        fitList(content, min(g.wDp - 16, 480f))
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         if (!first) panel.add(ui.blue("Назад").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }).growX().height(48f).padTop(8f).row()
@@ -1434,6 +1455,7 @@ class Menus(private val g: SeaGame) {
             c.add(Bar(ui, v / a.goal.toFloat(), if (done) 0x3ddc84 else 0xffc93c)).growX().height(12f).padTop(4f).row()
             content.add(c).growX().padBottom(8f).row()
         }
+        fitList(content, min(g.wDp - 16, 460f))
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
@@ -1666,7 +1688,7 @@ class Menus(private val g: SeaGame) {
         val sections = listOf(
             "Управление" to "Коснитесь экрана в любом месте и тяните палец: корабль поплывёт туда. Кнопка с парусами слева вверху — рывок. По ветру (стрелка у мини-карты) корабль идёт быстрее.",
             "Бой" to "Пушки стреляют сами, когда враг сбоку от корабля. Кнопка с прицелом: зажмите и тяните к цели, отпустите — прицельный залп (сильнее на 25%). Кнопки справа — особые ядра, ремонт и купленное оружие.",
-            "Абордаж" to "1) Повредите пирата до половины здоровья: над ним появятся красные скрещённые сабли.\n2) Подплывите ближе 30 м — внизу загорится кнопка «Абордаж!».\n3) Нажмите её: команда бросит крюки и стянет корабли.\n4) В схватке жмите «Удар!», когда жёлтый маркер в зелёной зоне. 2 удачных удара из 3 — победа: корабль можно забрать во флот или разграбить.",
+            "Абордаж" to "Ослабьте пирата до половины прочности, подойдите вдоль его борта с той же скоростью — появится кнопка «Абордаж!». В схватке 3 раунда: натиск сильнее залпа мушкетов, залп сильнее обороны, оборона сильнее натиска. Перед раундом видно, что затевают пираты (не всегда верно). После победы корабль можно взять во флот, разграбить, отпустить или потопить.",
             "Карта" to "Нажмите на мини-карту, чтобы открыть карту мира. Тёмные облака — места, где вы ещё не были. Коснитесь места и выберите «Проложить курс» — на экране появится голубая стрелка.",
             "Порты" to "Заплывите в белый круг у причала. В порту: ремонт, новые корабли, улучшения, арсенал, рынок, наёмники и покраска.",
             "Торговля" to "На рынке покупайте товар там, где он «дёшево», и продавайте там, где «дорого». Трюм зависит от корабля.",
@@ -1676,7 +1698,6 @@ class Menus(private val g: SeaGame) {
             "Своя база" to "Остров Надежды рядом с Гаванью Ветров (⚑ на карте). Заплывите в круг у острова, основайте базу и стройте: плантация и таверна приносят доход, склад копит деньги и расширяет трюм, батарея защищает, верфь удешевляет улучшения.",
             "Флот" to "Если есть наёмники, слева появляются кнопки приказов: ⚓ колонна (корабли идут точно по вашему следу и стреляют бортами на ходу), ⚔ атака (флот бьёт врагов в большом радиусе), ↺ отход (плотная колонна).",
             "Высадки и клады" to "Остановитесь у дикого острова — появится кнопка «Высадиться». На островах — тайники, засады и куски карты. Три куска дают карту сокровищ. У колонн затонувших храмов можно нырнуть.",
-            "Абордаж" to "Ослабьте пирата до половины прочности, подойдите вдоль его борта с той же скоростью — появится кнопка «Абордаж!». В схватке 3 раунда: натиск сильнее залпа мушкетов, залп сильнее обороны, оборона сильнее натиска. Перед раундом видно, что затевают пираты (не всегда верно). После победы корабль можно взять во флот, разграбить, отпустить или потопить.",
             "Пиратская фракция" to "Игрок Берегового братства может нападать на любые суда: купцов, рыбаков и патрули флота. Автоогонь бьёт только пиратов — мирное судно атакуйте прицельным залпом, после первого попадания по нему стреляет и автоогонь. Купцы удирают, патрули отвечают огнём. Добыча богаче, но торговцы и флот это запомнят.",
             "Белый флаг" to "Если корабль почти потоплен, появится кнопка «Белый флаг»: откупитесь монетами или сдайтесь, отдав груз. Охотники за головами и призраки выкуп не берут. Почти потопленные пираты тоже иногда сдаются — подплывите и примите сдачу.",
             "Потерянный груз" to "После гибели груз и часть монет остаются на месте крушения (отметка на карте). Обломки стерегут падальщики. Если погибнете снова, не подобрав их, груз пропадёт.",
@@ -1691,6 +1712,7 @@ class Menus(private val g: SeaGame) {
             c.add(ui.label(d, ui.small, Color.WHITE, wrap = true)).growX().padTop(4f).row()
             content.add(c).growX().padBottom(8f).row()
         }
+        fitList(content, min(g.wDp - 16, 480f))
         val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
         panel.add(scroll).grow().row()
         panel.add(ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }).growX().height(48f).padTop(8f).row()

@@ -103,8 +103,18 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (System.getenv("SEA_PROLOGUE") != null) { prologueTest(f); return }
         if (System.getenv("SEA_GUILDUI") != null) {
             if (f == 10) shot("g1_guild_select")
-            if (f == 12) { press("Вступить"); g.openPause() }
-            if (f == 20) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            if (f == 12) { press("Вступить") }
+            if (f == 14) { press("Забрать") }
+            if (f == 15) { g.menus.close(); g.openPause() }
+            if (f == 16) press("Достижения")
+            if (f == 22) shot("g2_ach")
+            if (f == 24) { g.menus.close(); g.openPause(); press("Как играть") }
+            if (f == 30) shot("g3_help")
+            if (f == 32) { g.menus.close(); g.openPause(); press("Капитан") }
+            if (f == 38) shot("g4_captain")
+            if (f == 40) { press("Капитаны") }
+            if (f == 46) shot("g5_heroes")
+            if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
         if (System.getenv("SEA_CRASH") != null) {

@@ -14,7 +14,7 @@
         <activity
             android:name=".AndroidLauncher"
             android:exported="true"
-            android:screenOrientation="sensor"
+            android:screenOrientation="sensorPortrait"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
