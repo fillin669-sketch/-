@@ -38,6 +38,7 @@ class PostFx : Disposable {
     /** Доля разрешения экрана для сцены (на телефоне меньше 1 — экономит видеокарту). */
     var scale = 1f
     private var outW = 0
+    private var maxTex = 0
     private var outH = 0
 
     private fun program(frag: String): ShaderProgram {
@@ -49,7 +50,13 @@ class PostFx : Disposable {
 
     private fun ensure() {
         outW = Gdx.graphics.backBufferWidth; outH = Gdx.graphics.backBufferHeight
-        val nw = (outW * scale).toInt().coerceAtLeast(64); val nh = (outH * scale).toInt().coerceAtLeast(64)
+        if (maxTex == 0) {
+            val buf = com.badlogic.gdx.utils.BufferUtils.newIntBuffer(16)
+            Gdx.gl.glGetIntegerv(GL20.GL_MAX_TEXTURE_SIZE, buf)
+            maxTex = buf.get(0).coerceAtLeast(2048)
+        }
+        val sc = minOf(scale, maxTex.toFloat() / outW, maxTex.toFloat() / outH)
+        val nw = (outW * sc).toInt().coerceAtLeast(64); val nh = (outH * sc).toInt().coerceAtLeast(64)
         if (nw == w && nh == h && scene != null) return
         dispose(false)
         w = nw; h = nh

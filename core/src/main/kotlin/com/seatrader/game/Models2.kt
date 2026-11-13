@@ -62,8 +62,7 @@ object Models2 {
                 g.mat(-1)
                 g.color(0xa1442b).push().at(0f, 5.2f * s, 0f).cone(5.6f * s, 3f * s, 4).pop()
                 g.color(0x5d4037).push().at(0f, 1.4f, 3.05f * s).box(1.6f, 2.8f, 0.1f).pop()
-                g.color(0xffd27a)
-                for (sx in intArrayOf(-1, 1)) g.push().at(sx * 2.2f * s, 2.6f * s, 3.05f * s).box(1.1f, 1f, 0.1f).pop()
+                for (sx in intArrayOf(-1, 1)) g.push().at(sx * 2.2f * s, 2.6f * s, 3.05f * s).window(1.1f, 1f).pop()
                 g.color(0x3e2723).push().at(3.9f * s, 3f, 3.2f * s).box(0.15f, 0.15f, 1.6f).pop()
                 g.color(0xc9a227).push().at(3.9f * s, 2.3f, 3.9f * s).box(0.12f, 1.2f, 1.2f).pop()
                 if (lvl >= 2) { g.color(0x8d6e4a); for (k in 0..1) g.push().at(-1.5f + k * 3f, 0.5f, 5.2f * s).cylinder(0.9f, 0.9f, 0.15f, 8).pop() }
@@ -268,9 +267,8 @@ object Models2 {
                 roof(g, 0f, y + 7.2f, -0.5f, 11.8f, 7f, 0xa1442b)
                 g.color(0x9e9e9e).push().at(3.5f, y + 9.5f, -2f).box(1.2f, 3f, 1.2f).pop()
                 g.color(0x3e2723).push().at(0f, y + 1.5f, 3.05f).box(1.8f, 3f, 0.1f).pop()
-                g.color(0xffcf6b)
-                for (sx in intArrayOf(-1, 1)) { g.push().at(sx * 3f, y + 2f, 3.05f).box(1.6f, 1.3f, 0.1f).pop(); g.push().at(sx * 3f, y + 5.4f, 3.05f).box(1.4f, 1.1f, 0.1f).pop() }
-                g.push().at(0f, y + 5.4f, 3.05f).box(1.4f, 1.1f, 0.1f).pop()
+                for (sx in intArrayOf(-1, 1)) { g.push().at(sx * 3f, y + 2f, 3.05f).window(1.6f, 1.3f).pop(); g.push().at(sx * 3f, y + 5.4f, 3.05f).window(1.4f, 1.1f).pop() }
+                g.push().at(0f, y + 5.4f, 3.05f).window(1.4f, 1.1f).pop()
                 // вывеска с кружкой
                 g.color(0x3e2723).push().at(6.2f, y + 4.2f, 3.4f).box(1.8f, 0.2f, 0.2f).pop()
                 g.color(0x6d4c2f).push().at(6.6f, y + 3.1f, 3.4f).box(0.2f, 1.8f, 1.8f).pop()
@@ -324,7 +322,7 @@ object Models2 {
                 // будка смотрителя
                 g.color(0x90a4ae).push().at(-2.5f, y + 1.8f, -2f).box(4f, 3.6f, 3.6f).pop()
                 roof(g, -2.5f, y + 3.6f, -2f, 4.6f, 3.6f, 0x37474f)
-                g.color(0xffcf6b).push().at(-2.5f, y + 2f, -0.15f).box(1f, 0.9f, 0.1f).pop()
+                g.push().at(-2.5f, y + 2f, -0.15f).window(1f, 0.9f).pop()
                 lantern(g, 1.6f, y - 0.3f, 41f); lantern(g, -1.6f, y - 0.3f, 20f)
                 g.color(0xffffff).push().at(3f, y + 0.3f, 0f).cylinder(0.6f, 0.6f, 0.15f, 10).pop()
             }

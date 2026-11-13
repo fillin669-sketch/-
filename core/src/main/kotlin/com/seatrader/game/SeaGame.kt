@@ -198,6 +198,12 @@ class SeaGame : ApplicationAdapter() {
         Gdx.input.inputProcessor = InputMultiplexer(stage, input)
     }
 
+    private fun maxTex(): Int {
+        val buf = com.badlogic.gdx.utils.BufferUtils.newIntBuffer(16)
+        Gdx.gl.glGetIntegerv(GL20.GL_MAX_TEXTURE_SIZE, buf)
+        return buf.get(0).coerceAtLeast(2048)
+    }
+
     private val wildCount = 60
     private val totalSteps = 1 + PORTS.size + wildCount + 2
 
@@ -215,7 +221,7 @@ class SeaGame : ApplicationAdapter() {
                 resize(Gdx.graphics.width, Gdx.graphics.height)
                 modelBatch = Shaders.batch()
                 fx = Fx(cam, ui.softDisc, ui.white, ui.streak, ui.gull)
-                val sm = if (highQuality) 2048 else 1024
+                val sm = if (highQuality) min(4096, maxTex()) else 1024
                 @Suppress("DEPRECATION")
                 sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
                 // теневой проход со смещением глубины (убирает полосы «теневых акне»)
@@ -229,7 +235,7 @@ class SeaGame : ApplicationAdapter() {
                 env.shadowMap = sunLight
                 env.add(fillLight)
                 env.add(seaBounce)
-                post = PostFx().also { it.scale = 1f }
+                post = PostFx().also { it.scale = if (highQuality) 1.25f else 1f }
                 val cr = Random(5)
                 repeat(14) { clouds += floatArrayOf(cr.nextFloat() * 900 - 450, cr.nextFloat() * 900 - 450, 70f + cr.nextFloat() * 90, cr.nextFloat() * 360, cr.nextInt(2).toFloat()) }
                 env.set(fogAttr)

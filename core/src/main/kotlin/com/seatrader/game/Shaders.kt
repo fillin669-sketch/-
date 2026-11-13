@@ -11,7 +11,7 @@ import com.badlogic.gdx.graphics.g3d.utils.DefaultShaderProvider
 object Shaders {
     /** Номера материалов (кодируются в альфе цвета вершины). */
     const val NONE = 0; const val PLANKS = 1; const val BRICK = 2; const val TILES = 3; const val STONE = 4
-    const val ROCK = 5; const val SAND = 6; const val GRASS = 7; const val CLOTH = 8; const val HULL = 9; const val METAL = 10
+    const val ROCK = 5; const val SAND = 6; const val GRASS = 7; const val CLOTH = 8; const val HULL = 9; const val METAL = 10; const val GLASS = 11
 
     private const val PATTERN = """
 varying vec3 v_lpos;
@@ -112,9 +112,26 @@ float getShadow()
         if (m > 0) f = f.substring(0, m) + PATTERN + f.substring(m)
         val e = f.indexOf("vec4 emissive = texture2D(u_emissiveTexture, v_emissiveUV) * u_emissiveColor;")
         val e0 = if (e > 0) f.lastIndexOf("#if", e) else -1
-        if (e0 > 0) f = f.substring(0, e0) + """#ifdef colorFlag
+        if (e0 > 0) f = f.substring(0, e0) + """float glassGlow = 0.0;
+#ifdef colorFlag
 	float pid = floor((1.0 - v_color.a) * 32.0 + 0.5);
-	if (pid > 0.5) {
+	if (pid > 10.5 && pid < 11.5) {
+		// стекло: отражение неба, блик, ночью — тёплый свет изнутри
+		float night = 0.0;
+#ifdef fogFlag
+		night = 1.0 - smoothstep(0.12, 0.45, dot(u_fogColor.rgb, vec3(0.299, 0.587, 0.114)));
+#endif
+		vec3 gn = normalize(v_lnrm);
+		float band = fract((v_lpos.x + v_lpos.z) * 0.55 + v_lpos.y * 0.85);
+		float refl = smoothstep(0.0, 0.06, band) * (1.0 - smoothstep(0.14, 0.26, band));
+		float up = clamp(gn.y * 0.5 + 0.5, 0.0, 1.0);
+		vec3 skyRefl = mix(vec3(0.07, 0.12, 0.16), vec3(0.42, 0.58, 0.7), 0.35 + 0.4 * up + 0.25 * fract(v_lpos.y * 0.37));
+		diffuse.rgb = skyRefl + refl * vec3(0.6, 0.66, 0.7) * (1.0 - night);
+		float lit = step(0.3, ph(floor(v_lpos.xz * 0.6) + floor(v_lpos.y * 0.5)));
+		glassGlow = night * (0.35 + 0.65 * lit);
+		diffuse.rgb = mix(diffuse.rgb, vec3(0.95, 0.66, 0.32), glassGlow * 0.6);
+		diffuse.a = 1.0;
+	} else if (pid > 0.5) {
 		// вдали мелкий рисунок мерцает — плавно гасим
 		float far = smoothstep(60.0, 175.0, 1.0 / gl_FragCoord.w);
 		diffuse.rgb *= mix(pattern(pid, v_lpos, normalize(v_lnrm)), vec3(1.0), far * 0.8);
@@ -122,6 +139,8 @@ float getShadow()
 	}
 #endif
 	""" + f.substring(e0)
+        val fogAt = f.indexOf("#ifdef fogFlag\n\t\tgl_FragColor.rgb = mix(")
+        if (fogAt > 0) f = f.substring(0, fogAt) + "gl_FragColor.rgb += glassGlow * vec3(1.0, 0.68, 0.32);\n\t" + f.substring(fogAt)
         return f
     }
 

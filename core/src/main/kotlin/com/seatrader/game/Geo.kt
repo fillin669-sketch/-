@@ -60,6 +60,22 @@ class Geo {
 
     fun mat(id: Int): Geo { material = id; return this }
 
+    /** Окно в текущей точке, смотрит в +Z: рама, подоконник, стекло и переплёт крестом. */
+    fun window(w: Float, h: Float): Geo {
+        val keep = material
+        val fr = minOf(0.12f, w * 0.14f, h * 0.14f)
+        mat(Shaders.PLANKS).color(0x4a2f1a)
+        push().at(0f, 0f, -0.01f).box(w + fr * 2, h + fr * 2, 0.1f).pop()
+        push().at(0f, -h / 2 - fr * 1.2f, 0.06f).box(w + fr * 3.5f, fr * 1.1f, 0.26f).pop()
+        mat(Shaders.GLASS).color(0x203644)
+        push().at(0f, 0f, 0.03f).box(w, h, 0.08f).pop()
+        mat(Shaders.PLANKS).color(0x3a2414)
+        push().at(0f, 0f, 0.08f).box(fr * 0.45f, h, 0.04f).pop()
+        push().at(0f, h * 0.08f, 0.08f).box(w, fr * 0.45f, 0.04f).pop()
+        material = keep
+        return this
+    }
+
     /** Фактура по цвету: коричневое — доски, серое — камень, зелёное — трава и т. д. */
     private fun autoMaterial(rgb: Int): Int {
         val r = (rgb shr 16 and 255) / 255f; val g = (rgb shr 8 and 255) / 255f; val b = (rgb and 255) / 255f
@@ -376,10 +392,9 @@ object Models {
         // Кормовая надстройка с окнами
         g.color(look.hull).push().at(0f, top + H * 0.35f, L * 0.36f).box(W * 0.72f, H * 0.7f, L * 0.2f).pop()
         g.color(look.trim).push().at(0f, top + H * 0.72f, L * 0.36f).box(W * 0.78f, 0.25f, L * 0.22f).pop()
-        g.color(0xffd27a)
-        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.365f, top + H * 0.38f, L * 0.36f).box(0.06f, H * 0.22f, L * 0.06f).pop()
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.365f, top + H * 0.38f, L * 0.36f).rotY(sx * 90f).window(L * 0.06f, H * 0.22f).pop()
         val sternZ = L * 0.5f
-        for (k in -1..1) g.push().at(k * W * 0.18f, top + H * 0.05f, sternZ + 0.02f).box(W * 0.12f, H * 0.22f, 0.08f).pop()
+        for (k in -1..1) g.push().at(k * W * 0.18f, top + H * 0.05f, sternZ + 0.02f).window(W * 0.12f, H * 0.22f).pop()
         // Фонарь на корме и руль
         g.color(0xffe08a).push().at(0f, top + H * 0.72f + 0.9f, L * 0.44f).box(0.5f, 0.7f, 0.5f).pop()
         g.color(0x3b2a1e).push().at(0f, top + H * 0.72f + 0.4f, L * 0.44f).box(0.12f, 0.6f, 0.12f).pop()
@@ -614,7 +629,7 @@ object Models {
         g.mat(Shaders.PLANKS).color(0x4e2e17).push().at(0f, 1.5f, d / 2 + 0.06f).box(1.4f, 2.4f, 0.2f).pop()
         g.mat(Shaders.NONE)
         for (sx in intArrayOf(-1, 1)) {
-            g.color(0xffd27a).push().at(sx * w * 0.28f, hh * 0.62f, d / 2 + 0.05f).box(1f, 0.9f, 0.1f).pop()
+            g.push().at(sx * w * 0.28f, hh * 0.62f, d / 2 + 0.05f).window(1f, 0.9f).pop()
             g.mat(Shaders.PLANKS).color(0x2e5e4e)
             for (k in intArrayOf(-1, 1)) g.push().at(sx * w * 0.28f + k * 0.75f, hh * 0.62f, d / 2 + 0.08f).box(0.45f, 1f, 0.08f).pop()
             g.mat(Shaders.NONE)

@@ -143,7 +143,14 @@ class TestScript(private val g: SeaGame, private val out: String) {
             720 -> shot("12_base_menu")
             721 -> press("Выйти в море")
             760 -> { shot("13_left_base"); info("leftbase") }
-            770 -> {
+            765 -> { g.dayTime = 0.82f; g.openPort(0) }
+            766 -> press("Таверна")
+            830 -> shot("14_night_tavern")
+            831 -> press("Верфь")
+            890 -> shot("15_night_yard")
+            891 -> { g.dayTime = 0.3f; press("Таверна") }
+            950 -> shot("16_day_tavern")
+            960 -> {
                 log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0}\n")
                 Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
                 Gdx.app.exit()
