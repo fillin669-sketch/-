@@ -1,25 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Иконка «Пираты Семи Ветров»: корабль на фоне заката и семь лучей-ветров -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- солнце -->
-    <path android:fillColor="#FFFFC93C" android:pathData="M78,30 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
-    <!-- мачты -->
-    <path android:fillColor="#FF5D3A1E" android:pathData="M45,24h2.4v44h-2.4z M60,30h2.2v38h-2.2z" />
-    <!-- паруса -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M33,28 Q46,32 59,28 L58,44 Q46,48 34,44 Z" />
-    <path android:fillColor="#FFF3EAD3" android:pathData="M35,47 Q46,51 57,47 L56,60 Q46,63 36,60 Z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M52,34 Q61,37 70,34 L69,48 Q61,51 53,48 Z" />
-    <path android:fillColor="#FFF3EAD3" android:pathData="M53,51 Q61,54 69,51 L68,62 Q61,64 54,62 Z" />
-    <!-- флаг -->
-    <path android:fillColor="#FFD32F2F" android:pathData="M47.4,24 L55,27 L47.4,30 Z" />
-    <!-- корпус -->
-    <path android:fillColor="#FF7A4A26" android:pathData="M24,66 L84,66 L76,78 L32,78 Z" />
-    <path android:fillColor="#FF2F6DB5" android:pathData="M25.5,68 L82.5,68 L81.3,70 L26.8,70 Z" />
-    <path android:fillColor="#FF3E2412" android:pathData="M36,72h4v3h-4z M46,72h4v3h-4z M56,72h4v3h-4z M66,72h4v3h-4z" />
-    <!-- волны -->
-    <path android:fillColor="#FFB3E5FC" android:pathData="M18,80 q6,-4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 v4 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 t-12,0 t-12,0 z" />
-    <path android:fillColor="#FF81D4FA" android:pathData="M18,86 q6,-4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 v4 q-6,-4 -12,0 t-12,0 t-12,0 t-12,0 t-12,0 t-12,0 z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFC23D" android:pathData="M33,50 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 Z" />
+    <path android:fillColor="#FFFFE08A" android:pathData="M37.5,50 a16.5,16.5 0 1,0 33.0,0 a16.5,16.5 0 1,0 -33.0,0 Z" />
+    <path android:fillColor="#CCFFD27A" android:pathData="M32.62,41.37 L24.52,40.42 L31.63,44.41 Z M37.98,33.42 L30.96,29.26 L35.84,35.80 Z M46.11,28.34 L41.39,21.68 L43.18,29.64 Z M55.60,27.00 L54.00,19.00 L52.40,27.00 Z M64.82,29.64 L66.61,21.68 L61.89,28.34 Z M72.16,35.80 L77.04,29.26 L70.02,33.42 Z M76.37,44.41 L83.48,40.42 L75.38,41.37 Z" />
+    <path android:fillColor="#FF2B1A10" android:pathData="M48,30h2.2v38h-2.2z M61,36h2v32h-2z M50,46 L74,58 L73.4,59 L49.4,47 Z" />
+    <path android:fillColor="#FF1F1A2E" android:pathData="M37,34 Q49,38 61,34 L60,48 Q49,52 38,48 Z" />
+    <path android:fillColor="#FF1F1A2E" android:pathData="M38,51 Q49,55 60,51 L59.5,63 Q49,66 39,63 Z" />
+    <path android:fillColor="#FF1F1A2E" android:pathData="M56,40 Q63,43 70,40 L69.5,52 Q63,55 56.5,52 Z" />
+    <path android:fillColor="#FF1F1A2E" android:pathData="M56.5,55 Q63,58 69,55 L68.5,64 Q63,66 57,64 Z" />
+    <path android:fillColor="#FF1F1A2E" android:pathData="M64,48 L76,60 L64,62 Z" />
+    <path android:fillColor="#FFD32F2F" android:pathData="M50.2,22 L62,25 L50.2,29.5 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M52.3,25.3 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0 Z M52.9,26.4h2.2v1.3h-2.2z" />
+    <path android:fillColor="#FF1B1420" android:pathData="M30,66 L80,66 Q79,70 74,77 L36,77 Q32,72 30,66 Z" />
+    <path android:fillColor="#FFC9A227" android:pathData="M31.2,68.2 L78.8,68.2 L78.3,69.6 L31.8,69.6 Z" />
+    <path android:fillColor="#FFFFC93C" android:pathData="M40,72h2.4v2h-2.4z M48,72h2.4v2h-2.4z M56,72h2.4v2h-2.4z M64,72h2.4v2h-2.4z" />
+    <path android:fillColor="#FF0E4D64" android:pathData="M14,78 q6,-4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 V96 H14 Z" />
+    <path android:fillColor="#FF2E86AB" android:pathData="M14,84 q6,-3.5 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 V96 H14 Z" />
+    <path android:fillColor="#AAFFFFFF" android:pathData="M26,78.4 q3,-1.6 6,0 q-3,0.6 -6,0 Z M50,78.4 q3,-1.6 6,0 q-3,0.6 -6,0 Z M74,78.4 q3,-1.6 6,0 q-3,0.6 -6,0 Z" />
 </vector>
