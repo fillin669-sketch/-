@@ -243,7 +243,7 @@ class SeaGame : ApplicationAdapter() {
                 env.shadowMap = sunLight
                 env.add(fillLight)
                 env.add(seaBounce)
-                post = PostFx().also { it.scale = scaleSteps()[scaleSteps().size - 1]; it.bloomOn = gfx >= 1 }
+                post = PostFx().also { it.scale = scaleSteps()[scaleSteps().size - 1]; it.allocScale = it.scale; it.bloomOn = gfx >= 1 }
                 scaleIdx = scaleSteps().size - 1
                 val cr = Random(5)
                 repeat(14) { clouds += floatArrayOf(cr.nextFloat() * 900 - 450, cr.nextFloat() * 900 - 450, 70f + cr.nextFloat() * 90, cr.nextFloat() * 360, cr.nextInt(2).toFloat()) }
@@ -264,6 +264,8 @@ class SeaGame : ApplicationAdapter() {
                 systems.placeBottles { x, z, m -> isWater(x, z, m) }
                 living.buildWorld { x, z, m -> isWater(x, z, m) }
                 fx.limit = intArrayOf(250, 450, 700, 900)[gfx]
+                // заранее строим модели всех врагов и наёмников — без подтормаживаний при их появлении
+                for (d in ENEMIES.values) shipModel(d.look)
                 spawnPlayer()
                 startX = player!!.x; startZ = player!!.z
                 repeat(4) { i ->
@@ -1905,7 +1907,8 @@ class SeaGame : ApplicationAdapter() {
         now += dt
         controlPlayer()
         recordTrail()
-        for (s in ArrayList(ships)) when {
+        shipsTmp.clear(); shipsTmp.addAll(ships)
+        for (s in shipsTmp) when {
             s.faction == Faction.PIRATE -> updatePirateAI(s, dt)
             s.faction == Faction.NEUTRAL -> systems.neutralAI(s, dt)
             s.ally -> updateAllyAI(s, dt)
@@ -2005,6 +2008,7 @@ class SeaGame : ApplicationAdapter() {
         post.bloomOn = gfx >= 1
         scaleIdx = scaleSteps().size - 1
         post.scale = scaleSteps()[scaleIdx]
+        post.allocScale = post.scale
         fx.limit = intArrayOf(250, 450, 700, 900)[gfx]
         val sm = shadowSize()
         if (sunLight.depthMap.texture.width != sm) {
@@ -2018,6 +2022,7 @@ class SeaGame : ApplicationAdapter() {
         save()
     }
 
+    private val shipsTmp = ArrayList<Ship>()
     private val nearIslands = ArrayList<FloatArray>()
     private var nearT = 0f
     /** Виден ли шар (x, y, z, r) камере — не рисуем то, что за кадром. */
@@ -2082,7 +2087,7 @@ class SeaGame : ApplicationAdapter() {
         val windy = min(1f, (if (ps != null) abs(ps.speed) / 22f else 0f) + stormLevel * 0.8f)
         sfx.update(dt, combatT > 0 && state == State.PLAY, stormLevel, windy, systems.wantedShanty(), state != State.PLAY)
         saveTimer += dt
-        if (saveTimer > 5) { saveTimer = 0f; save() }
+        if (saveTimer > 15) { saveTimer = 0f; save() }
 
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT or

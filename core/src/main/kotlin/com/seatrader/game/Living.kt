@@ -65,6 +65,7 @@ class Living(private val g: SeaGame) {
 
     // ---------- Флот ----------
     var order = 0 // 0 строй, 1 атака, 2 отход
+    private val orderIcons = listOf("⚓", "⚔", "↺")
     val orderNames = listOf("Колонна", "Атака", "Отход")
 
     // ---------- Погода ----------
@@ -784,7 +785,7 @@ class Living(private val g: SeaGame) {
     fun drawHud(b: Batch) {
         val ui = g.ui
         if (fleetVisible()) {
-            val icons = listOf("⚓", "⚔", "↺")
+            val icons = orderIcons
             for (k in 0..2) {
                 val (fx, fy) = fleetPos(k)
                 val on = order == k

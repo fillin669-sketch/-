@@ -34,6 +34,8 @@ class Sfx : Disposable {
     private val wind = load("music/wind.ogg")
     private val ambient = load("music/sea_ambient.ogg")
     private var shanty: Music? = null
+    // все песни загружены заранее: смена песни без загрузки файла во время игры (без фризов)
+    private val shantyMusic = arrayOfNulls<Music>(SHANTIES.size)
     var shantyIdx = -1
         private set
     private var shantyVol = 0f
@@ -48,6 +50,7 @@ class Sfx : Disposable {
             sounds[name] = loadSound(name)
         }
         for (m in listOf(sea, battle, rain, wind, ambient)) m?.let { it.isLooping = true; it.volume = 0f; it.play() }
+        for (i in SHANTIES.indices) shantyMusic[i] = load(SHANTIES[i].file)?.also { it.isLooping = false; it.volume = 0f }
     }
 
     private fun load(path: String): Music? = try { Gdx.audio.newMusic(Gdx.files.internal(path)) } catch (e: Exception) { null }
@@ -85,9 +88,9 @@ class Sfx : Disposable {
         // смена песни: сначала затихает старая
         if (shanty != null && (wantShanty != shantyIdx || !singing)) {
             shantyVol -= dt * 0.6f
-            if (shantyVol <= 0f) { shanty?.stop(); shanty?.dispose(); shanty = null; shantyIdx = -1; shantyVol = 0f }
+            if (shantyVol <= 0f) { shanty?.pause(); shanty = null; shantyIdx = -1; shantyVol = 0f }
         } else if (shanty == null && singing) {
-            shanty = load(SHANTIES[wantShanty].file)?.also { it.isLooping = false; it.volume = 0f; it.play() }
+            shanty = shantyMusic.getOrNull(wantShanty)?.also { it.volume = 0f; try { it.position = 0f } catch (_: Exception) { }; it.play() }
             shantyIdx = wantShanty
             shantyVol = 0f
         } else if (shanty != null) {
@@ -112,6 +115,7 @@ class Sfx : Disposable {
 
     override fun dispose() {
         sounds.values.forEach { it?.dispose() }
-        for (m in listOf(sea, battle, rain, wind, ambient, shanty)) m?.dispose()
+        for (m in listOf(sea, battle, rain, wind, ambient)) m?.dispose()
+        for (m in shantyMusic) m?.dispose()
     }
 }

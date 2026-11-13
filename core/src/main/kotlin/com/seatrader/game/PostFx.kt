@@ -18,10 +18,15 @@ class PostFx : Disposable {
     private var scene: FrameBuffer? = null
     private var bloomA: FrameBuffer? = null
     private var bloomB: FrameBuffer? = null
+    // буфер выделяется под наибольший масштаб; текущий масштаб — область внутри него
     private var w = 0
     private var h = 0
-    val sceneW get() = w
-    val sceneH get() = h
+    private var cw = 0
+    private var ch = 0
+    val sceneW get() = cw
+    val sceneH get() = ch
+    /** Наибольший масштаб уровня графики — под него выделяется буфер (без пересоздания при смене разрешения). */
+    var allocScale = 1f
     private val quad: Mesh = Mesh(true, 4, 6, VertexAttribute.Position(), VertexAttribute.TexCoords(0)).also {
         it.setVertices(floatArrayOf(-1f, -1f, 0f, 0f, 0f, 1f, -1f, 0f, 1f, 0f, 1f, 1f, 0f, 1f, 1f, -1f, 1f, 0f, 0f, 1f))
         it.setIndices(shortArrayOf(0, 1, 2, 2, 3, 0))
@@ -59,8 +64,11 @@ class PostFx : Disposable {
             Gdx.gl.glGetIntegerv(GL20.GL_MAX_TEXTURE_SIZE, buf)
             maxTex = buf.get(0).coerceAtLeast(2048)
         }
-        val sc = minOf(scale, maxTex.toFloat() / outW, maxTex.toFloat() / outH)
-        val nw = (outW * sc).toInt().coerceAtLeast(64); val nh = (outH * sc).toInt().coerceAtLeast(64)
+        val lim = minOf(maxTex.toFloat() / outW, maxTex.toFloat() / outH)
+        val sa = minOf(maxOf(allocScale, scale), lim)
+        val sc = minOf(scale, sa)
+        cw = (outW * sc).toInt().coerceAtLeast(64); ch = (outH * sc).toInt().coerceAtLeast(64)
+        val nw = (outW * sa).toInt().coerceAtLeast(64); val nh = (outH * sa).toInt().coerceAtLeast(64)
         if (nw == w && nh == h && scene != null) return
         dispose(false)
         w = nw; h = nh
@@ -76,6 +84,7 @@ class PostFx : Disposable {
     fun begin() {
         ensure()
         scene!!.begin()
+        Gdx.gl.glViewport(0, 0, cw, ch)
     }
 
     /** Закончить сцену и вывести её на экран с эффектами. */
@@ -90,12 +99,13 @@ class PostFx : Disposable {
         a.begin()
         sc.colorBufferTexture.bind(0)
         bright.bind(); bright.setUniformi("u_tex", 0); bright.setUniformf("u_threshold", 0.72f)
+        bright.setUniformf("u_uvScale", cw.toFloat() / w, ch.toFloat() / h)
         quad.render(bright, GL20.GL_TRIANGLES)
         a.end()
         // 2) размытие по горизонтали и вертикали
         val px = 1f / a.width; val py = 1f / a.height
         b.begin(); a.colorBufferTexture.bind(0)
-        blur.bind(); blur.setUniformi("u_tex", 0); blur.setUniformf("u_dir", px * 1.5f, 0f)
+        blur.bind(); blur.setUniformi("u_tex", 0); blur.setUniformf("u_dir", px * 1.5f, 0f); blur.setUniformf("u_uvScale", 1f, 1f)
         quad.render(blur, GL20.GL_TRIANGLES); b.end()
         a.begin(); b.colorBufferTexture.bind(0)
         blur.bind(); blur.setUniformi("u_tex", 0); blur.setUniformf("u_dir", 0f, py * 1.5f)
@@ -109,6 +119,7 @@ class PostFx : Disposable {
         composite.setUniformi("u_tex", 0)
         composite.setUniformi("u_bloom", 1)
         composite.setUniformf("u_texel", 1f / w, 1f / h)
+        composite.setUniformf("u_uvScale", cw.toFloat() / w, ch.toFloat() / h)
         composite.setUniformf("u_exposure", exposure)
         composite.setUniformf("u_saturation", saturation)
         composite.setUniformf("u_contrast", contrast)
@@ -131,14 +142,17 @@ class PostFx : Disposable {
         private const val VERT = """
 attribute vec3 a_position;
 attribute vec2 a_texCoord0;
+uniform vec2 u_uvScale;
 varying vec2 v_uv;
-void main() { v_uv = a_texCoord0; gl_Position = vec4(a_position.xy, 0.0, 1.0); }
+varying vec2 v_uv0;
+void main() { v_uv0 = a_texCoord0; v_uv = a_texCoord0 * u_uvScale; gl_Position = vec4(a_position.xy, 0.0, 1.0); }
 """
         private const val HEAD = """
 #ifdef GL_ES
 precision mediump float;
 #endif
 varying vec2 v_uv;
+varying vec2 v_uv0;
 uniform sampler2D u_tex;
 """
         private const val BRIGHT = HEAD + """
@@ -163,6 +177,7 @@ void main() {
         private const val COMPOSITE = HEAD + """
 uniform sampler2D u_bloom;
 uniform vec2 u_texel;
+uniform vec2 u_uvScale;
 uniform float u_exposure;
 uniform float u_saturation;
 uniform float u_contrast;
@@ -191,8 +206,8 @@ vec3 fxaa(vec2 uv) {
     return (lB < lMin || lB > lMax) ? a : b;
 }
 void main() {
-    vec3 c = fxaa(v_uv);
-    c += texture2D(u_bloom, v_uv).rgb * u_bloomAmt;
+    vec3 c = fxaa(min(v_uv, u_uvScale - u_texel));
+    c += texture2D(u_bloom, v_uv0).rgb * u_bloomAmt;
     c *= u_exposure;
     // мягкая плёночная кривая
     c = c / (1.0 + c * 0.18) * 1.18;
@@ -201,7 +216,7 @@ void main() {
     c = (c - 0.5) * u_contrast + 0.5;
     // тёплые света и холодные тени
     c += vec3(0.06, 0.02, -0.05) * u_warmth * l + vec3(-0.02, 0.0, 0.03) * (1.0 - l) * (0.5 + 0.5 * u_warmth);
-    vec2 d = v_uv - 0.5;
+    vec2 d = v_uv0 - 0.5;
     c *= 1.0 - dot(d, d) * u_vignette * 1.6;
     gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }

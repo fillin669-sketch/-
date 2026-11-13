@@ -19,12 +19,20 @@ import kotlin.math.sin
 class Hud(private val g: SeaGame) {
     private val ui get() = g.ui
     private val cTmp = Color()
+    private val cTmp2 = Color()
+    private val abilityIcons by lazy { listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon) }
+    private var visCache: List<Int> = emptyList()
+    private var visKey = -1
     private fun c(hex: Int, a: Float = 1f): Color = cTmp.set(rgb(hex, a))
     private val layout = GlyphLayout()
     private val landscape get() = g.wDp > g.hDp
 
     /** Индексы способностей, которые есть у игрока. */
-    fun visibleAbilities(): List<Int> = ABILITIES.indices.filter { it < 3 || it in g.systems.ownedWeapons }
+    fun visibleAbilities(): List<Int> {
+        val key = g.systems.ownedWeapons.hashCode()
+        if (key != visKey) { visKey = key; visCache = ABILITIES.indices.filter { it < 3 || it in g.systems.ownedWeapons } }
+        return visCache
+    }
 
     /** Центр кнопки способности i. */
     fun abilityPos(i: Int): Pair<Float, Float> {
@@ -114,7 +122,7 @@ class Hud(private val g: SeaGame) {
         b.draw(ui.dark, 0f, 0f, wDp, hDp)
         if (g.flash > 0) {
             g.flash -= dt
-            b.color = Color(1f, 1f, 1f, min(1f, g.flash / 0.25f))
+            b.color = cTmp2.set(1f, 1f, 1f, min(1f, g.flash / 0.25f))
             b.draw(ui.vignette, 0f, 0f, wDp, hDp)
         }
         if (g.lightning > 0) ui.rect(b, 0f, 0f, wDp, hDp, c(0xffffff, g.lightning * 1.6f))
@@ -190,7 +198,7 @@ class Hud(private val g: SeaGame) {
             val f = fit.next()
             f.age += dt
             if (f.age > 1f) { fit.remove(); continue }
-            val col = Color(f.color).also { it.a = 1 - f.age }
+            val col = cTmp2.set(f.color).also { it.a = 1 - f.age }
             ui.text(b, f.font, f.text, f.x - 80, f.y + f.age * 60, Align.center, 160f, c = col)
         }
 
@@ -240,7 +248,7 @@ class Hud(private val g: SeaGame) {
             val st = "♪ «$title» ♪"
             val sw2 = ui.measure(ui.small, st) + 20
             ui.round(b, (wDp - sw2) / 2, songY - 17, sw2, 22f, c(0x0a141e, 0.45f * a))
-            ui.text(b, ui.small, st, 0f, songY, Align.center, wDp, c = Color(1f, 0.92f, 0.7f, a))
+            ui.text(b, ui.small, st, 0f, songY, Align.center, wDp, c = cTmp2.set(1f, 0.92f, 0.7f, a))
         }
 
         // Джойстик
@@ -281,7 +289,7 @@ class Hud(private val g: SeaGame) {
         val sy = g.systems
 
         // Способности
-        val icons = listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon)
+        val icons = abilityIcons
         for (i in visibleAbilities()) {
             val (ax, ay) = abilityPos(i)
             val cd = g.abilityCd[i]
@@ -389,7 +397,7 @@ class Hud(private val g: SeaGame) {
             g.toastT -= dt
             val a = min(1f, g.toastT * 3)
             val font = if (g.toastText.length > 30) ui.mid else ui.big
-            ui.text(b, font, g.toastText, 20f, hDp * 0.6f, Align.center, wDp - 40, true, Color(1f, 1f, 1f, a))
+            ui.text(b, font, g.toastText, 20f, hDp * 0.6f, Align.center, wDp - 40, true, cTmp2.set(1f, 1f, 1f, a))
         }
         b.color = Color.WHITE
     }
