@@ -120,6 +120,10 @@ class Hud(private val g: SeaGame) {
         val wDp = g.wDp; val hDp = g.hDp
 
         if (g.portView.active) return
+        if (g.state == SeaGame.State.CUTSCENE) {
+            if (g.lightning > 0) ui.rect(b, 0f, 0f, wDp, hDp, c(0xffffff, g.lightning * 1.2f))
+            g.prologue.draw(); return
+        }
         b.color = Color.WHITE
         b.draw(ui.dark, 0f, 0f, wDp, hDp)
         if (g.flash > 0) {

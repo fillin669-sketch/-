@@ -452,6 +452,7 @@ class Menus(private val g: SeaGame) {
         val captain = ui.blue("★  Капитан" + if (g.systems.skillPts > 0) " (+${g.systems.skillPts})" else "").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }
         val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
         val map = ui.blue("⚓  Карта мира").also { it.onClick { mapFromPause = true; current = { buildMap() }; buildMap() } }
+        val story = ui.blue("☠  Предыстория").also { it.onClick { close(); g.startPrologue(false) } }
         val songs = ui.blue("♪  Песни команды").also { it.onClick { current = { buildSongs() }; buildSongs() } }
         val help = ui.blue("?  Как играть").also { it.onClick { current = { buildHelp() }; buildHelp() } }
         val settings = ui.blue("⚙  Настройки").also { it.onClick { current = { buildSettings() }; buildSettings() } }
@@ -461,7 +462,7 @@ class Menus(private val g: SeaGame) {
             }
         }
         val list = Table()
-        for (bt in listOf(resume, captain, ach, map, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
+        for (bt in listOf(resume, captain, ach, map, story, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
     }
 

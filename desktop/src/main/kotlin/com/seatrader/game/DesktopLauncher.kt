@@ -33,7 +33,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private var t0 = 0L
     private val log = StringBuilder()
 
-    fun install() { g.afterRender = { step() } }
+    fun install() { g.skipPrologue = System.getenv("SEA_PROLOGUE") == null; g.afterRender = { step() } }
 
     private fun shot(name: String) {
         val w = Gdx.graphics.backBufferWidth; val h = Gdx.graphics.backBufferHeight
@@ -100,6 +100,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
             log.append("loaded at frame $frame state=${g.state}\n")
         }
         val f = frame - base
+        if (System.getenv("SEA_PROLOGUE") != null) { prologueTest(f); return }
         if (System.getenv("SEA_BETA") != null) { betaTest(f); return }
         if (System.getenv("SEA_FEAT") != null) { featTest(f); return }
         if (System.getenv("SEA_BOARD") != null) {
@@ -526,6 +527,22 @@ class TestScript(private val g: SeaGame, private val out: String) {
 
     private var featE: Ship? = null
     private var featN: Ship? = null
+    private fun prologueTest(f: Int) {
+        // сценка идёт сама; снимки ключевых кадров, в конце — повтор из паузы
+        if (f % 60 == 0 && f <= 4800 && g.state == SeaGame.State.CUTSCENE) shot("p%04d".format(f))
+        if (f % 60 == 0) log.append("f=$f state=${g.state} ships=${g.ships.size} balls=${g.balls.size} fps=${Gdx.graphics.framesPerSecond}\n")
+        if (f > 60 && g.state != SeaGame.State.CUTSCENE && done < 0) { done = f; shot("p_after"); log.append("после сценки: state=${g.state} ships=${g.ships.size}\n") }
+        if (done > 0 && f == done + 20) press("Вступить")
+        if (done > 0 && f == done + 25) press("Забрать")
+        if (done > 0 && f == done + 30) { g.menus.close(); g.openPause() }
+        if (done > 0 && f == done + 35) press("Предыстория")
+        if (done > 0 && f == done + 120) { shot("p_replay"); val (sx, sy) = g.wDp - 60f to 30f; touch("down", sx, sy) }
+        if (done > 0 && f == done + 140) { shot("p_back"); log.append("после пропуска: state=${g.state} ships=${g.ships.size} player=${g.player?.x?.toInt()},${g.player?.z?.toInt()}\n")
+            Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+        if (f > 9000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+    }
+    private var done = -1
+
     private fun featTest(f: Int) {
         val ex = g.extras
         val p = g.player

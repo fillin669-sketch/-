@@ -42,7 +42,7 @@ const val GRAVITY = 30f
 const val BALL_SPEED = 62f
 
 class SeaGame : ApplicationAdapter() {
-    enum class State { LOADING, PLAY, PORT, PAUSE, DEAD, DIALOG }
+    enum class State { LOADING, PLAY, PORT, PAUSE, DEAD, DIALOG, CUTSCENE }
 
     // ---------- Графика ----------
     lateinit var ui: Ui
@@ -134,6 +134,9 @@ class SeaGame : ApplicationAdapter() {
     val islands = ArrayList<Island>()
     val ports = ArrayList<Port>()
     val ships = ArrayList<Ship>()
+    val prologue = Prologue(this)
+    /** Тесты на ПК пропускают предысторию. */
+    var skipPrologue = false
     var player: Ship? = null
     val balls = ArrayList<Ball>()
     val loot = ArrayList<Loot>()
@@ -325,7 +328,7 @@ class SeaGame : ApplicationAdapter() {
                 }
                 spawnGulls()
                 state = State.PLAY
-                if (guilds.guild < 0) menus.showGuildSelect() else { checkDaily(); checkJournal() }
+                if (guilds.guild < 0) { if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else { checkDaily(); checkJournal() }
             }
         }
         loadStep++
@@ -665,6 +668,7 @@ class SeaGame : ApplicationAdapter() {
         override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
             val x = screenX / scale
             val y = hDp - screenY / scale
+            if (state == State.CUTSCENE) { prologue.touch(x, y); return true }
             if (state != State.PLAY) return false
             if (hud.pauseHit(x, y)) { sfx.play("click"); openPause(); return true }
             run { val (bx, by) = hud.boostPos(); if (hypot(x - bx, y - by) < 30) { tryBoost(); return true } }
@@ -1288,7 +1292,7 @@ class SeaGame : ApplicationAdapter() {
     }
 
     fun damage(s: Ship, amount: Float, src: Ship?, ram: Boolean, silent: Boolean = false) {
-        if (s.sinking) return
+        if (s.sinking || state == State.CUTSCENE) return
         var amount = if (s.trait == "armored") amount * 0.6f else amount
         // корабль на крюках не тонет до абордажной схватки (горение, ядра в полёте)
         if (s === systems.grappleTarget && s.hp - amount < 1f) { s.hp = 1f; return }
@@ -2024,6 +2028,69 @@ class SeaGame : ApplicationAdapter() {
         repeat(4) { gulls += Gull(0f, 0f, rand(20f, 45f), rand(0f, 6.28f), rand(20f, 32f), rand(0.35f, 0.6f), rand(0f, 6f)) }
     }
 
+    // ================= Предыстория =================
+    private val cutBackup = ArrayList<Ship>()
+    private val cutSaved = FloatArray(4)
+
+    /** Запустить сценки предыстории ([first] — новая игра: после неё выбор фракции). */
+    fun startPrologue(first: Boolean) {
+        stage.clear()
+        joyActive = false; aimActive = false
+        cutBackup.clear(); cutBackup.addAll(ships)
+        ships.clear(); balls.clear()
+        cutSaved[0] = dayTime; cutSaved[1] = stormLevel; cutSaved[2] = stormTarget; cutSaved[3] = living.fogK
+        state = State.CUTSCENE
+        prologue.start(first)
+    }
+
+    fun endPrologue(first: Boolean) {
+        ships.clear(); ships.addAll(cutBackup); cutBackup.clear()
+        balls.clear()
+        dayTime = cutSaved[0]; stormLevel = cutSaved[1]; stormTarget = cutSaved[2]; living.fogK = cutSaved[3]
+        waveAmp = 1f + stormLevel * 1.6f
+        lightning = 0f; shake = 0f; flash = 0f; combatT = 0f
+        camSnap = true
+        state = State.PLAY
+        if (first) menus.showGuildSelect() else checkJournal()
+    }
+
+    /** Корабль-актёр: не тонет от ядер, тонет только по сценарию. */
+    fun cutShip(name: String, look: Look, faction: Faction, x: Float, z: Float, h: Float, speed: Float, cannons: Int): Ship {
+        val st = Stats(99999, speed, 1.4f, cannons, 10f, 2f, 60f, max(0.6f, look.len * look.len / 170f))
+        return createShip(name, st, faction, look, x, z, h, false)
+    }
+
+    fun cutSink(s: Ship) {
+        s.sinkT = 0.001f
+        fx.explosion(s.x, 3f, s.z, 1.5f)
+        sfx.play("sink")
+        shake = max(shake, 0.4f)
+    }
+
+    fun cutClear() { ships.clear(); balls.clear() }
+
+    private fun cutsceneUpdate(dt: Float) {
+        now += dt
+        prologue.update(dt)
+        if (state != State.CUTSCENE) return
+        for (s in ships) updateShip(s, dt)
+        shipCollisions()
+        updateBalls(dt)
+        ships.removeAll { it.sinkT > 4.5f }
+        waveAmp = 1f + stormLevel * 1.6f
+        windS = 1f + stormLevel * 0.6f
+        if (stormLevel > 0.4f) {
+            lightningTimer -= dt
+            if (lightningTimer <= 0) {
+                lightningTimer = rand(4f, 8f)
+                lightning = 0.25f
+                sfx.play("thunder", 0.7f * stormLevel)
+            }
+            fx.rain(camPos.x, camPos.z - 70, ((if (highQuality) 9 else 4) * stormLevel).roundToInt())
+        }
+        if (lightning > 0) lightning -= dt
+    }
+
     // ================= Обновление =================
     private fun update(dt: Float) {
         now += dt
@@ -2069,6 +2136,11 @@ class SeaGame : ApplicationAdapter() {
 
     private fun updateCamera(dt: Float) {
         val p = player ?: return
+        if (state == State.CUTSCENE) {
+            val m = prologue.camera(dt, cam)
+            camPos.set(m.x, m.y, m.z + 80f)
+            return
+        }
         if (portView.active) {
             portView.update(dt)
             portView.applyCamera(cam)
@@ -2210,7 +2282,7 @@ class SeaGame : ApplicationAdapter() {
             batch.begin(); hud.drawLoading(); batch.end()
             return
         }
-        if (state == State.PLAY) update(dt) else now += dt * 0.3f
+        if (state == State.PLAY) update(dt) else if (state == State.CUTSCENE) cutsceneUpdate(dt) else now += dt * 0.3f
         adaptQuality(dt)
         fx.time = now
         fx.update(dt)
@@ -2218,9 +2290,10 @@ class SeaGame : ApplicationAdapter() {
         applyLighting()
         val ps = player
         val windy = min(1f, (if (ps != null) abs(ps.speed) / 22f else 0f) + stormLevel * 0.8f)
-        sfx.update(dt, combatT > 0 && state == State.PLAY, stormLevel, windy, systems.wantedShanty(), state != State.PLAY)
+        val cut = state == State.CUTSCENE
+        sfx.update(dt, (combatT > 0 && state == State.PLAY) || (cut && prologue.battle), stormLevel, windy, systems.wantedShanty(), state != State.PLAY && !cut)
         saveTimer += dt
-        if (saveTimer > 15) { saveTimer = 0f; save() }
+        if (saveTimer > 15 && !cut) { saveTimer = 0f; save() }
 
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT or
