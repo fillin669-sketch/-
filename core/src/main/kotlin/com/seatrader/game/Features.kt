@@ -219,7 +219,8 @@ class Systems(private val g: SeaGame) {
     }
 
     // ===================== Капитан =====================
-    fun gainXp(n: Int, x: Float, z: Float) {
+    fun gainXp(n0: Int, x: Float, z: Float) {
+        val n = (n0 * (1f + (g.hero()?.xp ?: 0f))).roundToInt()
         if (n <= 0) return
         xp += n
         g.floatText(x, 9f, z, "+$n опыта", rgb(0x81d4fa), g.ui.small)

@@ -908,6 +908,17 @@ class Menus(private val g: SeaGame) {
         panel.add(Bar(ui, sy.xp / xpForLevel(sy.level).toFloat(), 0x81d4fa)).growX().height(16f).pad(6f, 0f, 2f, 0f).row()
         panel.add(ui.label("Опыт ${sy.xp} / ${xpForLevel(sy.level)} · очков навыков: ${sy.skillPts}", ui.small, rgb(0xb9d6f2), align = Align.center)).growX().padBottom(8f).row()
         val content = Table().top()
+        g.hero()?.let { h ->
+            val hc = card(0x1d3b2e)
+            hc.add(Image(HeroArt.full(h)).also { it.setScaling(com.badlogic.gdx.utils.Scaling.fit) }).size(84f, 112f).padRight(10f)
+            val t = Table()
+            t.add(ui.label(h.name, ui.big)).left().row()
+            t.add(ui.label(h.title, ui.small, rgb(0xffc93c))).left().row()
+            for (pk in h.perks) t.add(ui.label("✓ $pk", ui.small, rgb(0x3ddc84), wrap = true)).growX().left().row()
+            hc.add(t).growX().row()
+            hc.add(ui.blue("Сменить капитана").also { it.onClick { current = { buildHeroSelect(false) }; buildHeroSelect(false) } }).colspan(2).growX().height(44f).padTop(6f).row()
+            content.add(hc).growX().padBottom(10f).row()
+        }
         for ((i, sk) in SKILLS.withIndex()) {
             val c = card()
             val info = Table()
@@ -927,6 +938,48 @@ class Menus(private val g: SeaGame) {
         val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
         panel.add(back).growX().height(50f).padTop(8f).row()
         root.add(panel).width(min(g.wDp - 16, 460f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+    }
+
+    // ===================== Выбор капитана =====================
+    fun showHeroSelect(first: Boolean) = open(SeaGame.State.DIALOG) { buildHeroSelect(first) }
+
+    private fun buildHeroSelect(first: Boolean) {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label(if (first) "Выберите капитана" else "Сменить капитана", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label("У каждого капитана свои сильные стороны. Сменить капитана можно в меню «Капитан».", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().padBottom(8f).row()
+        val content = Table().top()
+        for (h in HEROES) {
+            val isCur = h.id == g.heroId
+            val c = card(if (isCur) 0x1d5a46 else 0x164266)
+            val img = Image(HeroArt.full(h))
+            img.setScaling(com.badlogic.gdx.utils.Scaling.fit)
+            c.add(img).size(120f, 160f).padRight(10f).top()
+            val t = Table()
+            t.add(ui.label(h.name, ui.big)).left().row()
+            t.add(ui.label(h.title.uppercase(), ui.small, rgb(0xffc93c))).left().padBottom(4f).row()
+            for (pk in h.perks) t.add(ui.label("✓ $pk", ui.small, rgb(0x3ddc84), wrap = true)).growX().left().row()
+            t.add(ui.label(h.story, ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(4f).row()
+            c.add(t).growX().top().row()
+            val btn = if (isCur && !first) ui.gray("✓ Ваш капитан").also { it.isDisabled = true }
+                else ui.green("Выбрать: ${h.name}").also {
+                    it.onClick {
+                        g.heroId = h.id
+                        if (g.player != null) g.rebuildPlayer()
+                        g.sfx.play("quest")
+                        g.save()
+                        if (first) { close(); g.checkDaily() }
+                        else { g.toast("Ваш капитан — ${h.name}", 1.6f); current = { buildCaptain() }; buildCaptain() }
+                    }
+                }
+            c.add(btn).colspan(2).growX().height(48f).padTop(8f).row()
+            content.add(c).growX().padBottom(10f).row()
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        if (!first) panel.add(ui.blue("Назад").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }).growX().height(48f).padTop(8f).row()
+        root.add(panel).width(min(g.wDp - 16, 480f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
     }
 
     // ===================== Достижения =====================

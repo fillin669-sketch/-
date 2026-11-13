@@ -347,10 +347,17 @@ class Hud(private val g: SeaGame) {
         // уровень и трюм под заданием
         val lvTxt = "Ур. ${sy.level}" + if (sy.skillPts > 0) "  +${sy.skillPts}" else ""
         val ly = qy - 8
-        ui.text(b, ui.small, lvTxt, 12f, ly, Align.left, 70f, c = if (sy.skillPts > 0) rgb(0xffc93c) else rgb(0xe3f2fd))
-        ui.pill(b, 62f, ly - 9, 60f, 5f, c(0x0b2238, 0.8f))
-        ui.pill(b, 62f, ly - 9, max(5f, 60f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
-        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", 130f, ly, Align.left, 120f, c = rgb(0xd7ccc8))
+        val hero = g.hero()
+        val lx = if (hero != null) 40f else 12f
+        if (hero != null) {
+            ui.round(b, 10f, ly - 22, 26f, 26f, c(0xd7b98e))
+            b.color = Color.WHITE
+            b.draw(HeroArt.face(hero), 12f, ly - 20, 22f, 22f)
+        }
+        ui.text(b, ui.small, lvTxt, lx, ly, Align.left, 70f, c = if (sy.skillPts > 0) rgb(0xffc93c) else rgb(0xe3f2fd))
+        ui.pill(b, lx + 50f, ly - 9, 60f, 5f, c(0x0b2238, 0.8f))
+        ui.pill(b, lx + 50f, ly - 9, max(5f, 60f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
+        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", lx + 118f, ly, Align.left, 120f, c = rgb(0xd7ccc8))
 
         drawMinimap()
 

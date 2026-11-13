@@ -114,6 +114,8 @@ class SeaGame : ApplicationAdapter() {
     var joySens = 85f
     var leftHanded = false
     var highQuality = true
+    var heroId = ""
+    fun hero(): Hero? = HEROES.firstOrNull { it.id == heroId }
 
     // ---------- Мир ----------
     var state = State.LOADING
@@ -262,8 +264,7 @@ class SeaGame : ApplicationAdapter() {
                 }
                 spawnGulls()
                 state = State.PLAY
-                checkDaily()
-                checkJournal()
+                if (hero() == null) menus.showHeroSelect(true) else { checkDaily(); checkJournal() }
             }
         }
         loadStep++
@@ -366,6 +367,7 @@ class SeaGame : ApplicationAdapter() {
         joySens = prefs.getFloat("joySens", 85f)
         leftHanded = prefs.getBoolean("leftHanded", false)
         highQuality = prefs.getBoolean("hq", true)
+        heroId = prefs.getString("hero", "")
         systems.load(prefs)
         living.load(prefs)
     }
@@ -391,6 +393,7 @@ class SeaGame : ApplicationAdapter() {
         prefs.putFloat("joySens", joySens)
         prefs.putBoolean("leftHanded", leftHanded)
         prefs.putBoolean("hq", highQuality)
+        prefs.putString("hero", heroId)
         systems.save(prefs)
         living.save(prefs)
         if (::sfx.isInitialized) {
@@ -435,7 +438,7 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
-    private fun checkDaily() {
+    fun checkDaily() {
         val today = java.time.LocalDate.now().toEpochDay()
         if (lastDaily == today) return
         streak = if (lastDaily == today - 1) streak + 1 else 1

@@ -111,9 +111,17 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val lv = g.living
         when (f) {
-            2 -> shot("00_daily")
-            4 -> { press("Забрать") }
+            2 -> shot("00_hero")
+            3 -> press("Выбрать: Hope")
+            5 -> shot("00_daily")
+            6 -> { press("Забрать") }
             10 -> { press("швартовы") }
+            11 -> { g.openPause() }
+            12 -> press("Капитан")
+            15 -> shot("00b_captain")
+            16 -> press("Сменить")
+            18 -> shot("00c_change")
+            19 -> { g.menus.close() }
             20 -> { g.coins = 60000; g.gems = 60; val u = g.ensureUp("sloop"); u[0] = 2; u[2] = 2; g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies(); g.rebuildPlayer(); g.openPort(0) }
             25 -> press("Улучшения")
             90 -> shot("01_upgrades")

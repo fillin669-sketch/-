@@ -103,23 +103,25 @@ class Living(private val g: SeaGame) {
     private fun active(): List<Officer> = crew.filter { it >= 0 }.map { OFFICERS[it] }
     private fun off(sel: (Officer) -> Float): Float = active().sumOf { sel(it).toDouble() }.toFloat()
 
+    private val hero get() = g.hero()
+
     fun applyStats(b: Stats): Stats = Stats(
-        hp = (b.hp * (1 + off { it.hp })).roundToInt(),
-        speed = b.speed * (1 + off { it.speed }),
-        turn = b.turn * (1 + off { it.turn }),
+        hp = (b.hp * (1 + off { it.hp } + (hero?.hp ?: 0f))).roundToInt(),
+        speed = b.speed * (1 + off { it.speed } + (hero?.speed ?: 0f)),
+        turn = b.turn * (1 + off { it.turn } + (hero?.turn ?: 0f)),
         cannons = b.cannons,
-        dmg = b.dmg * (1 + off { it.dmg }),
-        reload = b.reload * (1 - off { it.reload }),
+        dmg = b.dmg * (1 + off { it.dmg } + (hero?.dmg ?: 0f)),
+        reload = b.reload * (1 - off { it.reload } - (hero?.reload ?: 0f)),
         range = b.range * (1 + off { it.range }),
         mass = b.mass,
     )
 
-    fun buyMul() = 1f - off { it.trade } - clamp(rep[0] / 1000f, -0.1f, 0.1f)
-    fun sellMul() = 1f + off { it.trade } + clamp(rep[0] / 1000f, -0.1f, 0.1f)
-    fun lootMul() = 1f + off { it.loot }
+    fun buyMul() = 1f - off { it.trade } - (hero?.trade ?: 0f) - clamp(rep[0] / 1000f, -0.1f, 0.1f)
+    fun sellMul() = 1f + off { it.trade } + (hero?.trade ?: 0f) + clamp(rep[0] / 1000f, -0.1f, 0.1f)
+    fun lootMul() = 1f + off { it.loot } + (hero?.loot ?: 0f)
     fun boardMul() = 1f + off { it.board }
     fun gemBonus() = if (crew.contains(7)) 0.25f else 0f
-    fun upgradeMul() = if (baseFounded) 1f - 0.06f * blev[6] else 1f
+    fun upgradeMul() = (if (baseFounded) 1f - 0.06f * blev[6] else 1f) * (1f - (hero?.upgrade ?: 0f))
     fun extraCargo() = if (baseFounded) 8 * blev[1] else 0
     fun officerPrice(o: Officer) = (o.price * (1f - (if (baseFounded && blev[2] >= 2) 0.1f * (blev[2] - 1) else 0f)) *
         (if (o.role == 0 || o.role == 1) 1f else 1f) * (1f - clamp(rep[0] / 1000f, 0f, 0.1f))).roundToInt()
