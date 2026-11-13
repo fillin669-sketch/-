@@ -35,12 +35,12 @@ class MapPrefs : Preferences {
             val t = when (v) { is Boolean -> "b"; is Int -> "i"; is Long -> "l"; is Float -> "f"; else -> "s" }
             sb.append(k).append('\u0001').append(t).append('\u0001').append(v.toString()).append('\u0002')
         }
-        return java.util.Base64.getEncoder().encodeToString(sb.toString().toByteArray(Charsets.UTF_8))
+        return String(com.badlogic.gdx.utils.Base64Coder.encode(sb.toString().toByteArray(Charsets.UTF_8)))
     }
 
     companion object {
         fun decode(code: String): MapPrefs? = try {
-            val text = String(java.util.Base64.getDecoder().decode(code.trim()), Charsets.UTF_8)
+            val text = String(com.badlogic.gdx.utils.Base64Coder.decode(code.trim().replace("\n", "").replace("\r", "")), Charsets.UTF_8)
             if (!text.startsWith("SW1|")) null else MapPrefs().also { mp ->
                 for (e in text.removePrefix("SW1|").split('\u0002')) {
                     val parts = e.split('\u0001')

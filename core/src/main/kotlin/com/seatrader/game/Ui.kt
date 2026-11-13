@@ -235,9 +235,9 @@ class Ui(val scale: Float) : Disposable {
         p.setColor(0f, 0f, 0f, 0f); p.fill()
         p.blending = Pixmap.Blending.SourceOver
         draw(p)
-        val t = Texture(p, false)
+        // управляемая текстура: пиксели остаются в памяти и восстанавливаются после потери контекста OpenGL
+        val t = Texture(com.badlogic.gdx.graphics.glutils.PixmapTextureData(p, null, false, false, true))
         t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        p.dispose()
         textures += t
         return t
     }

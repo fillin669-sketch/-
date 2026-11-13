@@ -12,10 +12,10 @@ android {
 
     defaultConfig {
         applicationId = "com.seatrader.game"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 35
-        versionCode = 25
-        versionName = "8.16"
+        versionCode = 26
+        versionName = "8.17"
     }
 
     // Подпись: ключ передаётся через переменные окружения (в GitHub Actions — из кеша или секретов).
@@ -38,6 +38,8 @@ android {
     }
 
     compileOptions {
+        // стандартная библиотека Java 8+ для старых Android (5.0–7.1)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -55,6 +57,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
     for (abi in listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")) {
         natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$abi")

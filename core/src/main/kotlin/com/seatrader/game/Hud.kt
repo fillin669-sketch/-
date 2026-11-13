@@ -87,6 +87,8 @@ class Hud(private val g: SeaGame) {
 
     private var questHeight = 60f
     private var lineEnd = 130f
+    private var lineY = 0f
+    private var lineRight = 0f
 
     private fun minimapCenter(): Pair<Float, Float> {
         val top = g.hDp - g.safeTop
@@ -374,7 +376,12 @@ class Hud(private val g: SeaGame) {
         ui.pill(b, barX, ly - 9, 50f, 5f, c(0x0b2238, 0.8f))
         ui.pill(b, barX, ly - 9, max(5f, 50f * sy.xp / xpForLevel(sy.level).toFloat()), 5f, c(0x81d4fa))
         lineEnd = barX + 58
-        if (sy.cargoUsed() > 0) ui.text(b, ui.small, "Трюм ${sy.cargoUsed()}/${sy.capacity()}", lineEnd, ly, Align.left, 120f, c = rgb(0xd7ccc8))
+        lineY = ly; lineRight = lineEnd
+        if (sy.cargoUsed() > 0) {
+            val ct = "Трюм ${sy.cargoUsed()}/${sy.capacity()}"
+            ui.text(b, ui.small, ct, lineEnd, ly, Align.left, 120f, c = rgb(0xd7ccc8))
+            lineRight = lineEnd + ui.measure(ui.small, ct)
+        }
 
         drawMinimap()
 
@@ -480,6 +487,11 @@ class Hud(private val g: SeaGame) {
         tags += g.systems.region.title
         if (g.stormLevel > 0.3f) tags += "шторм"
         val tw = 2 * r + 60
-        ui.text(b, ui.small, tags.joinToString(" · "), g.wDp - tw - 6, cy - r - 8, Align.right, tw, c = rgb(0xb3e5fc, 0.85f))
+        val regionTxt = tags.joinToString(" · ")
+        val regionW = ui.measure(ui.small, regionTxt)
+        val regionY = cy - r - 8
+        // не налезаем на строку уровня/трюма слева
+        val clash = lineY - 16 < regionY + 2 && lineY > regionY - 16 && lineRight > g.wDp - regionW - 10
+        if (!clash) ui.text(b, ui.small, regionTxt, g.wDp - tw - 6, regionY, Align.right, tw, c = rgb(0xb3e5fc, 0.85f))
     }
 }

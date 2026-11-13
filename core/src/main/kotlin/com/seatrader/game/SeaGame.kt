@@ -204,10 +204,53 @@ class SeaGame : ApplicationAdapter() {
         Gdx.input.inputProcessor = InputMultiplexer(stage, input)
     }
 
-    private fun maxTex(): Int {
+    private fun glInt(e: Int): Int {
         val buf = com.badlogic.gdx.utils.BufferUtils.newIntBuffer(16)
-        Gdx.gl.glGetIntegerv(GL20.GL_MAX_TEXTURE_SIZE, buf)
-        return buf.get(0).coerceAtLeast(2048)
+        Gdx.gl.glGetIntegerv(e, buf)
+        return buf.get(0)
+    }
+
+    /** Наибольший размер буфера, который точно поддерживает видеочип (текстура и буфер глубины). */
+    private fun maxTex(): Int = minOf(glInt(GL20.GL_MAX_TEXTURE_SIZE), glInt(GL20.GL_MAX_RENDERBUFFER_SIZE)).coerceAtLeast(1024)
+
+    /** Видеочип телефона (для настроек и диагностики). */
+    var gpuName = ""
+
+    /** Стартовый уровень графики по видеочипу: старые и слабые — ниже, флагманы — ультра. */
+    private fun detectGfx(): Int {
+        if (Gdx.app.type != Application.ApplicationType.Android) return 3
+        val r = gpuName.lowercase()
+        val low = listOf("sgx", "mali-4", "mali-t6", "mali-t7", "adreno (tm) 3", "adreno (tm) 4", "adreno (tm) 50", "ge8", "mali-g31",
+            "vivante", "videocore", "powervr rogue g6", "powervr rogue g")
+        val mid = listOf("mali-t8", "mali-g51", "mali-g52", "mali-g57", "mali-g68", "adreno (tm) 51", "adreno (tm) 52", "adreno (tm) 53",
+            "adreno (tm) 54", "adreno (tm) 60", "adreno (tm) 61", "adreno (tm) 62", "gm9", "bxm", "img bxm")
+        val ultra = listOf("mali-g77", "mali-g78", "mali-g710", "mali-g715", "mali-g720", "mali-g610", "mali-g615", "immortalis", "xclipse",
+            "adreno (tm) 65", "adreno (tm) 66", "adreno (tm) 68", "adreno (tm) 69", "adreno (tm) 7", "adreno (tm) 8")
+        var lvl = when {
+            low.any { r.contains(it) } -> 0
+            mid.any { r.contains(it) } -> 1
+            ultra.any { r.contains(it) } -> 3
+            else -> 2
+        }
+        if (maxTex() < 4096) lvl = minOf(lvl, 1)
+        return lvl
+    }
+
+    /** Карта теней не создалась (мало видеопамяти) — играем без теней. */
+    private var shadowFail = false
+    private var reflFail = false
+
+    @Suppress("DEPRECATION")
+    private fun makeSunLight(size: Int): com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight {
+        var sz = size
+        while (true) {
+            try { return com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sz, sz, 300f, 300f, 1f, 320f) }
+            catch (e: Exception) {
+                Gdx.app.error("Shadows", "size $sz: ${e.message}")
+                if (sz <= 512) { shadowFail = true; return com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(64, 64, 300f, 300f, 1f, 320f) }
+                sz /= 2
+            }
+        }
     }
 
     private val wildCount = 60
@@ -217,6 +260,8 @@ class SeaGame : ApplicationAdapter() {
     private fun loadNext() {
         when {
             loadStep == 0 -> {
+                gpuName = try { Gdx.gl.glGetString(GL20.GL_RENDERER) ?: "" } catch (_: Exception) { "" }
+                if (!prefs.contains("gfx")) { gfx = detectGfx(); autoGfx = true }
                 sfx = Sfx()
                 sfx.sfxVolume = prefs.getFloat("sfxVol", 0.9f)
                 sfx.musicVolume = prefs.getFloat("musicVol", 0.6f)
@@ -229,9 +274,7 @@ class SeaGame : ApplicationAdapter() {
                 plainBatch = Shaders.batch(false)
                 modelBatch = if (gfx >= 1) detailBatch else plainBatch
                 fx = Fx(cam, ui.softDisc, ui.white, ui.streak, ui.gull)
-                val sm = shadowSize()
-                @Suppress("DEPRECATION")
-                sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
+                sunLight = makeSunLight(shadowSize())
                 // теневой проход со смещением глубины (убирает полосы «теневых акне»)
                 val dsCfg = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.Config()
                 val vs = com.badlogic.gdx.graphics.g3d.shaders.DepthShader.getDefaultVertexShader()
@@ -449,8 +492,14 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
+    /** Номер текущего дня по местному времени (без java.time — работает на старых Android). */
+    private fun localDay(): Long {
+        val now = System.currentTimeMillis()
+        return (now + java.util.TimeZone.getDefault().getOffset(now)) / 86_400_000L
+    }
+
     fun checkDaily() {
-        val today = java.time.LocalDate.now().toEpochDay()
+        val today = localDay()
         if (lastDaily == today) return
         streak = if (lastDaily == today - 1) streak + 1 else 1
         menus.showDaily((streak - 1) % DAILY.size)
@@ -460,7 +509,7 @@ class SeaGame : ApplicationAdapter() {
         val r = DAILY[idx]
         coins += r.coins
         gems += r.gems
-        lastDaily = java.time.LocalDate.now().toEpochDay()
+        lastDaily = localDay()
         sfx.play("treasure")
         save()
     }
@@ -1975,6 +2024,7 @@ class SeaGame : ApplicationAdapter() {
     private var fpsFrames = 0
     private var scaleIdx = 0
     private var slowChecks = 0
+    private var maxFpsSeen = 0f
     private fun scaleSteps(): FloatArray = when (gfx) {
         0 -> floatArrayOf(0.5f, 0.6f, 0.7f)
         1 -> floatArrayOf(0.6f, 0.7f, 0.8f, 0.9f)
@@ -1990,10 +2040,15 @@ class SeaGame : ApplicationAdapter() {
         val fps = fpsFrames / fpsAcc
         fpsAcc = 0f; fpsFrames = 0
         val steps = scaleSteps()
-        if (fps < 40f && scaleIdx > 0) scaleIdx--
-        else if (fps > 56f && scaleIdx < steps.size - 1) scaleIdx++
+        maxFpsSeen = max(maxFpsSeen, fps)
+        // телефон с ограничением 30 кадров (энергосбережение) — не путать с нехваткой мощности
+        val capped = maxFpsSeen < 34f
+        val lowT = if (capped) 24f else 40f
+        val highT = if (capped) 29f else 56f
+        if (fps < lowT && scaleIdx > 0) scaleIdx--
+        else if (fps > highT && scaleIdx < steps.size - 1) scaleIdx++
         // телефон не справляется даже на минимальном разрешении — снижаем уровень графики
-        if (fps < 30f && scaleIdx == 0 && gfx > 0 && autoGfx) {
+        if (fps < (if (capped) 20f else 30f) && scaleIdx == 0 && gfx > 0 && autoGfx) {
             if (++slowChecks >= 2) { slowChecks = 0; applyGfx(gfx - 1); toast("Графика снижена для плавной игры", 2f); return }
         } else slowChecks = 0
         post.scale = steps[scaleIdx.coerceAtMost(steps.size - 1)]
@@ -2016,8 +2071,7 @@ class SeaGame : ApplicationAdapter() {
         if (sunLight.depthMap.texture.width != sm) {
             env.remove(sunLight)
             sunLight.dispose()
-            @Suppress("DEPRECATION")
-            sunLight = com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight(sm, sm, 300f, 300f, 1f, 320f)
+            sunLight = makeSunLight(sm)
             env.add(sunLight)
             env.shadowMap = sunLight
         }
@@ -2034,7 +2088,11 @@ class SeaGame : ApplicationAdapter() {
     private val mirror = com.badlogic.gdx.math.Matrix4().scl(1f, -1f, 1f)
 
     /** Зеркальное отражение сцены в воде: та же камера, мир отражён по высоте. */
-    private fun renderReflection(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture {
+    private fun renderReflection(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture? = try { renderReflection0(lookX, lookZ) } catch (e: Exception) {
+        Gdx.app.error("Reflection", e.message ?: ""); reflFail = true; null
+    }
+
+    private fun renderReflection0(lookX: Float, lookZ: Float): com.badlogic.gdx.graphics.Texture {
         val rs = if (gfx >= 3) 0.5f else 0.38f
         val rw = (Gdx.graphics.backBufferWidth * rs).toInt().coerceAtLeast(64)
         val rh = (Gdx.graphics.backBufferHeight * rs).toInt().coerceAtLeast(64)
@@ -2098,7 +2156,7 @@ class SeaGame : ApplicationAdapter() {
         val lookX = camPos.x; val lookZ = camPos.z - 80
         // Карта теней от солнца (или луны)
         shadowCenter.set(lookX, 0f, lookZ + 30)
-        if (gfx >= 1) {
+        if (gfx >= 1 && !shadowFail) {
         sunLight.begin(shadowCenter, sunLight.direction)
         shadowBatch.begin(sunLight.camera)
         for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 + isl.r) shadowBatch.render(isl.inst)
@@ -2110,8 +2168,8 @@ class SeaGame : ApplicationAdapter() {
         sunLight.end()
         }
         Gdx.gl.glViewport(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)
-        val usePost = post.ok
-        val reflTex = if (gfx >= 2) renderReflection(lookX, lookZ) else null
+        val usePost = post.prepare()
+        val reflTex = if (gfx >= 2 && !reflFail) renderReflection(lookX, lookZ) else null
         if (usePost) post.begin()
         Gdx.gl.glClearColor(sky.fog[0], sky.fog[1], sky.fog[2], 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
@@ -2121,7 +2179,7 @@ class SeaGame : ApplicationAdapter() {
             nearIslands.clear()
             islands.sortedBy { hypot(it.x - lookX, it.z - lookZ) - it.r }.take(12).forEach { nearIslands += floatArrayOf(it.x, it.z, it.r) }
         }
-        val shadows = gfx >= 1 && !debugNoShadow
+        val shadows = gfx >= 1 && !debugNoShadow && !shadowFail
         env.shadowMap = if (shadows) sunLight else null
         water.render(cam, camPos.x, camPos.z - 60, now, sky, nearIslands, if (shadows) sunLight.depthMap.texture else null, sunLight.projViewTrans,
             reflTex, if (usePost) post.sceneW else Gdx.graphics.backBufferWidth, if (usePost) post.sceneH else Gdx.graphics.backBufferHeight, gfx >= 2)

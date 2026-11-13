@@ -12,9 +12,17 @@ class AndroidLauncher : AndroidApplication() {
             useAccelerometer = false
             useCompass = false
             useGyroscope = false
-            numSamples = 4
+            // сцена рисуется в собственный буфер со сглаживанием FXAA: MSAA экрана не нужен
+            // (на старых телефонах он съедает память и может не поддерживаться)
+            numSamples = 0
             r = 8; g = 8; b = 8; a = 0
-            depth = 24
+            depth = 16
+        }
+        // на телефонах с вырезом под камеру — на весь экран (отступы учитываются в интерфейсе)
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.also {
+                it.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
         initialize(SeaGame(), config)
     }

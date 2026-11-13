@@ -72,11 +72,11 @@ class Explored(val n: Int = 80) {
         }
     }
     fun percent() = bits.cardinality() * 100 / (n * n)
-    fun encode(): String = java.util.Base64.getEncoder().encodeToString(bits.toByteArray())
+    fun encode(): String = String(com.badlogic.gdx.utils.Base64Coder.encode(bits.toByteArray()))
     fun decode(s: String) {
         bits.clear()
         if (s.isEmpty()) return
-        try { bits.or(java.util.BitSet.valueOf(java.util.Base64.getDecoder().decode(s))) } catch (_: Exception) { }
+        try { bits.or(java.util.BitSet.valueOf(com.badlogic.gdx.utils.Base64Coder.decode(s))) } catch (_: Exception) { }
     }
 }
 class Wreck(var x: Float, var z: Float, val inst: ModelInstance) { var searchT = 0f; var bubbleT = 0f }

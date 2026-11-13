@@ -16,7 +16,9 @@ fun main() {
     if (test != null) TestScript(game, test).install()
     val config = Lwjgl3ApplicationConfiguration().apply {
         setTitle("Пираты Семи Ветров")
-        if (System.getenv("SEA_LANDSCAPE") != null) setWindowedMode(870, 412) else setWindowedMode(412, 870)
+        val sz = System.getenv("SEA_SIZE")?.split("x")?.mapNotNull { it.toIntOrNull() }
+        if (sz != null && sz.size == 2) setWindowedMode(sz[0], sz[1])
+        else if (System.getenv("SEA_LANDSCAPE") != null) setWindowedMode(870, 412) else setWindowedMode(412, 870)
         setForegroundFPS(60)
         setBackBufferConfig(8, 8, 8, 8, 24, 0, 4)
         if (test != null) setPreferencesConfig(test + "/prefs", com.badlogic.gdx.Files.FileType.Absolute)
@@ -106,7 +108,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 41) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
-        if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Выбрать"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 90) { dumpShaders(); Gdx.app.exit() }; return }
+        if (System.getenv("SEA_DUMP") != null) { if (f == 3) { press("Выбрать"); } ; if (f == 5) press("Забрать"); if (f == 8) g.menus.close(); if (f == 20) { g.autoGfx = false; g.applyGfx(0) }; if (f == 40) g.openPort(0); if (f == 60) { g.menus.close(); g.closePort(); g.applyGfx(3) }; if (f == 80) g.openPort(0); if (f == 120) { dumpShaders(); Gdx.app.exit() }; return }
         if (landscape) {
             when (f) {
                 3 -> { g.menus.close() }
@@ -502,6 +504,11 @@ class TestScript(private val g: SeaGame, private val out: String) {
             val prov = field(mb, "shaderProvider") ?: continue
             val arr = field(prov, "shaders") as? com.badlogic.gdx.utils.Array<*> ?: continue
             for ((i, sh) in arr.withIndex()) (field(sh!!, "program") as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("${bn}_$i", it) }
+        }
+        run {
+            val prov = field(field(g, "shadowBatch")!!, "shaderProvider")
+            val arr = prov?.let { field(it, "shaders") } as? com.badlogic.gdx.utils.Array<*>
+            arr?.forEachIndexed { i, sh -> (field(sh!!, "program") as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("depth_$i", it) } }
         }
         (field(field(g, "water")!!, "shader") as? com.badlogic.gdx.graphics.glutils.ShaderProgram)?.let { save("water", it) }
         val post = field(g, "post")!!

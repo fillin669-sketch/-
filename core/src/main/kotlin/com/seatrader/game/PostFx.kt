@@ -58,7 +58,7 @@ class PostFx : Disposable {
     }
 
     /** Все шейдеры постобработки собрались на этом телефоне (иначе рисуем сцену прямо на экран). */
-    val ok get() = bright.isCompiled && blur.isCompiled && composite.isCompiled
+    val ok get() = !failed && bright.isCompiled && blur.isCompiled && composite.isCompiled
 
     private fun ensure() {
         outW = Gdx.graphics.backBufferWidth; outH = Gdx.graphics.backBufferHeight
@@ -75,6 +75,17 @@ class PostFx : Disposable {
         if (nw == w && nh == h && scene != null) return
         dispose(false)
         w = nw; h = nh
+        try { alloc() } catch (e: Exception) {
+            // мало видеопамяти — уменьшаем буфер, в крайнем случае рисуем без постобработки
+            Gdx.app.error("PostFx", e.message ?: "")
+            dispose(false)
+            if (allocScale > 0.6f) { allocScale *= 0.75f; scale = minOf(scale, allocScale); w = 0; ensure() } else failed = true
+        }
+    }
+
+    private var failed = false
+
+    private fun alloc() {
         scene = FrameBuffer(Pixmap.Format.RGBA8888, w, h, true).also {
             it.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
         }
@@ -84,6 +95,13 @@ class PostFx : Disposable {
     }
 
     /** Начать рисование сцены в буфер. */
+    /** Подготовить буферы; false — постобработка недоступна на этом телефоне. */
+    fun prepare(): Boolean {
+        if (!ok) return false
+        ensure()
+        return ok && scene != null
+    }
+
     fun begin() {
         ensure()
         scene!!.begin()

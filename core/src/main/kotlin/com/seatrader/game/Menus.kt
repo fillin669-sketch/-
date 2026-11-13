@@ -101,8 +101,18 @@ class Menus(private val g: SeaGame) {
         t.add(r).growX().padTop(2f).row()
     }
 
+    /** Кнопка во всю ширину: длинный текст переносится, а не раздвигает окно на узких экранах. */
+    private fun TextButton.wrapping(): TextButton {
+        label.setWrap(true); label.setAlignment(Align.center); labelCell.minWidth(0f).growX()
+        return this
+    }
+
     private fun priceButton(text: String, gemsPrice: Int, can: Boolean): TextButton {
         val btn = if (can) ui.green(text) else ui.gray(text)
+        // на узких экранах длинная надпись переносится, а не раздвигает окно
+        btn.label.setWrap(true)
+        btn.label.setAlignment(Align.center)
+        btn.labelCell.minWidth(0f).growX()
         btn.add(Image(ui.coin)).size(20f).padLeft(6f)
         if (gemsPrice > 0) {
             btn.add(ui.label(" + $gemsPrice", ui.mid))
@@ -174,7 +184,12 @@ class Menus(private val g: SeaGame) {
         val tabs = Table()
         chips.forEachIndexed { i, name ->
             val b = if (sel == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
-            b.pad(5f, 3f, 5f, 3f)
+            b.pad(5f, 2f, 5f, 2f)
+            b.label.setWrap(false)
+            // узкий экран: длинное название вкладки чуть мельче
+            val avail = (if (landscape) min(g.wDp * 0.5f, 540f) else g.wDp - 12f) / (if (i < 3 || chips.size <= 4) 3f else 4f) - 10f
+            val tw = ui.measure(ui.small, name)
+            if (tw > avail - 26f) b.label.setFontScale(((avail - 26f) / tw).coerceAtLeast(0.66f))
             b.onClick { sheetCollapsed = false; onChip(i) }
             tabs.add(b).growX().uniformX().minWidth(0f).height(34f).pad(2f)
             if (i == 2 && chips.size > 4) tabs.row()
@@ -190,6 +205,9 @@ class Menus(private val g: SeaGame) {
         sheet.add(bar).growX().padBottom(if (sheetCollapsed) 0f else 6f).row()
         var scroll: ScrollPane? = null
         if (!sheetCollapsed) {
+            // содержимое строго по ширине панели: на узких экранах ничего не вылезает за края
+            val contentW = (if (landscape) min(g.wDp * 0.5f, 540f) else g.wDp - 12f) - 20f
+            for (cell in content.cells) cell.width(contentW).minWidth(0f)
             val sc = ScrollPane(content, ui.scrollStyle)
             sc.setScrollingDisabled(true, false)
             sc.setFadeScrollBars(true)
@@ -603,7 +621,7 @@ class Menus(private val g: SeaGame) {
             val row = Table()
             val b1 = ui.button("+1", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 1) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
             val b5 = ui.button("+5", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 5) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
-            val s1 = ui.button("Продать 1", 0xb9761e, 0x99611a, ui.small).also { it.onClick { sy.sell(portIndex, gi, 1); g.sfx.play("coin"); g.save(); refreshPort() } }
+            val s1 = ui.button("-1", 0xb9761e, 0x99611a, ui.small).also { it.onClick { sy.sell(portIndex, gi, 1); g.sfx.play("coin"); g.save(); refreshPort() } }
             val sa = ui.button("Продать всё", 0xb9761e, 0x99611a, ui.small).also { it.onClick { if (sy.sell(portIndex, gi, sy.cargo[gi]) > 0) g.sfx.play("coin"); g.save(); refreshPort() } }
             for (bt in listOf(b1, b5, s1, sa)) row.add(bt).growX().height(40f).pad(2f)
             c.add(row).growX().padTop(6f).row()
@@ -619,14 +637,14 @@ class Menus(private val g: SeaGame) {
         rc.add(ui.label("Репутация", ui.big)).left().row()
         for (i in 0..2) {
             val r = Table()
-            r.add(ui.label(lv.repNames[i], ui.small, rgb(0xcfe3f7))).width(86f).left()
-            r.add(RepBar(ui, lv.rep[i])).growX().height(16f).padRight(8f)
-            r.add(ui.label(lv.repLabel(lv.rep[i]), ui.small, rgb(if (lv.rep[i] >= 20) 0x3ddc84 else if (lv.rep[i] <= -20) 0xff8a80 else 0xffffff))).width(92f).right()
+            r.add(ui.label(lv.repNames[i], ui.small, rgb(0xcfe3f7))).width(84f).left()
+            r.add(RepBar(ui, lv.rep[i])).growX().minWidth(36f).height(16f).padRight(6f)
+            r.add(ui.label(lv.repLabel(lv.rep[i]), ui.small, rgb(if (lv.rep[i] >= 20) 0x3ddc84 else if (lv.rep[i] <= -20) 0xff8a80 else 0xffffff), align = Align.right)).width(100f).right()
             rc.add(r).growX().padTop(3f).row()
         }
         rc.add(ui.label("Торговля поднимает доверие купцов. Охота на пиратов радует флот и злит пиратов. Товары в Приюте контрабандистов — дружба с пиратами.",
             ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(6f).row()
-        rc.add(priceButton("Откупиться от пиратов 300", 0, g.coins >= 300).also { it.onClick { lv.tribute(); refreshAny() } }).growX().height(46f).padTop(6f).row()
+        rc.add(priceButton("Откуп пиратам 300", 0, g.coins >= 300).also { it.onClick { lv.tribute(); refreshAny() } }).growX().height(46f).padTop(6f).row()
         content.add(rc).growX().padBottom(10f).row()
         // Команда
         val cc = card(0x1d3b2e)
@@ -665,7 +683,7 @@ class Menus(private val g: SeaGame) {
             val cur = lv.crew[o.role]
             if (cur >= 0) c.add(ui.label("Заменит: ${OFFICERS[cur].name}", ui.small, rgb(0xffab91))).left().padTop(2f).row()
             val price = lv.officerPrice(o)
-            val btn = if (o.id in lv.hired) ui.blue("Назначить: ${ROLES[o.role].lowercase()}")
+            val btn = if (o.id in lv.hired) ui.blue("Назначить: ${ROLES[o.role].lowercase()}").wrapping()
                 else priceButton("Нанять ${fmt(price)}", o.gems, g.coins >= price && g.gems >= o.gems)
             btn.onClick { if (lv.hire(o)) refreshAny() }
             c.add(btn).growX().height(48f).padTop(8f).row()
@@ -685,9 +703,9 @@ class Menus(private val g: SeaGame) {
                 r.add(ui.label(cpt.story, ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
                 r.add(ui.label("Награда: ${fmt(cpt.bounty)} монет и ${cpt.gems} кристаллов", ui.small, rgb(0x3ddc84))).left().padTop(2f).row()
                 val b = when {
-                    lv.activeBounty == cpt.id -> ui.gray("Охота идёт…").also { it.isDisabled = true }
-                    lv.activeBounty >= 0 -> ui.gray("Сначала текущий заказ").also { it.isDisabled = true }
-                    else -> ui.button("Взять заказ", 0xb71c1c, 0x8e1515, ui.mid).also { it.onClick { lv.acceptBounty(cpt.id); refreshAny() } }
+                    lv.activeBounty == cpt.id -> ui.gray("Охота идёт…").wrapping().also { it.isDisabled = true }
+                    lv.activeBounty >= 0 -> ui.gray("Сначала текущий заказ").wrapping().also { it.isDisabled = true }
+                    else -> ui.button("Взять заказ", 0xb71c1c, 0x8e1515, ui.mid).wrapping().also { it.onClick { lv.acceptBounty(cpt.id); refreshAny() } }
                 }
                 r.add(b).growX().height(42f).padTop(6f).row()
             }
@@ -724,7 +742,7 @@ class Menus(private val g: SeaGame) {
         } else {
             if (baseTab == 1) tavernCards(content, Living.BASE_PORT) else {
                 val bank = card(0x1d5a46)
-                bank.add(ui.label("Казна базы: ${lv.bank.toInt()} из ${lv.bankCap()}", ui.big)).left().row()
+                bank.add(ui.label("Казна базы: ${lv.bank.toInt()} из ${lv.bankCap()}", ui.mid, wrap = true)).growX().left().row()
                 bank.add(ui.label("Доход: ${lv.incomePerMin()} монет в минуту. Склад увеличивает казну. Корабль здесь чинится бесплатно.", ui.small, rgb(0xc8e6c9), wrap = true)).growX().row()
                 bank.add(ui.green("Забрать ${lv.bank.toInt()}").also { it.onClick { lv.collectBank(); buildBaseMenu() } }).growX().height(48f).padTop(8f).row()
                 content.add(bank).growX().padBottom(10f).row()
