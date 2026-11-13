@@ -65,7 +65,7 @@ class Living(private val g: SeaGame) {
 
     // ---------- Флот ----------
     var order = 0 // 0 строй, 1 атака, 2 отход
-    val orderNames = listOf("Строй", "Атака", "Отход")
+    val orderNames = listOf("Колонна", "Атака", "Отход")
 
     // ---------- Погода ----------
     val fogBanks = ArrayList<FloatArray>() // x, z, r

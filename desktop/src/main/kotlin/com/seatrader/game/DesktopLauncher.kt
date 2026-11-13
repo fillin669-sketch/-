@@ -111,6 +111,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         }
         val lv = g.living
         if (System.getenv("SEA_AI") != null) { aiTest(f); return }
+        if (System.getenv("SEA_ALLY") != null) { allyTest(f); return }
         when (f) {
             2 -> shot("00_hero")
             3 -> press("Выбрать: Hope")
@@ -217,6 +218,30 @@ class TestScript(private val g: SeaGame, private val out: String) {
                 Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
                 Gdx.app.exit()
             }
+        }
+    }
+
+    private fun allyTest(f: Int) {
+        val p = g.player ?: return
+        when (f) {
+            2 -> press("Выбрать: Fin")
+            4 -> press("Забрать")
+            8 -> { g.menus.close(); for (s in ArrayList(g.ships)) if (s !== p) g.ships.remove(s); p.x = 300f; p.z = 300f; p.inPort = false
+                g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies() }
+            in 10..1300 -> {
+                for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.ships.remove(s)
+                // игрок рулит змейкой
+                g.joyActive = true; g.joyMag = 1f
+                val a = f * 0.004f
+                g.joyJx = kotlin.math.sin(a * 3f); g.joyJy = kotlin.math.cos(a * 2f)
+                if (f % 90 == 0) {
+                    val al = g.ships.filter { it.ally }
+                    log.append("t=${f / 30}s speed=${"%.1f".format(p.speed)} " + al.joinToString { "d=${Math.hypot((it.x - p.x).toDouble(), (it.z - p.z).toDouble()).toInt()} spd=${"%.1f".format(it.speed)}" } + "\n")
+                }
+                if (f == 600) shot("ally1")
+                if (f == 1200) shot("ally2")
+            }
+            1301 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
         }
     }
 

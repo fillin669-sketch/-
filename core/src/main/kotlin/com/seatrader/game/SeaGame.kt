@@ -797,7 +797,7 @@ class SeaGame : ApplicationAdapter() {
             val targetAng = clamp(diff * 2.2f, -st.turn, st.turn) * rudder
             s.angVel += (targetAng - s.angVel) * min(1f, dt * 2.8f / massK)
             val slow = (if (s.slowT > 0) 0.55f else 1f) * max(0.55f, 1f - 0.15f * s.brokenMasts)
-            val maxSp = st.speed * windFactor(s.h) * slow * (if (s.boostT > 0) 1.7f else 1f)
+            val maxSp = st.speed * windFactor(s.h) * slow * (if (s.boostT > 0) 1.7f else 1f) * (if (s.catchUp) 1.3f else 1f)
             val target = maxSp * s.throttle * (if (abs(diff) > 1.8f) 0.6f else 1f)
             val accel = if (target > vf) (if (s.boostT > 0) 3f else 1.1f / massK) else 0.45f
             vf += (target - vf) * min(1f, dt * accel)
@@ -1549,41 +1549,80 @@ class SeaGame : ApplicationAdapter() {
         steerAround(s, Gdx.graphics.deltaTime.coerceAtMost(0.05f))
     }
 
-    /** Союзники слушаются приказов: строй, атака, отход. */
+    // След корабля игрока: союзники идут точно по нему кильватерной колонной
+    private val trail = ArrayDeque<FloatArray>()
+
+    private fun recordTrail() {
+        val p = player ?: return
+        val last = trail.lastOrNull()
+        if (last != null && hypot(p.x - last[0], p.z - last[1]) > 60f) trail.clear()
+        val l2 = trail.lastOrNull()
+        if (l2 == null || hypot(p.x - l2[0], p.z - l2[1]) > 2f) {
+            trail.addLast(floatArrayOf(p.x, p.z, p.h))
+            if (trail.size > 450) trail.removeFirst()
+        }
+    }
+
+    /** Точка на следе игрока на расстоянии [dist] позади (x, z, курс) или null, если след короче. */
+    private fun trailPoint(dist: Float): FloatArray? {
+        val p = player ?: return null
+        var acc = 0f
+        var px = p.x; var pz = p.z
+        for (i in trail.indices.reversed()) {
+            val q = trail[i]
+            val seg = hypot(q[0] - px, q[1] - pz)
+            if (acc + seg >= dist) {
+                val k = if (seg > 0) (dist - acc) / seg else 0f
+                return floatArrayOf(px + (q[0] - px) * k, pz + (q[1] - pz) * k, q[2])
+            }
+            acc += seg; px = q[0]; pz = q[1]
+        }
+        return null
+    }
+
+    /** Союзники слушаются приказов: строй (колонна за флагманом), атака, отход. */
     private fun updateAllyAI(s: Ship, dt: Float) {
         if (s.sinking) return
         val p = player ?: return
         val order = living.order
-        var foe: Ship? = null; var fd = Float.MAX_VALUE
-        val radius = if (order == 1) 320f else 120f
-        for (o in ships) {
-            if (o.faction != Faction.PIRATE || o.sinking) continue
-            val d = hypot(o.x - p.x, o.z - p.z)
-            if (d < radius && d < fd) { fd = d; foe = o }
-        }
-        if (order != 2 && foe != null && hypot(s.x - p.x, s.z - p.z) < (if (order == 1) 450 else 160)) {
-            s.ai = AiState.ATTACK
-            attackMove(s, foe, dt)
-        } else {
-            s.ai = AiState.FOLLOW
-            val side = if (s.allyIdx == 0) -1f else 1f
-            val bx = sin(p.h); val bz = -cos(p.h); val rx = cos(p.h); val rz = sin(p.h)
-            // строй — кильватер по бокам; отход — плотно за кормой
-            val back = if (order == 2) 18f else 24f
-            val wide = if (order == 2) 7f else 16f
-            val tx = p.x - bx * back * (1 + s.allyIdx * 0.6f) + rx * side * wide
-            val tz = p.z - bz * back * (1 + s.allyIdx * 0.6f) + rz * side * wide
-            val d = hypot(tx - s.x, tz - s.z)
-            if (d > 6) {
-                s.desired = atan2(tx - s.x, -(tz - s.z))
-                s.throttle = clamp(d / 30f, 0.2f, 1f) * (if (order == 2) 1.15f else 1f)
-            } else {
-                s.desired = p.h
-                s.throttle = clamp(abs(p.speed) / max(1f, s.stats.speed), 0f, 1f)
+        s.catchUp = false
+        if (order == 1) {
+            var foe: Ship? = null; var fd = Float.MAX_VALUE
+            for (o in ships) {
+                if (o.faction != Faction.PIRATE || o.sinking) continue
+                val d = hypot(o.x - p.x, o.z - p.z)
+                if (d < 320 && d < fd) { fd = d; foe = o }
             }
-            if (d > 400) { s.x = tx; s.z = tz; s.vx = p.vx; s.vz = p.vz }
+            if (foe != null && hypot(s.x - p.x, s.z - p.z) < 450) {
+                s.ai = AiState.ATTACK
+                attackMove(s, foe, dt)
+                avoidPortsAndIslands(s, false)
+                return
+            }
         }
-        avoidPortsAndIslands(s, false)
+        s.ai = AiState.FOLLOW
+        // место в колонне: каждый следующий — дальше по следу флагмана
+        val spacing = if (order == 2) 18f else 26f
+        var rank = 0
+        for (o in ships) { if (o === s) break; if (o.ally && !o.sinking) rank++ }
+        val dist = p.len * 0.5f + 14f + rank * spacing + s.len * 0.5f
+        val tp = trailPoint(dist)
+        val tx: Float; val tz: Float
+        if (tp != null) { tx = tp[0]; tz = tp[1] }
+        else { tx = p.x - sin(p.h) * dist; tz = p.z + cos(p.h) * dist }
+        val d = hypot(tx - s.x, tz - s.z)
+        if (d > 7) {
+            s.desired = atan2(tx - s.x, -(tz - s.z))
+            s.throttle = clamp(d / 12f, 0.3f, 1f)
+        } else {
+            s.desired = tp?.get(2) ?: p.h
+            s.throttle = clamp(abs(p.speed) / max(1f, s.stats.speed) + (d - 3f) / 30f, 0f, 1f)
+        }
+        // не налетать на флагман
+        if (hypot(p.x - s.x, p.z - s.z) < p.radius + s.radius + 4f) s.throttle *= 0.3f
+        s.catchUp = d > 12f
+        if (d > 400) { s.x = tx; s.z = tz; s.vx = p.vx; s.vz = p.vz; s.h = tp?.get(2) ?: p.h }
+        if (d > 25f) steerAround(s, dt)
     }
 
     // ================= Задания =================
@@ -1830,6 +1869,7 @@ class SeaGame : ApplicationAdapter() {
     private fun update(dt: Float) {
         now += dt
         controlPlayer()
+        recordTrail()
         for (s in ArrayList(ships)) when {
             s.faction == Faction.PIRATE -> updatePirateAI(s, dt)
             s.faction == Faction.NEUTRAL -> systems.neutralAI(s, dt)

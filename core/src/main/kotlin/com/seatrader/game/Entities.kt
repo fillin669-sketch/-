@@ -67,6 +67,8 @@ class Ship(
     var bounty = -1
     /** Навигация ботов: сколько стоим на месте и куда выбираемся. */
     var stuckT = 0f
+    /** Союзник догоняет строй: немного быстрее обычного. */
+    var catchUp = false
     var escapeT = 0f
     var escA = 0f
     var hunter = false

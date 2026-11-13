@@ -163,7 +163,9 @@ class Systems(private val g: SeaGame) {
 
     /** Бутылки с песнями в открытом море. */
     fun placeBottles(isWater: (Float, Float, Float) -> Boolean) {
-        val spots = listOf(1 to floatArrayOf(-1150f, -520f), 2 to floatArrayOf(1180f, 560f))
+        val spots = listOf(1 to floatArrayOf(-1150f, -520f), 2 to floatArrayOf(1180f, 560f),
+            3 to floatArrayOf(-700f, 900f), 4 to floatArrayOf(820f, -820f), 5 to floatArrayOf(-1350f, 1100f),
+            6 to floatArrayOf(400f, 1350f), 7 to floatArrayOf(1350f, -1250f))
         for ((song, pos) in spots) {
             var x = pos[0]; var z = pos[1]
             var k = 0
