@@ -57,6 +57,7 @@ class SeaGame : ApplicationAdapter() {
     lateinit var hud: Hud
     lateinit var menus: Menus
     val systems = Systems(this)
+    val living = Living(this)
     private val env = Environment()
     private lateinit var sunLight: com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
     private lateinit var shadowBatch: ModelBatch
@@ -69,7 +70,7 @@ class SeaGame : ApplicationAdapter() {
     private val fogAttr = ColorAttribute(ColorAttribute.Fog, 0.5f, 0.7f, 0.9f, 1f)
     val sky = Sky()
     private val models = ArrayList<Model>()
-    private val shipModels = HashMap<Look, Model>()
+    private val shipModels = HashMap<String, Model>()
     private lateinit var chestModel: Model
     private lateinit var gemModel: Model
     private lateinit var treasureModel: Model
@@ -137,7 +138,7 @@ class SeaGame : ApplicationAdapter() {
     var questPop = 0f
     private var spawnTimer = 0f
     private var saveTimer = 0f
-    private var camSnap = true
+    var camSnap = true
     val camPos = Vector3()
     private val camOff = Vector3(0f, 118f, 78f)
     var deathTimer = 0f
@@ -240,11 +241,12 @@ class SeaGame : ApplicationAdapter() {
                 systems.initModels(models)
             }
             loadStep <= PORTS.size -> buildPort(loadStep - 1)
-            loadStep == PORTS.size + 1 -> systems.buildFortresses(models) { x, z, r, reg -> addIsland(x, z, r, reg, 777) }
+            loadStep == PORTS.size + 1 -> { systems.buildFortresses(models) { x, z, r, reg -> addIsland(x, z, r, reg, 777) }; living.buildBase(models) }
             loadStep <= PORTS.size + 1 + wildCount -> repeat(1) { buildWildIsland() }
             else -> {
                 systems.buildReefsAndWrecks { x, z, m -> isWater(x, z, m) }
                 systems.placeBottles { x, z, m -> isWater(x, z, m) }
+                living.buildWorld { x, z, m -> isWater(x, z, m) }
                 fx.limit = if (highQuality) 900 else 450
                 spawnPlayer()
                 startX = player!!.x; startZ = player!!.z
@@ -358,6 +360,7 @@ class SeaGame : ApplicationAdapter() {
         leftHanded = prefs.getBoolean("leftHanded", false)
         highQuality = prefs.getBoolean("hq", true)
         systems.load(prefs)
+        living.load(prefs)
     }
 
     fun save(prefs: Preferences = this.prefs) {
@@ -382,6 +385,7 @@ class SeaGame : ApplicationAdapter() {
         prefs.putBoolean("leftHanded", leftHanded)
         prefs.putBoolean("hq", highQuality)
         systems.save(prefs)
+        living.save(prefs)
         if (::sfx.isInitialized) {
             prefs.putFloat("sfxVol", sfx.sfxVolume)
             prefs.putFloat("musicVol", sfx.musicVolume)
@@ -447,10 +451,10 @@ class SeaGame : ApplicationAdapter() {
         return base.copy(sail = if (sailIdx == 0) base.sail else SAIL_COLORS[sailIdx].color, flag = flag)
     }
 
-    private fun shipModel(look: Look) = shipModels.getOrPut(look) { Models.ship(look).also { models += it } }
+    fun shipModel(look: Look, up: IntArray? = null) = shipModels.getOrPut(look.toString() + "|" + (up?.joinToString(",") ?: "")) { Models.ship(look, up).also { models += it } }
 
-    private fun createShip(name: String, stats: Stats, faction: Faction, look: Look, x: Float, z: Float, h: Float, boss: Boolean): Ship {
-        val s = Ship(nextId++, name, stats, faction, look, x, z, h, ModelInstance(shipModel(look)), boss)
+    private fun createShip(name: String, stats: Stats, faction: Faction, look: Look, x: Float, z: Float, h: Float, boss: Boolean, up: IntArray? = null): Ship {
+        val s = Ship(nextId++, name, stats, faction, look, x, z, h, ModelInstance(shipModel(look, up)), boss)
         ships += s
         return s
     }
@@ -461,7 +465,7 @@ class SeaGame : ApplicationAdapter() {
 
     /** Характеристики корабля игрока с учётом улучшений и навыков капитана. */
     fun playerStats(): Stats {
-        val b = shipStats(playerDef(), ensureUp(shipId))
+        val b = living.applyStats(shipStats(playerDef(), ensureUp(shipId)))
         val sk = systems
         return Stats(
             hp = Math.round(b.hp * (1 + 0.06f * sk.skill("carpenter"))),
@@ -479,7 +483,7 @@ class SeaGame : ApplicationAdapter() {
         val p = ports[homePort]
         player?.let { removeShip(it) }
         val def = playerDef()
-        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), p.rx, p.rz + 4f, PI.toFloat(), false)
+        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), p.rx, p.rz + 4f, PI.toFloat(), false, ensureUp(def.id))
             .also { it.inPort = true }
         camSnap = true
         spawnAllies()
@@ -489,7 +493,7 @@ class SeaGame : ApplicationAdapter() {
         val old = player ?: return
         removeShip(old)
         val def = playerDef()
-        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), old.x, old.z, old.h, false)
+        player = createShip(def.name, playerStats(), Faction.PLAYER, playerLook(), old.x, old.z, old.h, false, ensureUp(def.id))
             .also { it.inPort = true }
     }
 
@@ -509,9 +513,9 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
-    fun spawnEnemy(type: String, x: Float, z: Float): Ship {
+    fun spawnEnemy(type: String, x: Float, z: Float, name: String? = null, boss: Boolean? = null): Ship {
         val d = ENEMIES.getValue(type)
-        return createShip(d.name, enemyStats(d), Faction.PIRATE, d.look, x, z, rand(-PI.toFloat(), PI.toFloat()), d.boss).also {
+        return createShip(name ?: d.name, enemyStats(d), Faction.PIRATE, d.look, x, z, rand(-PI.toFloat(), PI.toFloat()), boss ?: d.boss).also {
             it.type = type; it.coinsMin = d.coinsMin; it.coinsMax = d.coinsMax; it.gems = d.gems
         }
     }
@@ -577,6 +581,7 @@ class SeaGame : ApplicationAdapter() {
                 val (bx, by) = hud.boardPos()
                 if (abs(x - bx) < 95 && abs(y - by) < 30) { systems.boardTarget?.let { systems.throwGrapples(it) }; return true }
             }
+            if (living.touch(x, y)) return true
             if (hud.minimapHit(x, y)) { sfx.play("click"); joyActive = false; menus.showMap(); return true }
             if (!joyActive) {
                 joyActive = true; joyPointer = pointer
@@ -742,7 +747,7 @@ class SeaGame : ApplicationAdapter() {
 
     // ================= Физика кораблей =================
     /** Насколько ветер помогает: по ветру ~1.15, против ветра ~0.7. */
-    fun windFactor(h: Float) = 0.7f + 0.45f * (0.5f + 0.5f * cos(h - windA)) * min(1.25f, windS)
+    fun windFactor(h: Float) = (0.7f + 0.45f * (0.5f + 0.5f * cos(h - windA)) * min(1.25f, windS)) * (1f - 0.35f * living.calmK)
 
     private fun updateShip(s: Ship, dt: Float) {
         val st = s.stats
@@ -982,11 +987,11 @@ class SeaGame : ApplicationAdapter() {
         s.reload[0] -= dt; s.reload[1] -= dt
         if (s.sinking) return
         val p = player
-        if (s.faction == Faction.NEUTRAL) return
+        if (s.faction == Faction.NEUTRAL && s.type != "navy") return
         if (s === p && !systems.autoFire) return
         val foes: List<Ship> = when {
-            s.faction == Faction.PLAYER -> ships.filter { it.faction == Faction.PIRATE && !it.sinking }
-            s.ai == AiState.ATTACK -> ships.filter { (it.faction == Faction.PLAYER || it.type == "merchant") && !it.sinking && !(it === p && p.safe) }
+            s.faction == Faction.PLAYER || s.faction == Faction.NEUTRAL -> ships.filter { it.faction == Faction.PIRATE && !it.sinking }
+            s.ai == AiState.ATTACK -> ships.filter { (it.faction == Faction.PLAYER || it.type == "merchant" || (it.type == "navy" && it.faction == Faction.NEUTRAL)) && !it.sinking && !(it === p && p.safe) }
             else -> emptyList()
         }
         val sp = serpent
@@ -1001,7 +1006,7 @@ class SeaGame : ApplicationAdapter() {
                 if ((dx * rx + dz * rz) / d < 0.42f) continue
                 if (d < bd) { bd = d; best = o }
             }
-            val kind = if (s === p) ammo else Ammo.NORMAL
+            val kind = when { s === p -> ammo; s.trait == "fire" -> Ammo.FIRE; s.trait == "chain" -> Ammo.CHAIN; else -> Ammo.NORMAL }
             if (best != null) { fireBroadside(s, si, best.x, best.z, best.vx, best.vz, kind); continue }
             // по змею стреляют игрок и союзники
             if (s.faction == Faction.PLAYER && sp != null && !sp.dead && !sp.diving) {
@@ -1089,6 +1094,7 @@ class SeaGame : ApplicationAdapter() {
         for (s in ships) {
             if (s.faction == b.faction || s.sinking) continue
             if (s.faction == Faction.NEUTRAL && b.faction == Faction.PLAYER) continue
+            if (s.faction == Faction.PLAYER && b.faction == Faction.NEUTRAL) continue
             val dx = b.x - s.x; val dz = b.z - s.z
             if (dx * dx + dz * dz > (s.len * 0.6f) * (s.len * 0.6f)) continue
             val fxv = sin(s.h); val fzv = -cos(s.h)
@@ -1161,6 +1167,7 @@ class SeaGame : ApplicationAdapter() {
 
     fun damage(s: Ship, amount: Float, src: Ship?, ram: Boolean, silent: Boolean = false) {
         if (s.sinking) return
+        val amount = if (s.trait == "armored") amount * 0.6f else amount
         s.hp -= amount
         s.lastHit = now
         if (s.faction == Faction.PLAYER || src?.faction == Faction.PLAYER) combatT = 8f
@@ -1174,10 +1181,11 @@ class SeaGame : ApplicationAdapter() {
 
     private fun sink(s: Ship, src: Ship?, ram: Boolean) {
         s.sinkT = 0.001f
+        living.onSink(s, src)
         fx.explosion(s.x, 3f, s.z, 1.5f)
         sfx.play("sink", volumeAt(s.x, s.z))
         if (s.faction == Faction.PIRATE) {
-            dropLoot(s.x, s.z, (Random.nextInt(s.coinsMin, s.coinsMax + 1) * systems.luckMul()).roundToInt(), s.gems)
+            dropLoot(s.x, s.z, (Random.nextInt(s.coinsMin, s.coinsMax + 1) * systems.luckMul() * living.lootMul()).roundToInt(), s.gems * (1f + living.gemBonus()))
             if (src == null || src.faction == Faction.PLAYER) {
                 kills++
                 systems.addStat("kills")
@@ -1390,13 +1398,15 @@ class SeaGame : ApplicationAdapter() {
         if (s.sinking) return
         val p = player ?: return
         s.aiT -= dt
-        val aggro = if (s.boss) 280f else 175f
+        val aggro = if (s.hunter) 3000f else (if (s.boss) 280f else 175f) * (1f - 0.55f * living.fogK)
+        val friendly = living.pirateFriendly && !s.boss && !s.hunter && s.type != "navy" && s.lastHit < now - 15
         // цель: ближайший из игрока и его союзников
         var tgt: Ship? = null; var td = Float.MAX_VALUE
         for (o in ships) {
             if (o.sinking) continue
-            if (o.faction != Faction.PLAYER && o.type != "merchant") continue
+            if (o.faction != Faction.PLAYER && o.type != "merchant" && !(o.type == "navy" && o.faction == Faction.NEUTRAL)) continue
             if (o === p && p.safe) continue
+            if (friendly && o.faction == Faction.PLAYER) continue
             val d = hypot(o.x - s.x, o.z - s.z) * (if (o.type == "merchant") 0.8f else 1f)
             if (d < td) { td = d; tgt = o }
         }
@@ -1404,7 +1414,9 @@ class SeaGame : ApplicationAdapter() {
         else if (s.ai == AiState.ATTACK && (tgt == null || td > aggro * 1.8f)) s.ai = AiState.WANDER
         val t = s.target
         val lead = s.leader
-        if (s.ai == AiState.ATTACK && t != null && !t.sinking) attackMove(s, t, dt)
+        if (s.ai == AiState.ATTACK && t != null && !t.sinking && s.trait == "rammer" && hypot(t.x - s.x, t.z - s.z) < 120) {
+            s.desired = atan2(t.x - s.x, -(t.z - s.z)); s.throttle = 1f
+        } else if (s.ai == AiState.ATTACK && t != null && !t.sinking) attackMove(s, t, dt)
         else if (lead != null && !lead.sinking && ships.contains(lead)) {
             // строй флотилии: держатся за флагманом
             val off = (s.id % 3 - 1) * 20f
@@ -1418,7 +1430,7 @@ class SeaGame : ApplicationAdapter() {
         avoidPortsAndIslands(s, true)
     }
 
-    private fun attackMove(s: Ship, t: Ship, dt: Float) {
+    fun attackMove(s: Ship, t: Ship, dt: Float) {
         val dx = t.x - s.x; val dz = t.z - s.z; val d = hypot(dx, dz)
         val toT = atan2(dx, -dz)
         val r = s.stats.range * 0.7f
@@ -1456,29 +1468,34 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
-    /** Союзники держат строй и вступают в бой с пиратами рядом с игроком. */
+    /** Союзники слушаются приказов: строй, атака, отход. */
     private fun updateAllyAI(s: Ship, dt: Float) {
         if (s.sinking) return
         val p = player ?: return
+        val order = living.order
         var foe: Ship? = null; var fd = Float.MAX_VALUE
+        val radius = if (order == 1) 320f else 120f
         for (o in ships) {
             if (o.faction != Faction.PIRATE || o.sinking) continue
             val d = hypot(o.x - p.x, o.z - p.z)
-            if (d < 120 && d < fd) { fd = d; foe = o }
+            if (d < radius && d < fd) { fd = d; foe = o }
         }
-        if (foe != null && hypot(s.x - p.x, s.z - p.z) < 160) {
+        if (order != 2 && foe != null && hypot(s.x - p.x, s.z - p.z) < (if (order == 1) 450 else 160)) {
             s.ai = AiState.ATTACK
             attackMove(s, foe, dt)
         } else {
             s.ai = AiState.FOLLOW
             val side = if (s.allyIdx == 0) -1f else 1f
             val bx = sin(p.h); val bz = -cos(p.h); val rx = cos(p.h); val rz = sin(p.h)
-            val tx = p.x - bx * 24 + rx * side * 16
-            val tz = p.z - bz * 24 + rz * side * 16
+            // строй — кильватер по бокам; отход — плотно за кормой
+            val back = if (order == 2) 18f else 24f
+            val wide = if (order == 2) 7f else 16f
+            val tx = p.x - bx * back * (1 + s.allyIdx * 0.6f) + rx * side * wide
+            val tz = p.z - bz * back * (1 + s.allyIdx * 0.6f) + rz * side * wide
             val d = hypot(tx - s.x, tz - s.z)
             if (d > 6) {
                 s.desired = atan2(tx - s.x, -(tz - s.z))
-                s.throttle = clamp(d / 30f, 0.2f, 1f)
+                s.throttle = clamp(d / 30f, 0.2f, 1f) * (if (order == 2) 1.15f else 1f)
             } else {
                 s.desired = p.h
                 s.throttle = clamp(abs(p.speed) / max(1f, s.stats.speed), 0f, 1f)
@@ -1589,8 +1606,8 @@ class SeaGame : ApplicationAdapter() {
         val p = player ?: return
         if (spawnTimer > 0) return
         spawnTimer = 1f
-        ships.removeAll { it.faction == Faction.PIRATE && hypot(it.x - p.x, it.z - p.z) > 650 }
-        val pirates = ships.filter { it.faction == Faction.PIRATE && !it.sinking }
+        ships.removeAll { it.faction == Faction.PIRATE && !it.hunter && hypot(it.x - p.x, it.z - p.z) > 650 }
+        val pirates = ships.filter { it.faction == Faction.PIRATE && !it.sinking && !it.hunter && !it.ghost && it.type != "navy" }
         val zone = hypot(p.x, p.z) / WORLD
         val want = 5 + (zone * 3).roundToInt()
         if (pirates.size < want) findSpawnPoint(240f, 400f)?.let { spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second) }
@@ -1655,7 +1672,7 @@ class SeaGame : ApplicationAdapter() {
         stormLevel += (stormTarget - stormLevel) * min(1f, dt * 0.12f)
         waveAmp = 1f + stormLevel * 1.6f
         windA = wrapAngle(windA + sin(now * 0.05f) * 0.01f * dt + (if (stormLevel > 0.3f) 0.02f * dt else 0f))
-        windS = 1f + stormLevel * 0.6f
+        windS = (1f + stormLevel * 0.6f) * (1f - 0.85f * living.calmK)
         if (stormLevel > 0.4f) {
             lightningTimer -= dt
             if (lightningTimer <= 0) {
@@ -1693,10 +1710,11 @@ class SeaGame : ApplicationAdapter() {
         cFogDay.set(0.56f, 0.77f, 0.91f, 1f).lerp(0.95f, 0.66f, 0.5f, 1f, dusk * 0.7f)
         cFog.set(0.05f, 0.09f, 0.18f, 1f).lerp(cFogDay, day).lerp(0.36f, 0.42f, 0.48f, 1f, storm * 0.75f)
         cFog.lerp(systems.regionFog.r * (0.25f + 0.75f * day), systems.regionFog.g * (0.25f + 0.75f * day), systems.regionFog.b * (0.3f + 0.7f * day), 1f, systems.regionFogMix)
+        cFog.lerp(0.62f + 0.2f * day, 0.66f + 0.2f * day, 0.7f + 0.2f * day, 1f, living.fogK * 0.85f)
         if (lightning > 0) cFog.lerp(Color.WHITE, 0.5f)
         sky.fog[0] = cFog.r; sky.fog[1] = cFog.g; sky.fog[2] = cFog.b
-        sky.fogNear = mix(300f, 170f, storm) * systems.regionFogScale
-        sky.fogFar = mix(560f, 360f, storm) * (0.5f + 0.5f * systems.regionFogScale)
+        sky.fogNear = mix(mix(300f, 170f, storm) * systems.regionFogScale, 105f, living.fogK)
+        sky.fogFar = mix(mix(560f, 360f, storm) * (0.5f + 0.5f * systems.regionFogScale), 250f, living.fogK)
         for (i in 0..2) { sky.deep[i] = systems.waterDeep[i]; sky.mid[i] = systems.waterMid[i] }
         fogAttr.color.set(cFog.r, cFog.g, cFog.b, 1f)
         val amb = mix(0.24f, 0.6f, day) * (1 - storm * 0.3f) + (if (lightning > 0) 0.5f else 0f)
@@ -1746,6 +1764,7 @@ class SeaGame : ApplicationAdapter() {
         updateWorld(dt)
         updateTutorial(dt)
         systems.update(dt)
+        living.update(dt)
         if (aimActive) updateAim()
         for (i in abilityCd.indices) if (abilityCd[i] > 0) abilityCd[i] -= dt
         if (ammoT > 0) { ammoT -= dt; if (ammoT <= 0) ammo = Ammo.NORMAL }
@@ -1819,6 +1838,7 @@ class SeaGame : ApplicationAdapter() {
         for (isl in islands) if (hypot(isl.x - lookX, isl.z - lookZ) < 220 + isl.r) shadowBatch.render(isl.inst)
         for (s in ships) if (hypot(s.x - lookX, s.z - lookZ) < 230) shadowBatch.render(s.inst)
         systems.renderShadows(shadowBatch, lookX, lookZ)
+        living.renderShadows(shadowBatch, lookX, lookZ)
         shadowBatch.end()
         sunLight.end()
         }
@@ -1851,6 +1871,7 @@ class SeaGame : ApplicationAdapter() {
         for (l in loot) if (hypot(l.x - lookX, l.z - lookZ) < 600) modelBatch.render(l.inst, env)
         treasure?.let { if (hypot(it.x - lookX, it.z - lookZ) < 600) modelBatch.render(it.inst, env) }
         systems.render(modelBatch, env, lookX, lookZ)
+        living.render(modelBatch, env, lookX, lookZ)
         serpent?.let { sp ->
             if (hypot(sp.x - lookX, sp.z - lookZ) < 600) {
                 modelBatch.render(sp.head, env)
@@ -1888,6 +1909,7 @@ class SeaGame : ApplicationAdapter() {
             if (hypot(gx - lookX, gz - lookZ) < 300) fx.gull(gx, g.h + sin(now + g.phase) * 2, gz, 0.5f + 0.5f * sin(now * 9 + g.phase))
         }
         systems.renderDecals(lookX, lookZ)
+        living.renderDecals(lookX, lookZ)
         systems.renderExtraDecals()
         if (aimActive) {
             val p = player

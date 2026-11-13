@@ -32,6 +32,7 @@ class Menus(private val g: SeaGame) {
     private var dailyIdx = 0
 
     fun close() {
+        baseOpen = false
         stage.clear()
         current = null
         g.state = SeaGame.State.PLAY
@@ -113,6 +114,7 @@ class Menus(private val g: SeaGame) {
     // ===================== Порт =====================
     fun showPort(i: Int) {
         portIndex = i
+        baseOpen = false
         portScroll = 0f
         open(SeaGame.State.PORT) { buildPort() }
     }
@@ -134,12 +136,12 @@ class Menus(private val g: SeaGame) {
         }).padTop(4f).padBottom(10f).row()
 
         val tabs = Table()
-        listOf("Верфь", "Улучшения", "Арсенал", "Рынок", "Флот", "Вид").forEachIndexed { i, name ->
+        listOf("Верфь", "Улучшения", "Арсенал", "Рынок", "Флот", "Таверна", "Вид").forEachIndexed { i, name ->
             val b = if (portTab == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
             b.pad(6f, 4f, 6f, 4f)
             b.onClick { portTab = i; portScroll = 0f; buildPort() }
-            tabs.add(b).growX().uniformX().height(38f).pad(3f, 3f, 3f, 3f)
-            if (i == 2) tabs.row()
+            tabs.add(b).growX().uniformX().minWidth(0f).height(38f).pad(3f, 3f, 3f, 3f)
+            if (i == 3) tabs.row()
         }
         panel.add(tabs).growX().padBottom(8f).row()
 
@@ -150,6 +152,7 @@ class Menus(private val g: SeaGame) {
             2 -> arsenalCards(content)
             3 -> marketCards(content)
             4 -> fleetCards(content)
+            5 -> tavernCards(content, portIndex)
             else -> paintCards(content)
         }
         val scroll = ScrollPane(content, ui.scrollStyle)
@@ -217,7 +220,13 @@ class Menus(private val g: SeaGame) {
         val head = card()
         head.add(ui.label(def.cls.uppercase(), ui.small, rgb(0xffc93c))).left().row()
         head.add(ui.label(def.name, ui.big)).left().row()
-        head.add(ui.label("Улучшения действуют только на этот корабль.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        head.add(ui.label("Улучшения действуют только на этот корабль — и сразу видны на нём.", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        val inst = com.badlogic.gdx.graphics.g3d.ModelInstance(g.shipModel(g.playerLook(), u))
+        head.add(ShipPreview(g, inst, def.look)).growX().height(230f).padTop(8f).row()
+        val partNames = listOf("Корпус", "Паруса", "Пушки", "Заряжание")
+        val seen = (0..3).filter { u[it] > 0 }.map { k -> "${partNames[k]}: " + UPGRADE_LOOKS[k][u[k] - 1] }
+        if (seen.isNotEmpty()) head.add(ui.label("Видно на корабле:\n" + seen.joinToString("\n"), ui.small, rgb(0xffe082), wrap = true)).growX().padTop(6f).row()
+        if (g.living.upgradeMul() < 1f) head.add(ui.label("Скидка верфи вашей базы: ${((1 - g.living.upgradeMul()) * 100).roundToInt()}%", ui.small, rgb(0x3ddc84))).left().padTop(4f).row()
         content.add(head).growX().padBottom(10f).row()
         val glyphs = listOf("❤", "⬆", "⚔", "⚙")
         for ((i, upg) in UPGRADES.withIndex()) {
@@ -228,9 +237,10 @@ class Menus(private val g: SeaGame) {
             info.add(ui.label(upg.name, ui.big)).left().row()
             info.add(Pips(ui, lvl)).width(130f).height(14f).left().padTop(4f).padBottom(4f).row()
             info.add(ui.label("+${(upg.per * 100).roundToInt()}% ${upg.text} за уровень", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            if (lvl < MAX_LEVEL) info.add(ui.label("Вид: " + UPGRADE_LOOKS[i][lvl], ui.small, rgb(0xffe082), wrap = true)).growX().row()
             c.add(info).growX()
             val btn: TextButton = if (lvl >= MAX_LEVEL) ui.gray("МАКС").also { it.isDisabled = true } else {
-                val cost = upgradeCost(def, lvl)
+                val cost = (upgradeCost(def, lvl) * g.living.upgradeMul()).roundToInt()
                 priceButton(fmt(cost), 0, g.coins >= cost).also { it.onClick { buyUpgrade(i) } }
             }
             c.add(btn).width(116f).height(50f).padLeft(8f)
@@ -242,13 +252,14 @@ class Menus(private val g: SeaGame) {
         val def = g.playerDef()
         val u = g.ensureUp(def.id)
         if (u[i] >= MAX_LEVEL) return
-        val cost = upgradeCost(def, u[i])
+        val cost = (upgradeCost(def, u[i]) * g.living.upgradeMul()).roundToInt()
         if (g.coins < cost) { g.toast("Не хватает монет"); return }
         g.coins -= cost
         u[i]++
         g.rebuildPlayer()
         g.sfx.play("coin")
         g.questEvent(QType.UPGRADE, "", false)
+        g.toast("На корабле: " + UPGRADE_LOOKS[i][u[i] - 1], 2f)
         g.save()
         refreshPort()
     }
@@ -520,7 +531,7 @@ class Menus(private val g: SeaGame) {
     private fun marketCards(content: Table) {
         val sy = g.systems
         val head = card()
-        head.add(ui.label("Рынок", ui.big)).left().row()
+        head.add(ui.label("Рыночная площадь", ui.big)).left().row()
         head.add(ui.label("Трюм: ${sy.cargoUsed()} из ${sy.capacity()}. Покупайте там, где дёшево, и продавайте там, где дорого.",
             ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
         val q = g.quest()
@@ -531,15 +542,9 @@ class Menus(private val g: SeaGame) {
             val sell = sy.sellPrice(portIndex, gi)
             val mult = PORT_PRICES[portIndex][gi]
             val tag = when { mult < 0.85f -> "дёшево" to 0x3ddc84; mult > 1.25f -> "дорого" to 0xff8a65; else -> "" to 0xffffff }
-            val c = card()
-            val top = Table()
-            top.add(ui.label(good.name, ui.big)).left()
-            if (tag.first.isNotEmpty()) top.add(ui.label("  ${tag.first}", ui.small, rgb(tag.second))).left()
-            top.add().growX()
-            top.add(ui.label("в трюме: ${sy.cargo[gi]}", ui.small, rgb(0xd7ccc8))).right()
-            c.add(top).growX().row()
-            val avg = if (sy.cargo[gi] > 0) " · куплено по ${(sy.cargoCost[gi] / sy.cargo[gi]).roundToInt()}" else ""
-            c.add(ui.label("Купить: $buy · Продать: $sell$avg", ui.small, rgb(0xb9d6f2))).left().padTop(2f).row()
+            val c = card(0x2b1d12)
+            c.add(Stall(ui, gi, buy, sell, tag.first, if (tag.second == 0x3ddc84) 0x81c784 else 0xffab91, sy.cargo[gi])).growX().height(150f).row()
+            if (sy.cargo[gi] > 0) c.add(ui.label("куплено в среднем по ${(sy.cargoCost[gi] / sy.cargo[gi]).roundToInt()}", ui.small, rgb(0xd7ccc8))).left().padTop(2f).row()
             val row = Table()
             val b1 = ui.button("+1", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 1) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
             val b5 = ui.button("+5", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (sy.buy(portIndex, gi, 5) == 0) g.toast("Нет места или монет"); g.save(); refreshPort() } }
@@ -549,6 +554,194 @@ class Menus(private val g: SeaGame) {
             c.add(row).growX().padTop(6f).row()
             content.add(c).growX().padBottom(8f).row()
         }
+    }
+
+    // ===================== Таверна =====================
+    private fun tavernCards(content: Table, port: Int) {
+        val lv = g.living
+        // Репутация
+        val rc = card()
+        rc.add(ui.label("Репутация", ui.big)).left().row()
+        for (i in 0..2) {
+            val r = Table()
+            r.add(ui.label(lv.repNames[i], ui.small, rgb(0xcfe3f7))).width(86f).left()
+            r.add(RepBar(ui, lv.rep[i])).growX().height(16f).padRight(8f)
+            r.add(ui.label(lv.repLabel(lv.rep[i]), ui.small, rgb(if (lv.rep[i] >= 20) 0x3ddc84 else if (lv.rep[i] <= -20) 0xff8a80 else 0xffffff))).width(92f).right()
+            rc.add(r).growX().padTop(3f).row()
+        }
+        rc.add(ui.label("Торговля поднимает доверие купцов. Охота на пиратов радует флот и злит пиратов. Товары в Приюте контрабандистов — дружба с пиратами.",
+            ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(6f).row()
+        rc.add(priceButton("Откупиться от пиратов 300", 0, g.coins >= 300).also { it.onClick { lv.tribute(); refreshAny() } }).growX().height(46f).padTop(6f).row()
+        content.add(rc).growX().padBottom(10f).row()
+        // Команда
+        val cc = card(0x1d3b2e)
+        cc.add(ui.label("Офицеры на борту", ui.big)).left().row()
+        for (role in 0..3) {
+            val r = Table()
+            val id = lv.crew[role]
+            if (id >= 0) {
+                val o = OFFICERS[id]
+                r.add(PortraitActor(ui, o)).size(48f).padRight(8f)
+                val t = Table()
+                t.add(ui.label(ROLES[role] + ": " + o.name, ui.small, rgb(0xffc93c))).left().row()
+                t.add(ui.label(o.bonusText, ui.small, rgb(0xc8e6c9), wrap = true)).growX().row()
+                r.add(t).growX()
+                r.add(ui.button("Списать", 0x6d4c41, 0x5d4037, ui.small).also { it.onClick { lv.dismiss(role); refreshAny() } }).width(92f).height(38f)
+            } else {
+                r.add(ui.label(ROLES[role] + ": — место свободно —", ui.small, rgb(0x90a4ae))).left().growX()
+            }
+            cc.add(r).growX().padTop(5f).row()
+        }
+        content.add(cc).growX().padBottom(10f).row()
+        // Офицеры для найма
+        val here = OFFICERS.filter { lv.officerAvailable(it, port) && lv.crew[it.role] != it.id }
+        if (here.isEmpty()) content.add(card().also { it.add(ui.label("Здесь сейчас нет свободных офицеров. Загляните в другие порты.", ui.small, rgb(0xb9d6f2), wrap = true)).growX() }).growX().padBottom(10f).row()
+        for (o in here) {
+            val c = card()
+            val top = Table()
+            top.add(PortraitActor(ui, o)).size(76f).padRight(10f)
+            val t = Table()
+            t.add(ui.label(ROLES[o.role].uppercase(), ui.small, rgb(0xffc93c))).left().row()
+            t.add(ui.label(o.name, ui.big)).left().row()
+            t.add(ui.label(o.bonusText, ui.small, rgb(0x3ddc84), wrap = true)).growX().row()
+            top.add(t).growX()
+            c.add(top).growX().row()
+            c.add(ui.label(o.story, ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(6f).row()
+            val cur = lv.crew[o.role]
+            if (cur >= 0) c.add(ui.label("Заменит: ${OFFICERS[cur].name}", ui.small, rgb(0xffab91))).left().padTop(2f).row()
+            val price = lv.officerPrice(o)
+            val btn = if (o.id in lv.hired) ui.blue("Назначить: ${ROLES[o.role].lowercase()}")
+                else priceButton("Нанять ${fmt(price)}", o.gems, g.coins >= price && g.gems >= o.gems)
+            btn.onClick { if (lv.hire(o)) refreshAny() }
+            c.add(btn).growX().height(48f).padTop(8f).row()
+            content.add(c).growX().padBottom(10f).row()
+        }
+        // Доска розыска
+        val bc = card(0x3e2a1a)
+        bc.add(ui.label("☠ Разыскиваются", ui.big, rgb(0xffe0b2))).left().row()
+        bc.add(ui.label("Примите заказ — капитан сам выйдет на охоту за вами. Награду выплачивают сразу после победы; флот доплачивает тем, кого уважает.",
+            ui.small, rgb(0xffe0b2), wrap = true)).growX().padBottom(6f).row()
+        for (cpt in CAPTAINS) {
+            val r = Table().also { it.background = ui.panel(0x4e3420); it.pad(8f) }
+            val done = cpt.id in lv.defeated
+            r.add(ui.label(cpt.name + if (done) "  ✓ пойман" else "", ui.mid, rgb(if (done) 0x9e9e9e else 0xffffff))).left().row()
+            if (!done) {
+                r.add(ui.label(ENEMIES.getValue(cpt.type).name + " · " + cpt.traitText, ui.small, rgb(0xffc93c), wrap = true)).growX().row()
+                r.add(ui.label(cpt.story, ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+                r.add(ui.label("Награда: ${fmt(cpt.bounty)} монет и ${cpt.gems} кристаллов", ui.small, rgb(0x3ddc84))).left().padTop(2f).row()
+                val b = when {
+                    lv.activeBounty == cpt.id -> ui.gray("Охота идёт…").also { it.isDisabled = true }
+                    lv.activeBounty >= 0 -> ui.gray("Сначала текущий заказ").also { it.isDisabled = true }
+                    else -> ui.button("Взять заказ", 0xb71c1c, 0x8e1515, ui.mid).also { it.onClick { lv.acceptBounty(cpt.id); refreshAny() } }
+                }
+                r.add(b).growX().height(42f).padTop(6f).row()
+            }
+            bc.add(r).growX().padTop(6f).row()
+        }
+        content.add(bc).growX().padBottom(10f).row()
+    }
+
+    private fun refreshAny() { if (g.state == SeaGame.State.PORT && baseOpen) buildBaseMenu() else refreshPort() }
+
+    // ===================== База игрока =====================
+    private var baseOpen = false
+    private var baseTab = 0
+
+    fun showBase() {
+        baseOpen = true
+        baseTab = 0
+        portScroll = 0f
+        open(SeaGame.State.PORT) { buildBaseMenu() }
+    }
+
+    private fun buildBaseMenu() {
+        val prevScroll = scrollRef?.scrollY ?: 0f
+        stage.clear()
+        val lv = g.living
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("⚑ Остров Надежды", ui.big, align = Align.center)).growX().row()
+        panel.add(currencyRow()).padTop(4f).padBottom(8f).row()
+        val content = Table().top()
+        if (!lv.baseFounded) {
+            val c = card()
+            c.add(ui.label("Ничейный остров", ui.big)).left().row()
+            c.add(ui.label("Тихий остров недалеко от Гавани Ветров. Здесь можно основать собственную базу: причал, склад, таверну, плантацию, маяк, батарею и верфь. Постройки приносят доход, даже когда вы в плавании (и немного — пока игра закрыта).",
+                ui.small, rgb(0xb9d6f2), wrap = true)).growX().padTop(4f).row()
+            c.add(priceButton("Основать базу ${fmt(BASE_FOUND_COST)}", 0, g.coins >= BASE_FOUND_COST).also { it.onClick { lv.foundBase(); buildBaseMenu() } }).growX().height(52f).padTop(10f).row()
+            content.add(c).growX().row()
+        } else {
+            val tabs = Table()
+            listOf("Постройки", "Таверна").forEachIndexed { i, name ->
+                val b = if (baseTab == i) ui.button(name, 0x2f8ff0, 0x1b6fd1, ui.small) else ui.button(name, 0x164266, 0x123a5c, ui.small)
+                b.onClick { if (i == 1 && lv.blev[2] == 0) g.toast("Сначала постройте таверну") else { baseTab = i; buildBaseMenu() } }
+                tabs.add(b).growX().uniformX().height(38f).pad(3f)
+            }
+            panel.add(tabs).growX().padBottom(6f).row()
+            if (baseTab == 1) tavernCards(content, Living.BASE_PORT) else {
+                val bank = card(0x1d5a46)
+                bank.add(ui.label("Казна базы: ${lv.bank.toInt()} из ${lv.bankCap()}", ui.big)).left().row()
+                bank.add(ui.label("Доход: ${lv.incomePerMin()} монет в минуту. Склад увеличивает казну. Корабль здесь чинится бесплатно.", ui.small, rgb(0xc8e6c9), wrap = true)).growX().row()
+                bank.add(ui.green("Забрать ${lv.bank.toInt()}").also { it.onClick { lv.collectBank(); buildBaseMenu() } }).growX().height(48f).padTop(8f).row()
+                content.add(bank).growX().padBottom(10f).row()
+                for ((i, bd) in BUILDINGS.withIndex()) {
+                    val lvl = lv.blev[i]
+                    val c = card()
+                    val top = Table()
+                    top.add(ui.label(bd.name, ui.big)).left()
+                    top.add().growX()
+                    top.add(ui.label(if (lvl == 0) "не построено" else "ур. $lvl из 3", ui.small, rgb(if (lvl > 0) 0xffc93c else 0x90a4ae))).right()
+                    c.add(top).growX().row()
+                    if (lvl > 0) c.add(ui.label("Сейчас: " + bd.effects[lvl - 1], ui.small, rgb(0xc8e6c9), wrap = true)).growX().row()
+                    if (lvl < 3) {
+                        c.add(ui.label((if (lvl == 0) "Даст: " else "Дальше: ") + bd.effects[lvl], ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+                        val cost = buildingCost(i, lvl)
+                        c.add(priceButton((if (lvl == 0) "Построить " else "Улучшить ") + fmt(cost), 0, g.coins >= cost).also { it.onClick { lv.upgradeBuilding(i); buildBaseMenu() } }).growX().height(46f).padTop(6f).row()
+                    }
+                    content.add(c).growX().padBottom(8f).row()
+                }
+            }
+        }
+        val scroll = ScrollPane(content, ui.scrollStyle)
+        scroll.setScrollingDisabled(true, false)
+        scroll.setOverscroll(false, true)
+        panel.add(scroll).grow().row()
+        val sail = ui.blue("⚓  Выйти в море")
+        sail.onClick { baseOpen = false; close(); g.save() }
+        panel.add(sail).growX().height(54f).padTop(10f).row()
+        root.add(panel).width(min(g.wDp - 16, 520f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+        stage.act(0f)
+        root.layout(); panel.layout(); scroll.layout()
+        scroll.scrollY = prevScroll
+        scroll.updateVisualScroll()
+        scrollRef = scroll
+    }
+
+    // ===================== Эпизоды: высадки, ныряние =====================
+    fun showEpisode(ep: Episode, resolver: (String) -> String) = open(SeaGame.State.DIALOG) { buildEpisode(ep, resolver, null) }
+
+    private fun buildEpisode(ep: Episode, resolver: (String) -> String, result: String?) {
+        stage.clear()
+        val root = overlay()
+        val panel = Table().also { it.background = ui.panel(0x3e2a1a); it.pad(18f) }
+        panel.add(ui.label(ep.title, ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
+        if (result == null) {
+            panel.add(ui.label(ep.text, ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(12f, 0f, 12f, 0f).row()
+            for (ch in ep.choices) {
+                val b = ui.button(ch.text, 0x8d6e4a, 0x6d4c2f, ui.mid)
+                b.label.setWrap(true)
+                b.onClick {
+                    val res = resolver(ch.act)
+                    current = { buildEpisode(ep, resolver, res) }
+                    buildEpisode(ep, resolver, res)
+                }
+                panel.add(b).growX().minHeight(48f).padTop(6f).row()
+            }
+        } else {
+            panel.add(ui.label(result, ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(12f, 0f, 12f, 0f).row()
+            panel.add(ui.green("⚓  Вернуться на корабль").also { it.onClick { close() } }).growX().height(52f).row()
+        }
+        root.add(panel).width(min(g.wDp - 24, 460f))
     }
 
     // ===================== Бортовой журнал =====================
@@ -839,6 +1032,11 @@ class Menus(private val g: SeaGame) {
             for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) ui.icon(batch, ui.disc, sx(w.x), sy(w.z), 8f, 8f, 0f, rgb(0xb3e5fc))
             for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) ui.text(batch, ui.mid, "♪", sx(bt.x) - 10, sy(bt.z) + 8, Align.center, 20f, c = rgb(0xffe082))
             g.treasure?.let { ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 14f, 14f) }
+            val lv = g.living
+            ui.text(batch, ui.mid, "⚑", sx(lv.baseX) - 12, sy(lv.baseZ) + 9, Align.center, 24f, c = rgb(if (lv.baseFounded) 0x2e7d32 else 0x5d4037))
+            for (r in lv.ruins) if (ex.seen(r.x, r.z) && r.idx !in lv.dived) ui.text(batch, ui.small, "⌂", sx(r.x) - 10, sy(r.z) + 7, Align.center, 20f, c = rgb(0xffc93c))
+            for (w in lv.whirls) if (ex.seen(w.x, w.z)) ui.icon(batch, ui.ring, sx(w.x), sy(w.z), 16f, 16f, 0f, rgb(0x0d47a1))
+            if (lv.mapTarget >= 0) g.islands.getOrNull(lv.mapTarget)?.let { ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 20f, 20f, 0f, rgb(0xd32f2f)) }
             for (pt in g.ports) {
                 ui.text(batch, ui.mid, "⚓", sx(pt.rx) - 12, sy(pt.rz) + 9, Align.center, 24f, c = rgb(0x3e2723))
                 if (zoom > 1.6f || ex.seen(pt.rx, pt.rz)) ui.text(batch, ui.small, pt.def.name, sx(pt.rx) - 80, sy(pt.rz) - 8, Align.center, 160f, c = rgb(0x3e2723))
@@ -960,6 +1158,12 @@ class Menus(private val g: SeaGame) {
             "Порты" to "Заплывите в белый круг у причала. В порту: ремонт, новые корабли, улучшения, арсенал, рынок, наёмники и покраска.",
             "Торговля" to "На рынке покупайте товар там, где он «дёшево», и продавайте там, где «дорого». Трюм зависит от корабля.",
             "Песни" to "Пока вы плывёте без боя, команда поёт шанти. Новые песни — в бутылках в море (♪ на карте).",
+            "Таверна и офицеры" to "В таверне порта нанимайте офицеров: боцман, канонир, штурман и квартирмейстер дают бонусы и комментируют события. Там же доска «Разыскиваются» — охота за капитанами с наградой.",
+            "Репутация" to "Торговцы, флот и пираты помнят ваши дела. Торговля поднимает доверие купцов (цены лучше). Охота на пиратов радует флот, но злит пиратов — за вашей головой придут охотники. Уважение пиратов: мелкие шайки не нападут первыми.",
+            "Своя база" to "Остров Надежды рядом с Гаванью Ветров (⚑ на карте). Заплывите в круг у острова, основайте базу и стройте: плантация и таверна приносят доход, склад копит деньги и расширяет трюм, батарея защищает, верфь удешевляет улучшения.",
+            "Флот" to "Если есть наёмники, слева появляются кнопки приказов: ⚓ строй, ⚔ атака (флот бьёт врагов в большом радиусе), ↺ отход (корабли держатся за кормой).",
+            "Высадки и клады" to "Остановитесь у дикого острова — появится кнопка «Высадиться». На островах — тайники, засады и куски карты. Три куска дают карту сокровищ. У колонн затонувших храмов можно нырнуть.",
+            "Погода" to "Туман прячет вас от пиратов, штиль замедляет, водовороты затягивают (уходите полным ходом), а в Ледяном море дрейфуют айсберги. Ночью бродят корабли-призраки.",
         )
         for ((t, d) in sections) {
             val c = card()

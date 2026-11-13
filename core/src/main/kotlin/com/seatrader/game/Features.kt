@@ -263,11 +263,11 @@ class Systems(private val g: SeaGame) {
     }
 
     // ===================== Торговля =====================
-    fun capacity() = CARGO[g.shipId] ?: 20
+    fun capacity() = (CARGO[g.shipId] ?: 20) + g.living.extraCargo()
     fun cargoUsed() = cargo.sum()
     private fun basePrice(port: Int, gi: Int) = GOODS[gi].base * PORT_PRICES[port][gi] * fluct[port][gi]
-    fun buyPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (1.06f - 0.02f * skill("trader"))).roundToInt())
-    fun sellPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (0.94f + 0.02f * skill("trader"))).roundToInt())
+    fun buyPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (1.06f - 0.02f * skill("trader")) * g.living.buyMul()).roundToInt())
+    fun sellPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (0.94f + 0.02f * skill("trader")) * g.living.sellMul()).roundToInt())
 
     fun buy(port: Int, gi: Int, n: Int): Int {
         var k = 0
@@ -293,6 +293,7 @@ class Systems(private val g: SeaGame) {
         if (profit > 0) { addStat("profit", profit); gainXp(profit / 20, g.player?.x ?: 0f, g.player?.z ?: 0f) }
         val q = g.quest()
         if (q.type == QType.DELIVER && q.good == gi && q.port == port) g.questEvent(QType.DELIVER, "", false, k)
+        g.living.onTrade(port, k)
         return k
     }
 
@@ -700,6 +701,7 @@ class Systems(private val g: SeaGame) {
     /** Поведение мирных судов: купцы идут в порт назначения, рыбаки кружат у острова. */
     fun neutralAI(s: Ship, dt: Float) {
         if (s.sinking) return
+        if (s.type == "navy") { g.living.navyAI(s, dt); return }
         if (s.type == "fisher") {
             val a = atan2(s.x - s.wx, -(s.z - s.wz))
             s.desired = a + PI.toFloat() / 2 * 1.1f
@@ -834,7 +836,7 @@ class Systems(private val g: SeaGame) {
     /** Сила абордажной команды игрока относительно врага (≈1 — равные силы). */
     fun boardingRatio(t: Ship): Float {
         val p = g.player ?: return 1f
-        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp)
+        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul()
         val theirs = t.stats.mass * 10 * (0.35f + t.hp / t.maxHp)
         return mine / theirs
     }

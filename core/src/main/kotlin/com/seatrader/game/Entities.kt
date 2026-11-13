@@ -63,6 +63,11 @@ class Ship(
     var allyIdx = 0
     var mercId = ""
     var target: Ship? = null
+    /** Номер капитана с наградой за голову (-1 — обычный). */
+    var bounty = -1
+    var hunter = false
+    var ghost = false
+    var trait = ""
     var leader: Ship? = null
     /** Пробоины: x — вдоль корпуса, y — высота, z — поперёк. */
     val holes = ArrayList<Vector3>()

@@ -81,6 +81,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private fun tp(x: Float, z: Float) {
         val p = g.player!!
         p.x = x; p.z = z; p.vx = 0f; p.vz = 0f; p.inPort = false
+        g.camSnap = true
         clearArea()
     }
 
@@ -108,58 +109,67 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        val lv = g.living
         when (f) {
             2 -> shot("00_daily")
             4 -> { press("Забрать") }
             10 -> { press("швартовы") }
-            20 -> { shot("01_start_shadows") }
-            25 -> { touch("down", 206f, 600f); touch("drag", 206f, 690f) }
-            140 -> { shot("02_sailing"); info("sailing"); log.append("shanty idx=${g.sfx.shantyIdx} want=${g.systems.wantedShanty()}\n") }
-            141 -> { touch("up", 206f, 690f) }
-            // абордаж: ослабленный пират рядом
-            150 -> {
-                tp(250f, 260f)
-                val p = g.player!!; p.h = 0f
-                val e = g.spawnEnemy("sloop", 285f, 260f); e.hp = 25f; e.h = 0f; e.ai = AiState.WANDER
+            20 -> { g.coins = 60000; g.gems = 60; val u = g.ensureUp("sloop"); u[0] = 2; u[2] = 2; g.rebuildPlayer(); g.openPort(0) }
+            25 -> press("Улучшения")
+            40 -> shot("01_upgrades")
+            41 -> { g.ensureUp("sloop").fill(5); g.rebuildPlayer(); press("Рынок") }
+            43 -> press("Улучшения")
+            60 -> shot("02_upgrades_max")
+            61 -> press("Рынок")
+            75 -> shot("03_market")
+            80 -> press("Таверна")
+            95 -> shot("04_tavern")
+            96 -> press("Нанять")
+            110 -> shot("05_tavern_hired")
+            111 -> press("Взять заказ")
+            115 -> press("Выйти в море")
+            125 -> tp(lv.ringX, lv.ringZ)
+            140 -> shot("06_base_new")
+            141 -> press("Основать")
+            145 -> { lv.blev.fill(3); lv.refreshBuildings(); lv.bank = 900f; press("Постройки") }
+            160 -> shot("07_base_menu")
+            161 -> press("Выйти в море")
+            165 -> { tp(lv.baseX + 20f, lv.baseZ + lv.baseR + 75f); g.player!!.h = -0.4f }
+            185 -> { shot("08_base_view"); info("base") }
+            200 -> {
+                val i = g.islands.indexOfFirst { it.port == -1 && g.systems.fortresses.none { f -> Math.hypot((f.x - it.x).toDouble(), (f.z - it.z).toDouble()) < 80 } }
+                val isl = g.islands[i]; tp(isl.x, isl.z + isl.r + 14f); g.player!!.h = 0f
+                log.append("landing island $i action=${lv.actionText}\n")
             }
-            175 -> { shot("03_board_ready"); log.append("boardTarget=${g.systems.boardTarget?.type}\n") }
-            176 -> { val (bx, by) = g.hud.boardPos(); touch("down", bx, g.hDp - by); touch("up", bx, g.hDp - by) }
-            190 -> shot("04_grapple")
-            260 -> { shot("05_boarding"); log.append("state after grapple=${g.state}\n") }
-            261 -> press("Удар")
-            270 -> press("Удар")
-            280 -> press("Удар")
-            320 -> shot("06_board_result")
-            321 -> { if (findButton("Захватить") != null) press("Захватить") else if (findButton("Разграбить") != null) press("Разграбить") else press("Продолжить") }
-            // бутылка с песней
-            330 -> { val bt = g.systems.bottles.firstOrNull(); if (bt != null) tp(bt.x + 4f, bt.z) }
-            345 -> { shot("07_bottle"); log.append("shanties=${g.systems.shanties}\n") }
-            // ночь и тени
-            360 -> { tp(30f, 120f); g.dayTime = 0.24f }
-            420 -> shot("08_morning_shadows")
-            // карта мира через мини-карту
-            430 -> { val (mx, my) = Pair(g.wDp - 12 - 62f, g.hDp - 112f - 70f - 16 - 62f); log.append("minimap hit=${g.hud.minimapHit(mx, my)}\n"); g.menus.showMap() }
-            445 -> shot("09_world_map")
-            450 -> { g.systems.waypoint = floatArrayOf(400f, -300f); g.menus.close() }
-            470 -> shot("10_waypoint")
-            480 -> { g.openPause() }
-            490 -> shot("11_pause")
-            495 -> press("Песни")
-            505 -> shot("12_songs")
-            510 -> press("Назад")
-            515 -> press("Как играть")
-            525 -> shot("13_help")
-            530 -> press("Назад")
-            535 -> { g.menus.close(); g.stormTarget = 1f; g.stormLevel = 1f; tp(-300f, 300f) }
-            620 -> { shot("14_storm"); info("storm") }
-            630 -> {
-                log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0} explored=${g.systems.explored.percent()}%\n")
+            210 -> { shot("09_landing_button"); log.append("action=${lv.actionText}\n") }
+            211 -> { val (ax, ay) = lv.actionPos(); touch("down", ax, g.hDp - ay); touch("up", ax, g.hDp - ay) }
+            225 -> shot("10_episode")
+            226 -> press("")
+            240 -> shot("11_episode_result")
+            241 -> press("Вернуться")
+            245 -> { val w = lv.whirls.first(); tp(w.x, w.z + 45f) }
+            275 -> { shot("12_whirlpool"); info("whirl") }
+            280 -> { val fb = lv.fogBanks.first(); tp(fb[0], fb[1]) }
+            310 -> { shot("13_fog"); log.append("fogK=${lv.fogK}\n") }
+            315 -> { val b = lv.bergs.first(); tp(b.x, b.z + 30f) }
+            340 -> { shot("14_iceberg"); info("berg") }
+            345 -> { val r = lv.ruins.first(); tp(r.x, r.z + 18f) }
+            360 -> { shot("15_ruins"); log.append("ruin action=${lv.actionText}\n") }
+            365 -> { g.dayTime = 0.8f; tp(-300f, 300f); val p = g.player!!; g.spawnEnemy("ghost", p.x + 30f, p.z - 60f).ghost = true }
+            400 -> shot("16_ghost")
+            405 -> { g.dayTime = 0.3f; tp(200f, -200f); g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; g.spawnAllies() }
+            420 -> { val (fx, fy) = lv.fleetPos(1); touch("down", fx, g.hDp - fy); touch("up", fx, g.hDp - fy) }
+            425 -> { val id = lv.crew.firstOrNull { it >= 0 } ?: 0; lv.say(id, OFFICERS[id].quips[1]) }
+            435 -> { shot("17_fleet_talk"); log.append("order=${lv.order} crew=${lv.crew.toList()} bounty=${lv.activeBounty}\n") }
+            440 -> { tp(150f, -250f) }
+            520 -> { shot("18_hunter"); info("hunter"); log.append("hunters=${g.ships.filter { it.bounty >= 0 }.map { it.name }}\n") }
+            530 -> {
+                log.append("frames=$frame seconds=${(System.currentTimeMillis() - t0) / 1000.0}\n")
                 Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false)
                 Gdx.app.exit()
             }
         }
     }
-
     /** Нажатие на вкладку порта: ищем кнопку по тексту. */
     private fun clickTab(i: Int) {
         val names = listOf("Верфь", "Улучш.", "Флот", "Вид")

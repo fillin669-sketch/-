@@ -280,6 +280,7 @@ class Hud(private val g: SeaGame) {
             ui.text(b, ui.small, "Левый борт: ${if (reloadL > 0) "%.1f с".format(reloadL) else "готов"}   Правый: ${if (reloadR > 0) "%.1f с".format(reloadR) else "готов"}",
                 0f, ayy + 70, Align.center, wDp, c = rgb(0xffe082))
         }
+        g.living.drawHud(b)
         // Абордаж
         g.systems.boardTarget?.let {
             val (px, py) = boardPos()
