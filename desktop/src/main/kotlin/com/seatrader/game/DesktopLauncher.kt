@@ -35,7 +35,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private var t0 = 0L
     private val log = StringBuilder()
 
-    fun install() { g.skipPrologue = System.getenv("SEA_PROLOGUE") == null; g.afterRender = { step() } }
+    fun install() { g.updateCheck = false; g.skipPrologue = System.getenv("SEA_PROLOGUE") == null; g.afterRender = { step() } }
 
     private fun shot(name: String) {
         val w = Gdx.graphics.backBufferWidth; val h = Gdx.graphics.backBufferHeight
@@ -125,6 +125,47 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 40) { press("Капитаны") }
             if (f == 46) shot("g5_heroes")
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_STORE") != null) {
+            val p = g.player
+            fun fight(n: Int, type: String, dist: Float) = repeat(n) { k ->
+                val a = -0.6f + k * 0.6f
+                g.spawnEnemy(type, p!!.x + kotlin.math.sin(a) * dist, p.z - kotlin.math.cos(a) * dist).also { it.ai = AiState.ATTACK; it.target = p }
+            }
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать")
+                8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; g.coins = 12850; g.gems = 46
+                    g.owned += "frigate"; g.shipId = "frigate"; g.ensureUp("frigate").fill(2); g.sailIdx = 1; g.flagPix = FLAG_TEMPLATES[0].second; g.flagShape = 1
+                    g.guilds.shipXp["frigate"] = 900; g.rebuildPlayer(); g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id
+                    g.autoGfx = false; g.applyGfx(3); g.dayTime = 0.33f
+                    tp(400f, -420f); g.player!!.h = 0.4f; g.spawnAllies() }
+                40 -> fight(3, "brig", 70f)
+                170 -> shot("s1_battle")
+                171 -> { for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.removeShip(s); g.dayTime = 0.30f; g.openPort(0); press("Вид") }
+                200 -> shot("s2_port")
+                201 -> press("Улучшения")
+                225 -> shot("s3_upgrades")
+                226 -> { g.menus.close(); g.closePort(); val l = g.adv.lair(1); tp(l[0] - 120f, l[1] + 160f); g.player!!.h = 0.6f; g.dayTime = 0.47f }
+                330 -> { g.ships.firstOrNull { it.legend >= 0 }?.let { it.x = p!!.x + 55f; it.z = p.z - 40f; it.ai = AiState.ATTACK; it.target = p } }
+                420 -> shot("s4_legend")
+                421 -> { for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.removeShip(s); g.dayTime = 0.33f; tp(300f, -300f)
+                    featE = g.spawnEnemy("frigate", p!!.x + 30f, p.z).also { it.hp = it.maxHp * 0.3f }; g.menus.showBoarding(featE!!) }
+                440 -> shot("s5_boarding")
+                441 -> { g.menus.close(); featE?.let { g.removeShip(it) }; g.systems.explored.reveal(0f, 0f, 1300f); g.openPause(); press("Карта") }
+                460 -> shot("s6_map")
+                461 -> { g.menus.close(); g.startPrologue(false) }
+                in 470..1400 -> if (g.state == SeaGame.State.CUTSCENE && f % 25 == 0 && g.prologue.debugIdx < 6) { touch("down", g.wDp / 2, g.hDp / 2); touch("down", g.wDp / 2, g.hDp / 2) }
+            }
+            if (f > 470 && g.state == SeaGame.State.CUTSCENE && g.prologue.debugIdx == 6 && storeT++ == 150) shot("s7_prologue")
+            if (f > 470 && storeT > 160 || f > 2000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_UPD") != null) {
+            when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.debugOfferUpdate("10.6") }
+                20 -> { shot("u1_update"); log.append("окно: state=${g.state}\n") }; 22 -> press("Позже")
+                30 -> { log.append("после «Позже»: state=${g.state}\n"); log.append("сравнение: 10.10>10.9=${isNewer("10.10", "10.9")} 10.5>10.5=${isNewer("10.5", "10.5")} 9.9>10.0=${isNewer("9.9", "10.0")}\n")
+                    Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
             return
         }
         if (System.getenv("SEA_NEWS") != null) {
@@ -711,6 +752,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     }
     private var done = -1
     private var lootCoins = 0
+    private var storeT = 0
 
     private fun featTest(f: Int) {
         val ex = g.extras

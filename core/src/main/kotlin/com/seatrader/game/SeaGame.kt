@@ -150,6 +150,38 @@ class SeaGame : ApplicationAdapter() {
     var skipPrologue = false
     /** Версия приложения (передаёт запуск на телефоне); показывается в настройках. */
     var appVersion = ""
+    /** Проверять обновление при запуске (тесты на ПК выключают). */
+    var updateCheck = true
+    /** Найдена новая версия — окно покажем, когда игрок свободен (нет других окон). */
+    private var updateFound: String? = null
+
+    /** Один раз за запуск: спрашиваем у страницы релиза номер последней версии. */
+    private fun checkForUpdate() {
+        if (!updateCheck || appVersion.isEmpty() || Gdx.app.type != Application.ApplicationType.Android) return
+        try {
+            val req = com.badlogic.gdx.net.HttpRequestBuilder().newRequest().method(com.badlogic.gdx.Net.HttpMethods.GET)
+                .url(UPDATE_API).header("Accept", "application/vnd.github+json").timeout(10000).build()
+            Gdx.net.sendHttpRequest(req, object : com.badlogic.gdx.Net.HttpResponseListener {
+                override fun handleHttpResponse(r: com.badlogic.gdx.Net.HttpResponse) {
+                    val body = try { r.resultAsString } catch (_: Exception) { return }
+                    val v = Regex("Версия: ([0-9][0-9.]*)").find(body)?.groupValues?.get(1) ?: return
+                    if (isNewer(v, appVersion)) Gdx.app.postRunnable { updateFound = v }
+                }
+                override fun failed(t: Throwable?) {}
+                override fun cancelled() {}
+            })
+        } catch (_: Throwable) { }
+    }
+
+    /** Для проверки на ПК: сделать вид, что вышла версия [v]. */
+    fun debugOfferUpdate(v: String) { updateFound = v }
+
+    private fun showUpdateWhenFree() {
+        val v = updateFound ?: return
+        if (state != State.PLAY || stage.root.children.size > 0) return
+        updateFound = null
+        menus.showUpdate(v)
+    }
     /** Тест защиты от вылетов: бросить ошибку в кадре. */
     var debugThrow = false
     var player: Ship? = null
@@ -354,6 +386,7 @@ class SeaGame : ApplicationAdapter() {
                 spawnGulls()
                 state = State.PLAY
                 hud.disposeSplash()
+                checkForUpdate()
                 lastCrash?.let { t -> lastCrash = null; menus.showError(t) ; return@let }
                 if (state == State.DIALOG) Unit
                 else if (guilds.guild < 0) { if (appVersion.isNotEmpty()) prefs.putString("seenVersion", appVersion).flush(); if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else if (!checkWhatsNew()) { checkDaily(); checkJournal() }
@@ -2469,6 +2502,7 @@ class SeaGame : ApplicationAdapter() {
     private fun render0() {
         val dt = min(0.05f, Gdx.graphics.deltaTime)
         if (pendingRebuild && state != State.LOADING) { pendingRebuild = false; rebuildPlayer() }
+        if (updateFound != null) showUpdateWhenFree()
         if (state == State.LOADING) {
             loadNext()
             Gdx.gl.glClearColor(0.05f, 0.15f, 0.25f, 1f)

@@ -992,6 +992,19 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(panelW).height(h)
     }
 
+    /** Вышла новая версия: скачать APK со страницы релиза. */
+    fun showUpdate(v: String) = open(SeaGame.State.DIALOG) {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("Доступно обновление", ui.big, align = Align.center, wrap = true)).growX().row()
+        panel.add(ui.label("Вышла версия $v (у вас ${g.appVersion}). Скачайте новый APK и установите его поверх игры — прогресс сохранится.",
+            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 10f, 0f).row()
+        panel.add(ui.green("⬆  Скачать").also { it.onClick { try { Gdx.net.openURI(UPDATE_APK) } catch (_: Exception) { }; close() } }).growX().height(50f).row()
+        panel.add(ui.gray("Позже").also { it.onClick { close() } }).growX().height(44f).padTop(6f).row()
+        root.add(panel).width(min(g.wDp - 24, 440f))
+    }
+
     fun showWhiteFlag() = open(SeaGame.State.DIALOG) {
         val ex = g.extras
         val refuse = ex.refusesRansom()

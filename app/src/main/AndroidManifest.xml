@@ -3,6 +3,8 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- только для проверки обновлений: один запрос к странице релиза при запуске -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"

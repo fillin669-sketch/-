@@ -1,7 +1,20 @@
 package com.seatrader.game
 
+const val UPDATE_API = "https://api.github.com/repos/fillin669-sketch/-/releases/tags/latest"
+const val UPDATE_APK = "https://github.com/fillin669-sketch/-/releases/download/latest/SeaTrader.apk"
+
+/** Версия [a] новее [b] (сравнение по числам: 10.10 > 10.9). */
+fun isNewer(a: String, b: String): Boolean {
+    val x = a.split(".").map { it.toIntOrNull() ?: 0 }; val y = b.split(".").map { it.toIntOrNull() ?: 0 }
+    for (i in 0 until maxOf(x.size, y.size)) { val d = x.getOrElse(i) { 0 } - y.getOrElse(i) { 0 }; if (d != 0) return d > 0 }
+    return false
+}
+
 /** Что нового в версиях (сверху — самая свежая). Показывается один раз после обновления. */
 val CHANGELOG = listOf(
+    "10.5" to listOf(
+        "При запуске игра проверяет, вышла ли новая версия, и предлагает её скачать",
+    ),
     "10.4" to listOf(
         "После обновления показывается это окно — что появилось в игре",
         "Кнопка «Что нового» в меню паузы",

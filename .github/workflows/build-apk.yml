@@ -57,6 +57,8 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk SeaTrader.apk
+          # номер версии — в описание релиза: по нему игра узнаёт об обновлении
+          echo "APP_VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_ENV"
 
       - name: Сохранить APK как артефакт сборки
         uses: actions/upload-artifact@v4
@@ -70,6 +72,7 @@ jobs:
           tag_name: latest
           name: Пираты Семи Ветров (последняя сборка)
           body: |
+            Версия: ${{ env.APP_VERSION }}
             Свежая сборка из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
             Скачайте SeaTrader.apk на телефон и установите.
           prerelease: true
