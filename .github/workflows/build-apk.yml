@@ -34,9 +34,15 @@ jobs:
           mkdir -p "$DIR"
           if [ -n "$KEYSTORE_BASE64" ]; then
             # собственный ключ из секретов репозитория
-            echo "$KEYSTORE_BASE64" | base64 -d > "$DIR/own.jks"
+            echo "Подпись: постоянный ключ из секретов репозитория"
+            echo "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$DIR/own.jks"
             KS="$DIR/own.jks"; PASS="$KEYSTORE_PASSWORD"; ALIAS="${KEYSTORE_ALIAS:-seawolves}"
+            # ключ должен открываться паролем — иначе останавливаемся с понятной ошибкой
+            if ! keytool -list -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" > /dev/null 2>&1; then
+              echo "::error::Секрет KEYSTORE_BASE64 повреждён или не подходит пароль/имя ключа"; exit 1
+            fi
           else
+            echo "::warning::Секреты KEYSTORE_* не найдены — подпись временным ключом из кеша"
             # постоянный ключ, созданный один раз и сохранённый в кеше Actions
             if [ ! -f "$DIR/release.jks" ]; then
               openssl rand -hex 16 > "$DIR/pass"
