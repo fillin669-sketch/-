@@ -161,6 +161,30 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f > 470 && storeT > 160 || f > 2000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_CAPT") != null) {
+            fun scrollPane(): com.badlogic.gdx.scenes.scene2d.ui.ScrollPane? {
+                fun find(x: com.badlogic.gdx.scenes.scene2d.Actor): com.badlogic.gdx.scenes.scene2d.ui.ScrollPane? {
+                    if (x is com.badlogic.gdx.scenes.scene2d.ui.ScrollPane) return x
+                    if (x is com.badlogic.gdx.scenes.scene2d.Group) for (c in x.children) find(c)?.let { return it }
+                    return null
+                }
+                return find(g.stage.root)
+            }
+            fun plus(): com.badlogic.gdx.scenes.scene2d.ui.TextButton? {
+                fun find(x: com.badlogic.gdx.scenes.scene2d.Actor): com.badlogic.gdx.scenes.scene2d.ui.TextButton? {
+                    if (x is com.badlogic.gdx.scenes.scene2d.ui.TextButton && x.text.toString() == "+" && !x.isDisabled) return x
+                    if (x is com.badlogic.gdx.scenes.scene2d.Group) for (c in x.children.reversed()) find(c)?.let { return it }
+                    return null
+                }
+                return find(g.stage.root)
+            }
+            when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.systems.skillPts = 5; g.openPause() }; 10 -> press("Капитан")
+                15 -> { val sp = scrollPane()!!; sp.scrollY = sp.maxY; sp.updateVisualScroll(); log.append("прокрутили вниз: ${sp.scrollY.toInt()} из ${sp.maxY.toInt()}\n") }
+                20 -> { shot("c1_before"); plus()?.toggle() }
+                25 -> { val sp = scrollPane()!!; log.append("после «+»: ${sp.scrollY.toInt()} из ${sp.maxY.toInt()}, очков осталось ${g.systems.skillPts}\n"); shot("c2_after")
+                    Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
+            return
+        }
         if (System.getenv("SEA_UPD") != null) {
             when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.debugOfferUpdate("10.6") }
                 20 -> { shot("u1_update"); log.append("окно: state=${g.state}\n") }; 22 -> press("Позже")

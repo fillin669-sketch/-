@@ -30,10 +30,13 @@ class Menus(private val g: SeaGame) {
     private var portTab = 0
     private var portScroll = 0f
     private var scrollRef: ScrollPane? = null
+    /** Какой экран сейчас открыт — чтобы при перестройке того же экрана не сбрасывать прокрутку. */
+    private var screenKey = ""
     private var resetArmed = false
     private var dailyIdx = 0
 
     fun close() {
+        screenKey = ""
         baseOpen = false
         stage.clear()
         current = null
@@ -499,6 +502,7 @@ class Menus(private val g: SeaGame) {
     }
 
     private fun buildPause() {
+        screenKey = ""
         stage.clear()
         val root = overlay()
         val panel = panelTable()
@@ -1535,6 +1539,9 @@ class Menus(private val g: SeaGame) {
 
     // ===================== Капитан =====================
     private fun buildCaptain() {
+        // перестройка после улучшения навыка или артефакта — остаёмся на том же месте списка
+        val keepY = if (screenKey == "captain") scrollRef?.scrollY ?: 0f else 0f
+        screenKey = "captain"
         stage.clear()
         val sy = g.systems
         val root = overlay()
@@ -1605,12 +1612,16 @@ class Menus(private val g: SeaGame) {
         val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
         panel.add(back).growX().height(50f).padTop(8f).row()
         root.add(panel).width(min(g.wDp - 16, 460f)).height(g.hDp - g.safeTop - g.safeBottom - 24)
+        root.validate()
+        scroll.scrollY = keepY; scroll.updateVisualScroll()
+        scrollRef = scroll
     }
 
     // ===================== Выбор капитана =====================
     fun showHeroSelect(first: Boolean) = open(SeaGame.State.DIALOG) { buildHeroSelect(first) }
 
     private fun buildHeroSelect(first: Boolean) {
+        screenKey = ""
         stage.clear()
         val root = overlay()
         val panel = panelTable()
