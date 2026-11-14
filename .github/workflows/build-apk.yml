@@ -46,6 +46,9 @@ jobs:
             printf '%s' "$CLEAN" | base64 -d > "$DIR/own.jks" 2>/dev/null || true
             echo "Отпечаток файла ключа: $(sha256sum "$DIR/own.jks" | cut -c1-12)"
             KS="$DIR/own.jks"; PASS="$KEYSTORE_PASSWORD"; ALIAS="${KEYSTORE_ALIAS:-seawolves}"
+            echo "Пароль: длина ${#PASS}, отпечаток $(printf '%s' "$PASS" | sha256sum | cut -c1-8); имя ключа: длина ${#ALIAS}"
+            # имя ключа не подошло — пробуем стандартное
+            if ! keytool -list -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" > /dev/null 2>&1; then ALIAS=seawolves; fi
             # ключ должен открываться паролем — иначе останавливаемся с понятной ошибкой
             if ! keytool -list -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" > /dev/null 2>&1; then
               echo "::error::Секрет KEYSTORE_BASE64 повреждён или не подходит пароль/имя ключа"; exit 1
