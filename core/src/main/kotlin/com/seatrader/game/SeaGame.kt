@@ -819,7 +819,7 @@ class SeaGame : ApplicationAdapter() {
         val a = ABILITIES[i]
         abilityCd[i] = a.cooldown * extras.abilityCdMul()
         when (a.id) {
-            "fire" -> { ammo = Ammo.FIRE; ammoT = a.duration; sfx.play("fire"); toast("Огненные ядра заряжены!"); questEvent(QType.ABILITY, "", false) }
+            "fire" -> { ammo = Ammo.FIRE; ammoT = a.duration; sfx.play("fire"); toast("Огненные ядра заряжены!"); systems.addStat("fireAmmo"); questEvent(QType.ABILITY, "", false) }
             "chain" -> { ammo = Ammo.CHAIN; ammoT = a.duration; sfx.play("chain"); toast("Цепные ядра заряжены!") }
             "repair" -> {
                 p.repairT = a.duration; sfx.play("repair")
@@ -1886,7 +1886,53 @@ class SeaGame : ApplicationAdapter() {
         }
         if (inc == 0) return
         qprog += inc
-        if (qprog >= q.n) {
+        if (qprog >= q.n) completeQuest(q, false)
+        save()
+    }
+
+    /**
+     * Задание уже выполнено раньше, чем стало активным (купили корабль заранее, разрушили крепость…).
+     * Состояние (корабль, улучшения, флот, уровень, место) засчитывается всегда,
+     * разовые подвиги сюжета — по счётчикам из достижений.
+     */
+    fun questAlreadyDone(q: Quest): Boolean {
+        val st = systems.stats
+        fun s(k: String) = st[k] ?: 0
+        return when (q.type) {
+            QType.BUY -> shipId != "sloop" || owned.any { it != "sloop" }
+            QType.UPGRADE -> up.values.any { a -> a.any { it > 0 } }
+            QType.HIRE -> allies.isNotEmpty()
+            QType.LEVEL -> systems.level >= q.n
+            QType.ZONE -> systems.region == q.region
+            QType.REACH -> player?.inPort == true && homePort == q.port
+            else -> questIdx < STORY_LENGTH && when (q.type) {
+                QType.BOARD -> s("boards") >= q.n
+                QType.FORTRESS -> s("forts") >= q.n
+                QType.SERPENT -> s("serpents") >= q.n
+                QType.KRAKEN -> s("krakens") >= q.n
+                QType.FLAGSHIP -> s("flagships") >= q.n
+                QType.WRECK -> s("wrecks") >= q.n
+                QType.TREASURE -> s("treasures") >= q.n
+                QType.PROTECT -> s("protects") >= q.n
+                QType.ADMIRAL -> s("admirals") >= q.n
+                QType.ABILITY -> s("fireAmmo") >= q.n
+                else -> false
+            }
+        }
+    }
+
+    private var questCheckT = 1.5f
+    /** Раз в пару секунд: не выполнено ли активное задание заранее. */
+    private fun checkQuestDone(dt: Float) {
+        questCheckT -= dt
+        if (questCheckT > 0f) return
+        questCheckT = 1.5f
+        val q = quest()
+        if (questAlreadyDone(q)) { completeQuest(q, true); save() }
+    }
+
+    private fun completeQuest(q: Quest, early: Boolean) {
+        run {
             coins += q.coins
             gems += q.gems
             questIdx++
@@ -1894,17 +1940,14 @@ class SeaGame : ApplicationAdapter() {
             val parts = ArrayList<String>()
             if (q.coins > 0) parts += "+${q.coins} монет"
             if (q.gems > 0) parts += "+${q.gems} кристаллов"
-            toast("Задание выполнено!\n" + parts.joinToString("   "), 2.6f)
+            toast((if (early) "Задание засчитано — вы уже это сделали!\n" else "Задание выполнено!\n") + parts.joinToString("   "), 2.6f)
             sfx.play("quest")
             questPop = 0.6f
             systems.gainXp(100 + questIdx * 5, player?.x ?: 0f, player?.z ?: 0f)
-            // новое задание может уже быть выполнено (уровень, регион)
-            val nq = quest()
-            if (nq.type == QType.LEVEL && systems.level >= nq.n) { qprog = 0; questEvent(QType.LEVEL, "", false) }
-            if (nq.type == QType.ZONE && systems.region == nq.region) questEvent(QType.ZONE, nq.region.name, false)
+            // следующее задание, если уже выполнено, засчитается через пару секунд (после этого сообщения)
+            questCheckT = 2.8f
             checkJournal()
         }
-        save()
     }
 
     fun questTarget(): Pair<Float, Float>? {
@@ -2210,6 +2253,7 @@ class SeaGame : ApplicationAdapter() {
         extras.update(dt)
         guilds.update(dt)
         adv.update(dt)
+        checkQuestDone(dt)
         if (aimActive) updateAim()
         for (i in abilityCd.indices) if (abilityCd[i] > 0) abilityCd[i] -= dt
         if (ammoT > 0) { ammoT -= dt; if (ammoT <= 0) ammo = Ammo.NORMAL }

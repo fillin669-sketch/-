@@ -127,6 +127,19 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_QUEST") != null) {
+            fun idx(t: QType) = (0 until STORY_LENGTH).first { questAt(it).type == t }
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
+                10 -> { g.owned += "brigantine"; g.questIdx = idx(QType.BUY); log.append("старт: ${questAt(g.questIdx).text}\n") }
+                150 -> { log.append("через 2.5 с: ${g.quest().text} (idx ${g.questIdx})\n"); g.allies += MERCS[0].id; g.spawnAllies() }
+                300 -> { log.append("после найма: ${g.quest().text}\n"); g.systems.stats["forts"] = 1; g.questIdx = idx(QType.FORTRESS) }
+                450 -> { log.append("после крепости: ${g.quest().text}\n"); g.ensureUp("sloop")[1] = 1; g.questIdx = idx(QType.UPGRADE) }
+                720 -> { log.append("после улучшения: ${g.quest().text} done=${g.questAlreadyDone(g.quest())} up=${g.up.mapValues { it.value.toList() }} state=${g.state}\n"); g.questIdx = 0 }
+                870 -> { log.append("убийство шлюпа (не засчитывается заранее): ${g.quest().text}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_SETTINGS") != null) {
             when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.openPause() }; 10 -> press("Настройки"); 20 -> shot("settings")
                 21 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
