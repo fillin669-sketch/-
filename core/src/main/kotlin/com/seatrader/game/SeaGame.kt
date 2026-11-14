@@ -356,7 +356,7 @@ class SeaGame : ApplicationAdapter() {
                 hud.disposeSplash()
                 lastCrash?.let { t -> lastCrash = null; menus.showError(t) ; return@let }
                 if (state == State.DIALOG) Unit
-                else if (guilds.guild < 0) { if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else { checkDaily(); checkJournal() }
+                else if (guilds.guild < 0) { if (appVersion.isNotEmpty()) prefs.putString("seenVersion", appVersion).flush(); if (skipPrologue) menus.showGuildSelect() else startPrologue(true) } else if (!checkWhatsNew()) { checkDaily(); checkJournal() }
             }
         }
         loadStep++
@@ -561,6 +561,23 @@ class SeaGame : ApplicationAdapter() {
     private fun localDay(): Long {
         val now = System.currentTimeMillis()
         return (now + java.util.TimeZone.getDefault().getOffset(now)) / 86_400_000L
+    }
+
+    /** Первая игра на новой версии — окно «Что нового» (на новой игре не показываем). Возвращает true, если окно открыто. */
+    fun checkWhatsNew(): Boolean {
+        val seen = prefs.getString("seenVersion", "")
+        if (appVersion.isEmpty() || seen == appVersion) return false
+        prefs.putString("seenVersion", appVersion).flush()
+        val items = whatsNewSince(seen)
+        if (seen.isEmpty() && items.isEmpty()) return false
+        menus.showWhatsNew(items.ifEmpty { CHANGELOG.take(1) }, true)
+        return true
+    }
+
+    /** Версии из списка изменений новее [seen] (не больше четырёх). */
+    fun whatsNewSince(seen: String): List<Pair<String, List<String>>> {
+        val i = CHANGELOG.indexOfFirst { it.first == seen }
+        return (if (i < 0) CHANGELOG.take(if (seen.isEmpty()) 1 else 3) else CHANGELOG.take(i)).take(4)
     }
 
     fun checkDaily() {

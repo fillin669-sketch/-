@@ -127,6 +127,11 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_NEWS") != null) {
+            when (f) { 10 -> shot("n1_whatsnew"); 12 -> press("Отлично"); 20 -> { log.append("после окна: state=${g.state}\n"); g.menus.close(); g.openPause(); press("Что нового") }
+                30 -> shot("n2_from_pause"); 32 -> press("Отлично"); 40 -> { log.append("из паузы назад: state=${g.state}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
+            return
+        }
         if (System.getenv("SEA_QUEST") != null) {
             fun idx(t: QType) = (0 until STORY_LENGTH).first { questAt(it).type == t }
             when (f) {

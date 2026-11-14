@@ -510,6 +510,7 @@ class Menus(private val g: SeaGame) {
         val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
         val map = ui.blue("⚓  Карта мира").also { it.onClick { mapFromPause = true; current = { buildMap() }; buildMap() } }
         val story = ui.blue("☠  Предыстория").also { it.onClick { close(); g.startPrologue(false) } }
+        val news = ui.blue("✦  Что нового").also { it.onClick { showWhatsNew(CHANGELOG.take(4), false) } }
         val songs = ui.blue("♪  Песни команды").also { it.onClick { current = { buildSongs() }; buildSongs() } }
         val help = ui.blue("?  Как играть").also { it.onClick { current = { buildHelp() }; buildHelp() } }
         val settings = ui.blue("⚙  Настройки").also { it.onClick { current = { buildSettings() }; buildSettings() } }
@@ -519,7 +520,7 @@ class Menus(private val g: SeaGame) {
             }
         }
         val list = Table()
-        for (bt in listOf(resume, captain, ach, map, story, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
+        for (bt in listOf(resume, captain, ach, map, story, news, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
     }
 
@@ -964,6 +965,31 @@ class Menus(private val g: SeaGame) {
         val ok = ui.button("Продолжить", 0x8d6e4a, 0x6d4c2f, ui.mid).also { it.onClick { close(); if (g.guilds.guild < 0) g.startPrologue(true) } }
         panel.add(ok).growX().minHeight(48f).padTop(8f).row()
         root.add(panel).width(min(g.wDp - 24, 520f))
+    }
+
+    /** Что нового: список изменений; [startup] — после закрытия идут ежедневная награда и журнал. */
+    fun showWhatsNew(items: List<Pair<String, List<String>>>, startup: Boolean) = open(SeaGame.State.DIALOG) {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        val panelW = min(g.wDp - 16, 480f)
+        panel.add(ui.label("Что нового", ui.big, align = Align.center)).growX().row()
+        if (g.appVersion.isNotEmpty()) panel.add(ui.label("Версия ${g.appVersion}", ui.small, rgb(0x90a4ae), align = Align.center)).growX().padBottom(6f).row()
+        val body = Table().top()
+        for ((ver, lines) in items) {
+            val c = card(0x164266)
+            c.add(ui.label("Версия $ver", ui.mid, rgb(0xffc93c))).left().row()
+            for (l in lines) c.add(ui.label("•  $l", ui.small, rgb(0xe3f2fd), wrap = true)).growX().padTop(3f).row()
+            body.add(c).growX().padBottom(8f).row()
+        }
+        fitList(body, panelW)
+        val scroll = ScrollPane(body, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
+        panel.add(scroll).grow().row()
+        panel.add(ui.green("Отлично!").also {
+            it.onClick { if (startup) { close(); g.checkDaily(); g.checkJournal() } else showPause() }
+        }).growX().height(48f).padTop(8f).row()
+        val h = min(g.hDp - g.safeTop - g.safeBottom - 24, 170f + items.sumOf { 56 + it.second.size * 48 }.toFloat())
+        root.add(panel).width(panelW).height(h)
     }
 
     fun showWhiteFlag() = open(SeaGame.State.DIALOG) {
