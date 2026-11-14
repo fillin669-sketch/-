@@ -142,7 +142,8 @@ class SeaGame : ApplicationAdapter() {
     var state = State.LOADING
     val islands = ArrayList<Island>()
     val ports = ArrayList<Port>()
-    val ships = ArrayList<Ship>()
+    /** Список кораблей можно менять прямо во время его перебора (корабль тонет посреди кадра, появляется новый). */
+    val ships = java.util.concurrent.CopyOnWriteArrayList<Ship>()
     val prologue = Prologue(this)
     /** Тесты на ПК пропускают предысторию. */
     var skipPrologue = false
@@ -635,7 +636,9 @@ class SeaGame : ApplicationAdapter() {
     }
 
     /** Пересобрать корабль в море (новый уровень корабля), не трогая состояние. */
-    fun rebuildPlayerKeepState() = rebuildPlayer()
+    fun rebuildPlayerKeepState() { pendingRebuild = true }
+    /** Пересборка корабля после нового уровня — в начале следующего кадра, не посреди обхода кораблей. */
+    private var pendingRebuild = false
 
     /** Корабли сопровождения появляются рядом с игроком. */
     fun spawnAllies() {
@@ -1038,12 +1041,14 @@ class SeaGame : ApplicationAdapter() {
     }
 
     /** Столкновения кораблей: упругий импульс с учётом масс, урон при таране. */
+    private val collTmp = ArrayList<Ship>()
     private fun shipCollisions() {
-        for (i in ships.indices) {
-            val a = ships[i]
+        collTmp.clear(); collTmp.addAll(ships)
+        for (i in collTmp.indices) {
+            val a = collTmp[i]
             if (a.sinking) continue
-            for (j in i + 1 until ships.size) {
-                val b = ships[j]
+            for (j in i + 1 until collTmp.size) {
+                val b = collTmp[j]
                 if (b.sinking) continue
                 val dx = b.x - a.x; val dz = b.z - a.z
                 val d = hypot(dx, dz)
@@ -2121,7 +2126,8 @@ class SeaGame : ApplicationAdapter() {
         now += dt
         prologue.update(dt)
         if (state != State.CUTSCENE) return
-        for (s in ships) updateShip(s, dt)
+        shipsTmp.clear(); shipsTmp.addAll(ships)
+        for (s in shipsTmp) updateShip(s, dt)
         shipCollisions()
         updateBalls(dt)
         ships.removeAll { it.sinkT > 4.5f }
@@ -2150,9 +2156,13 @@ class SeaGame : ApplicationAdapter() {
             s.faction == Faction.NEUTRAL -> systems.neutralAI(s, dt)
             s.ally -> updateAllyAI(s, dt)
         }
-        for (s in ships) updateShip(s, dt)
+        // обход по копии списка: корабль может утонуть посреди кадра (горение, таран),
+        // а за потопление — новый уровень корабля и пересборка корабля игрока
+        shipsTmp.clear(); shipsTmp.addAll(ships)
+        for (s in shipsTmp) updateShip(s, dt)
         shipCollisions()
-        for (s in ships) updateFiring(s, dt)
+        shipsTmp.clear(); shipsTmp.addAll(ships)
+        for (s in shipsTmp) updateFiring(s, dt)
         updateBalls(dt)
         updateLoot(dt)
         updateTreasure(dt)
@@ -2345,7 +2355,7 @@ class SeaGame : ApplicationAdapter() {
             try { if (batch.isDrawing) batch.end() } catch (_: Throwable) { }
             try { modelBatch.end() } catch (_: Throwable) { }
             try { com.badlogic.gdx.graphics.glutils.FrameBuffer.unbind() } catch (_: Throwable) { }
-            try { if (errCount <= 3 && state != State.LOADING) prefs.putString("lastError", "v${'$'}errCount ${'$'}errText").flush() } catch (_: Throwable) { }
+            try { if (errCount <= 3 && state != State.LOADING) prefs.putString("lastError", "v$errCount $errText").flush() } catch (_: Throwable) { }
             // ошибка в сценке — просто заканчиваем её
             if (state == State.CUTSCENE) try { cutClear(); endPrologue(guilds.guild < 0) } catch (_: Throwable) { state = State.PLAY }
         }
@@ -2362,6 +2372,7 @@ class SeaGame : ApplicationAdapter() {
 
     private fun render0() {
         val dt = min(0.05f, Gdx.graphics.deltaTime)
+        if (pendingRebuild && state != State.LOADING) { pendingRebuild = false; rebuildPlayer() }
         if (state == State.LOADING) {
             loadNext()
             Gdx.gl.glClearColor(0.05f, 0.15f, 0.25f, 1f)

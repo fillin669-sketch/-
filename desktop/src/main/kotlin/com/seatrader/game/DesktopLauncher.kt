@@ -125,6 +125,17 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_CME") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
+                10 -> { tp(400f, -400f); val p = g.player!!
+                    g.guilds.shipXp[g.shipId] = SHIP_LEVEL_XP[1] - 1
+                    repeat(6) { k -> g.spawnEnemy("sloop", p.x + 20f + k * 6f, p.z + 10f).also { it.hp = 1f; it.burnT = 3f; it.burnDps = 40f } } }
+                90 -> { log.append(g.ships.filter { it.faction == Faction.PIRATE }.joinToString { "hp=${it.hp.toInt()} burn=${it.burnT} sink=${it.sinking} sur=${it.surrendered}" } + "\n"); log.append("уровень корабля=${g.guilds.shipLevel()} пиратов=${g.ships.count { it.faction == Faction.PIRATE && !it.sinking }} ошибка=${Gdx.app.getPreferences("seawolves").getString("lastError", "нет")}\n")
+                    shot("cme"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_SPLASH") != null) {
             if (f == 5) { g.autoGfx = false; g.applyGfx(3); g.startPrologue(false, splash = true) }
             if (f in listOf(150, 200, 260)) shot("splash$f")
