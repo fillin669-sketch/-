@@ -83,6 +83,9 @@ class Ship(
     var hunter = false
     var ghost = false
     var trait = ""
+    /** Номер легендарного корабля (-1 — обычный) и капитан-союзник из финала. */
+    var legend = -1
+    var heroShip = false
     var leader: Ship? = null
     /** Пробоины: x — вдоль корпуса, y — высота, z — поперёк. */
     val holes = ArrayList<Vector3>()
@@ -106,7 +109,12 @@ class Ball(
 
 class Island(val x: Float, val z: Float, val r: Float, val port: Int, val inst: ModelInstance, val foam: ModelInstance, val lights: List<Vector3>, val glows: List<Vector3> = emptyList())
 class Port(val def: PortDef, val i: Int, val rx: Float, val rz: Float, val ring: ModelInstance)
-class Loot(val gem: Boolean, val value: Int, var x: Float, var z: Float, val inst: ModelInstance, var t: Float) { var age = 0f }
+class Loot(val gem: Boolean, val value: Int, var x: Float, var z: Float, val inst: ModelInstance, var t: Float) {
+    var age = 0f
+    /** 0 — монеты/кристалл, 2 — выжившие моряки, 3 — ящик материалов [mat]. */
+    var kind = 0
+    var mat = 0
+}
 class FloatText(val text: String, val x: Float, var y: Float, val color: com.badlogic.gdx.graphics.Color, val font: com.badlogic.gdx.graphics.g2d.BitmapFont) { var age = 0f }
 class Treasure(val island: Island, val x: Float, val z: Float, val inst: ModelInstance)
 class Gull(var cx: Float, var cz: Float, val r: Float, var a: Float, val h: Float, val speed: Float, val phase: Float)

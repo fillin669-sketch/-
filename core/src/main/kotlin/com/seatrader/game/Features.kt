@@ -424,9 +424,10 @@ class Systems(private val g: SeaGame) {
                 if (Random.nextFloat() < dt * 3) g.fx.spawn(g.fx.DARK, f.x + rand(-8f, 8f), 8f, f.z + rand(-8f, 8f), 0f, 4f, 0f, 2f, 2f, Fx.Mode.PUFF)
                 continue
             }
-            val tgt = g.ships.filter { it.faction == Faction.PLAYER && !it.sinking && hypot(it.x - f.x, it.z - f.z) < 110 }
+            val ours = f.idx in g.adv.captured
+            val tgt = g.ships.filter { (if (ours) it.faction == Faction.PIRATE else it.faction == Faction.PLAYER) && !it.sinking && hypot(it.x - f.x, it.z - f.z) < 110 }
                 .minByOrNull { hypot(it.x - f.x, it.z - f.z) } ?: continue
-            if (tgt === p && p.safe) continue
+            if (!ours && tgt === p && p.safe) continue
             g.combatT = max(g.combatT, 3f)
             f.cd -= dt
             if (f.cd <= 0) {
@@ -435,7 +436,7 @@ class Systems(private val g: SeaGame) {
                 for (k in 0 until 4) {
                     val sa = a + (k - 1.5f) * 0.35f
                     val sx = f.x + sin(sa) * f.r * 0.7f; val sz = f.z - cos(sa) * f.r * 0.7f
-                    g.launchBall(null, Faction.PIRATE, sx, 10.5f, sz, tgt.x, tgt.z, tgt.vx, tgt.vz, 16f + g.questIdx * 0.5f, Ammo.NORMAL, k * 0.12f, 1.4f)
+                    g.launchBall(null, if (ours) Faction.PLAYER else Faction.PIRATE, sx, 10.5f, sz, tgt.x, tgt.z, tgt.vx, tgt.vz, 16f + g.questIdx * 0.5f, Ammo.NORMAL, k * 0.12f, 1.4f)
                 }
                 g.sfx.play("cannon", g.volumeAt(f.x, f.z))
             }
@@ -455,7 +456,12 @@ class Systems(private val g: SeaGame) {
             gainXp(250, f.x, f.z)
             addStat("forts")
             g.questEvent(QType.FORTRESS, "", false)
-            g.toast("Крепость разрушена!", 2.2f)
+            // крепость переходит к игроку: отстраивается под его флагом и бьёт пиратов
+            g.adv.captured += f.idx
+            f.destroyedT = 25f
+            explored.reveal(f.x, f.z, 450f)
+            g.toast("Крепость захвачена!\nПираты обходят эти воды стороной", 2.6f)
+            g.save()
         }
     }
 
@@ -463,7 +469,7 @@ class Systems(private val g: SeaGame) {
     fun hitStatic(x: Float, y: Float, z: Float, dmg: Float, radius: Float = 0f): Boolean {
         for (f in fortresses) {
             if (!f.alive) continue
-            if (hypot(x - f.x, z - f.z) < f.r * 0.85f + radius && y < 16f) { g.fx.explosion(x, y, z, 0.6f); damageFortress(f, dmg); return true }
+            if (hypot(x - f.x, z - f.z) < f.r * 0.85f + radius && y < 16f) { g.fx.explosion(x, y, z, 0.6f); if (f.idx !in g.adv.captured) damageFortress(f, dmg); return true }
         }
         val k = kraken ?: return false
         if (k.dead || k.diving) return false
@@ -854,7 +860,7 @@ class Systems(private val g: SeaGame) {
     /** Сила абордажной команды игрока относительно врага (≈1 — равные силы). */
     fun boardingRatio(t: Ship): Float {
         val p = g.player ?: return 1f
-        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul() * g.extras.boardMul() * (1f + g.guilds.boardBonus())
+        val mine = p.stats.mass * 10 * (1 + 0.15f * skill("boarding")) * (0.5f + 0.5f * p.hp / p.maxHp) * g.living.boardMul() * g.extras.boardMul() * (1f + g.guilds.boardBonus()) * g.adv.boardMul()
         val theirs = t.stats.mass * 10 * (0.35f + t.hp / t.maxHp)
         return mine / theirs
     }

@@ -334,10 +334,13 @@ class Menus(private val g: SeaGame) {
             info.add(Pips(ui, lvl)).width(130f).height(14f).left().padTop(4f).padBottom(4f).row()
             info.add(ui.label("+${(upg.per * 100).roundToInt()}% ${upg.text} за уровень", ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
             if (lvl < MAX_LEVEL) info.add(ui.label("Вид: " + UPGRADE_LOOKS[i][lvl], ui.small, rgb(0xffe082), wrap = true)).growX().row()
+            val need = if (lvl < MAX_LEVEL) g.adv.matNeed(i, lvl + 1) else IntArray(4)
+            if (need.any { it > 0 }) info.add(ui.label("Материалы: " + g.adv.matText(need), ui.small, rgb(if (g.adv.hasMats(need)) 0x81c784 else 0xff8a80), wrap = true)).growX().row()
             c.add(info).growX()
             val needShip = shipLevelForUpgrade(lvl + 1)
             val btn: TextButton = if (lvl >= MAX_LEVEL) ui.gray("МАКС").also { it.isDisabled = true }
             else if (g.guilds.shipLevel() < needShip) ui.gray("Ур. корабля $needShip").wrapping().also { it.isDisabled = true }
+            else if (!g.adv.hasMats(need)) ui.gray("Нужны материалы").wrapping().also { it.isDisabled = true }
             else {
                 val cost = (upgradeCost(def, lvl) * g.living.upgradeMul()).roundToInt()
                 priceButton(fmt(cost), 0, g.coins >= cost).also { it.onClick { buyUpgrade(i) } }
@@ -354,6 +357,9 @@ class Menus(private val g: SeaGame) {
         if (g.guilds.shipLevel() < shipLevelForUpgrade(u[i] + 1)) { g.toast("Нужен уровень корабля ${shipLevelForUpgrade(u[i] + 1)}: плавайте и сражайтесь"); return }
         val cost = (upgradeCost(def, u[i]) * g.living.upgradeMul()).roundToInt()
         if (g.coins < cost) { g.toast("Не хватает монет"); return }
+        val need = g.adv.matNeed(i, u[i] + 1)
+        if (!g.adv.hasMats(need)) { g.toast("Не хватает материалов: " + g.adv.matText(need)); return }
+        g.adv.spendMats(need)
         g.coins -= cost
         u[i]++
         g.rebuildPlayer()
@@ -365,6 +371,26 @@ class Menus(private val g: SeaGame) {
     }
 
     private fun fleetCards(content: Table) {
+        val ad = g.adv
+        val tc = card(0x2b1d12)
+        tc.add(ui.label("Торговые рейсы", ui.big, wrap = true)).growX().row()
+        tc.add(ui.label("Отправьте караван с деньгами — он вернётся с прибылью, пока вы плаваете. Пираты иногда перехватывают караваны (наёмники во флоте снижают риск). Одновременно — до ${ad.maxCaravans()}.",
+            ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+        for (c in ad.caravans) {
+            val left = c.timeLeft.toInt()
+            tc.add(ui.label("В пути: ${fmt(c.amount)} монет → «${PORTS[c.port].name}» · ещё ${left / 60}:${"%02d".format(left % 60)}", ui.small, rgb(0xffe082), wrap = true)).growX().padTop(4f).row()
+            tc.add(Bar(ui, 1f - c.timeLeft / c.total, 0xffc93c)).growX().height(8f).padTop(2f).row()
+        }
+        if (ad.caravans.size < ad.maxCaravans()) for ((k, o) in ad.caravanOptions.withIndex()) {
+            tc.add(priceButton("${o.third}: ${fmt(o.first)} · ${(o.second / 60).toInt()} мин", 0, g.coins >= o.first).also {
+                it.onClick {
+                    val dest = (portIndex + 3 + k * 2) % PORTS.size
+                    if (ad.sendCaravan(k, dest)) { g.sfx.play("quest"); g.toast("Караван ушёл в «${PORTS[dest].name}»", 1.8f) } else g.toast("Не хватает монет")
+                    refreshPort()
+                }
+            }).growX().height(46f).padTop(6f).row()
+        }
+        content.add(tc).growX().padBottom(10f).row()
         val head = card()
         head.add(ui.label("Флот сопровождения", ui.big)).left().row()
         head.add(ui.label("Наёмники плывут рядом с вами и сами вступают в бой. Можно нанять до $MAX_ALLIES кораблей. Потопленный наёмник уходит из флота.",
@@ -663,6 +689,21 @@ class Menus(private val g: SeaGame) {
         if (q.type == QType.DELIVER) head.add(ui.label("Заказ: ${q.text} (${g.qprog}/${q.n})", ui.small, rgb(0xffc93c), wrap = true)).growX().padTop(4f).row()
         content.add(head).growX().padBottom(10f).row()
         contractCard(content, portIndex)
+        // материалы верфи
+        val mc = card(0x263238)
+        mc.add(ui.label("Материалы верфи", ui.big, wrap = true)).growX().row()
+        mc.add(ui.label("Нужны для улучшений с 3-го уровня. Ящики падают с пиратов, шкуры — со зверей (китов и акул).", ui.small, rgb(0xb9d6f2), wrap = true)).growX().padBottom(4f).row()
+        for (mi in MATERIALS.indices) {
+            val r = Table()
+            r.add(Swatch(ui, MATERIAL_COLOR[mi], false)).size(22f).padRight(6f)
+            r.add(ui.label("${MATERIALS[mi]}: ${g.adv.mats[mi]}", ui.small)).growX().left()
+            val bp = g.adv.matBuyPrice(portIndex, mi)
+            r.add(ui.button("+1 за $bp", 0x2fbf6e, 0x22a95c, ui.small).also { it.onClick { if (!g.adv.buyMat(portIndex, mi, 1)) g.toast("Не хватает монет") else g.sfx.play("coin"); g.save(); refreshPort() } }).height(38f).padLeft(4f)
+            if (g.adv.mats[mi] > 0) r.add(ui.button("-1 за ${g.adv.matSellPrice(portIndex, mi)}", 0xb9761e, 0x99611a, ui.small).also {
+                it.onClick { if (g.adv.mats[mi] > 0) { g.adv.mats[mi]--; g.coins += g.adv.matSellPrice(portIndex, mi); g.sfx.play("coin") }; g.save(); refreshPort() } }).height(38f).padLeft(4f)
+            mc.add(r).growX().padTop(3f).row()
+        }
+        content.add(mc).growX().padBottom(10f).row()
         for ((gi, good) in GOODS.withIndex()) {
             val buy = sy.buyPrice(portIndex, gi)
             val sell = sy.sellPrice(portIndex, gi)
@@ -685,6 +726,30 @@ class Menus(private val g: SeaGame) {
     // ===================== Таверна =====================
     private fun tavernCards(content: Table, port: Int) {
         val lv = g.living
+        val ad = g.adv
+        ad.fixCrew()
+        val crewCard = card(0x1d3b4f)
+        crewCard.add(ui.label("Экипаж: ${ad.sailors} из ${ad.maxSailors()}", ui.big, wrap = true)).growX().row()
+        crewCard.add(ui.label("Без людей пушки заряжаются дольше, а абордаж слабее. Матросы гибнут под ядрами и в рукопашной; выживших с потопленных кораблей можно подобрать в море.",
+            ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+        val miss = ad.maxSailors() - ad.sailors
+        if (miss > 0) {
+            val r = Table()
+            r.add(priceButton("Нанять 5 · ${fmt(min(5, miss) * ad.recruitPrice())}", 0, g.coins >= min(5, miss) * ad.recruitPrice()).also {
+                it.onClick { if (ad.recruit(5) > 0) g.sfx.play("coin") else g.toast("Не хватает монет"); g.save(); refreshPort() } }).growX().height(46f).padRight(4f)
+            r.add(priceButton("Полный · ${fmt(miss * ad.recruitPrice())}", 0, g.coins >= miss * ad.recruitPrice()).also {
+                it.onClick { if (ad.recruit(miss) > 0) g.sfx.play("coin") else g.toast("Не хватает монет"); g.save(); refreshPort() } }).growX().height(46f)
+            crewCard.add(r).growX().padTop(6f).row()
+        }
+        content.add(crewCard).growX().padBottom(10f).row()
+        if (ad.stars > 0) {
+            val wc = card(0x4a1c1c)
+            wc.add(ui.label("Розыск: " + "★".repeat(ad.stars) + "☆".repeat(5 - ad.stars), ui.big, rgb(0xff8a80), wrap = true)).growX().row()
+            wc.add(ui.label("Флот охотится за вами за нападения на мирные суда. Розыск сам спадает со временем — или можно заплатить нужным людям.", ui.small, rgb(0xffcdd2), wrap = true)).growX().row()
+            wc.add(priceButton("Подкупить чиновника · ${fmt(ad.bribePrice())}", 0, g.coins >= ad.bribePrice()).also {
+                it.onClick { if (ad.bribe()) { g.sfx.play("coin"); g.toast("Розыск снят", 1.6f) } else g.toast("Не хватает монет"); g.save(); refreshPort() } }).growX().height(46f).padTop(6f).row()
+            content.add(wc).growX().padBottom(10f).row()
+        }
         guildCard(content)
         // Репутация
         val rc = card()
@@ -1228,6 +1293,18 @@ class Menus(private val g: SeaGame) {
         val panel = Table().also { it.background = ui.panel(0x3e2a1a); it.pad(18f) }
         panel.add(ui.label(q.chapter ?: "Бортовой журнал", ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
         panel.add(ui.label(q.intro ?: "", ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(12f, 0f, 12f, 0f).row()
+        g.adv.chapterVoice(q.chapter)?.let { (id, line) ->
+            val h = HEROES.firstOrNull { it.id == id }
+            if (h != null) {
+                val r = Table().also { it.background = ui.panel(0x2a1c10) ; it.pad(8f) }
+                r.add(Image(HeroArt.face(h))).size(56f).padRight(10f).top()
+                val t = Table()
+                t.add(ui.label(h.name, ui.mid, rgb(0xffc93c))).left().row()
+                t.add(ui.label("«$line»", ui.small, rgb(0xfff3e0), wrap = true)).growX().row()
+                r.add(t).growX().minWidth(0f)
+                panel.add(r).growX().padBottom(10f).row()
+            }
+        }
         panel.add(ui.label("Задание: ${q.text}", ui.small, rgb(0xffc93c), wrap = true)).growX().padBottom(10f).row()
         val btn = ui.green("⚓  Отдать швартовы")
         btn.onClick { close() }
@@ -1328,6 +1405,7 @@ class Menus(private val g: SeaGame) {
                     if (over) {
                         // итог — после перерисовки (stage.clear() снял бы отложенное действие)
                         val won = theirs <= 0.5f || (mine > 0.5f && mine / mineStart > theirs / enemyStart)
+                        g.adv.onBoardingLoss(1f - mine / mineStart)
                         current = { boardingResult(target, won) }
                         stage.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.delay(0.7f, com.badlogic.gdx.scenes.scene2d.actions.Actions.run { boardingResult(target, won) }))
                     }
@@ -1610,10 +1688,14 @@ class Menus(private val g: SeaGame) {
             data class F(val x: Float, val z: Float, val text: String)
             val feats = ArrayList<F>()
             for (pt in g.ports) feats += F(pt.rx, pt.rz, "Порт «${pt.def.name}»: ремонт, верфь, рынок")
-            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) feats += F(f.x, f.z, if (f.alive) "Пиратская крепость: стреляет по всем, кто рядом" else "Руины крепости (отстроят позже)")
+            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) feats += F(f.x, f.z, when {
+                f.idx in g.adv.captured -> "Ваша крепость: бьёт пиратов, рядом спокойные воды"
+                f.alive -> "Пиратская крепость: разрушьте — и она станет вашей"
+                else -> "Руины крепости" })
+            for ((i, l) in LEGENDS.withIndex()) { val lr = g.adv.lair(i); feats += F(lr[0], lr[1], if (i in g.adv.legendsDown) "${l.name} повержен" else "Легендарный корабль ${l.name}. ${l.story}") }
             for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) feats += F(w.x, w.z, "Затонувший корабль: остановитесь у пузырей")
             for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) feats += F(bt.x, bt.z, "Бутылка с песней для команды")
-            g.treasure?.let { feats += F(it.x, it.z, "Сокровище на острове") }
+            g.treasure?.let { feats += if (g.adv.treasureExact()) F(it.x, it.z, "Сокровище на острове") else F(g.adv.hintX, g.adv.hintZ, g.adv.treasureHint()) }
             val near = feats.minByOrNull { hypot(it.x - wx, it.z - wz) }
             selX = wx; selZ = wz
             var text = "Точка на карте. Можно проложить курс."
@@ -1657,10 +1739,14 @@ class Menus(private val g: SeaGame) {
                 if (px < x - sz || px > x + width + sz || py < y - sz || py > y + height + sz) continue
                 ui.icon(batch, ui.softDisc, px, py, sz * 1.2f, sz * 1.2f, 0f, rgb(0x3b3127, 0.8f))
             }
-            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) ui.icon(batch, ui.squareIcon, sx(f.x), sy(f.z), 10f, 10f, 0f, rgb(if (f.alive) 0xd84315 else 0x757575))
+            for (f in g.systems.fortresses) if (ex.seen(f.x, f.z)) ui.icon(batch, ui.squareIcon, sx(f.x), sy(f.z), 10f, 10f, 0f, rgb(if (f.idx in g.adv.captured) 0x43a047 else if (f.alive) 0xd84315 else 0x757575))
+            for ((i, _) in LEGENDS.withIndex()) { val lr = g.adv.lair(i); ui.text(batch, ui.mid, "☠", sx(lr[0]) - 12, sy(lr[1]) + 9, Align.center, 24f, c = rgb(if (i in g.adv.legendsDown) 0x757575 else 0xff1744)) }
             for (w in g.systems.wrecks) if (ex.seen(w.x, w.z)) ui.icon(batch, ui.disc, sx(w.x), sy(w.z), 8f, 8f, 0f, rgb(0xb3e5fc))
             for (bt in g.systems.bottles) if (ex.seen(bt.x, bt.z)) ui.text(batch, ui.mid, "♪", sx(bt.x) - 10, sy(bt.z) + 8, Align.center, 20f, c = rgb(0xffe082))
-            g.treasure?.let { ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 14f, 14f) }
+            g.treasure?.let {
+                if (g.adv.treasureExact()) ui.icon(batch, ui.xmark, sx(it.x), sy(it.z), 14f, 14f)
+                else { val rr = 90f * scaleK() * 2f; ui.icon(batch, ui.ring, sx(g.adv.hintX), sy(g.adv.hintZ), rr, rr, 0f, rgb(0xffc93c, 0.9f)) }
+            }
             g.extras.lost?.let { l -> ui.icon(batch, ui.coin, sx(l.x), sy(l.z), 20f, 20f); ui.text(batch, ui.small, "ваш груз", sx(l.x) - 40, sy(l.z) - 12, Align.center, 80f, c = rgb(0xffe082)) }
             val lv = g.living
             ui.text(batch, ui.mid, "⚑", sx(lv.baseX) - 12, sy(lv.baseZ) + 9, Align.center, 24f, c = rgb(if (lv.baseFounded) 0x2e7d32 else 0x5d4037))
@@ -1797,6 +1883,14 @@ class Menus(private val g: SeaGame) {
             "Пиратская фракция" to "Игрок Берегового братства может нападать на любые суда: купцов, рыбаков и патрули флота. Автоогонь бьёт только пиратов — мирное судно атакуйте прицельным залпом, после первого попадания по нему стреляет и автоогонь. Купцы удирают, патрули отвечают огнём. Добыча богаче, но торговцы и флот это запомнят.",
             "Белый флаг" to "Если корабль почти потоплен, появится кнопка «Белый флаг»: откупитесь монетами или сдайтесь, отдав груз. Охотники за головами и призраки выкуп не берут. Почти потопленные пираты тоже иногда сдаются — подплывите и примите сдачу.",
             "Потерянный груз" to "После гибели груз и часть монет остаются на месте крушения (отметка на карте). Обломки стерегут падальщики. Если погибнете снова, не подобрав их, груз пропадёт.",
+            "Экипаж" to "У каждого корабля своя команда (шлюп — 20 матросов, линкор — 100). Под ядрами и в абордаже матросы гибнут: пушки заряжаются дольше, абордаж слабее. Нанимайте людей в таверне и подбирайте выживших на плотах после боя.",
+            "Материалы" to "Дерево, железо, парусина и шкуры нужны для улучшений с 3-го уровня. Ящики падают с пиратов, шкуры — с китов и акул. Купить и продать — на рынке.",
+            "Носовые пушки" to "Когда враг прямо по курсу, нос корабля бьёт сам (при включённом автоогне). С 3-го уровня «Пушек» — два носовых орудия.",
+            "Розыск" to "Нападения на купцов и патрули поднимают розыск (★). С двух звёзд за вами идут охотники флота. Розыск спадает сам, когда вы не воюете, или снимается взяткой в таверне.",
+            "Легендарные корабли" to "Четыре легенды ждут в логовах на краях карты (☠ на карте мира). Они намного сильнее обычных пиратов, а за победу — артефакт, много золота и кристаллов.",
+            "Крепости" to "Разрушенная пиратская крепость переходит к вам: отстраивается под вашим флагом, стреляет по пиратам, а рядом пираты больше не появляются.",
+            "Торговые рейсы" to "Во вкладке «Флот» можно отправить караван с деньгами — через несколько минут он вернётся с прибылью. Иногда пираты его перехватывают.",
+            "Звери и смерчи" to "Киты и акулы дают шкуры. Акулы кусают корабль, если подойти близко. В сильный шторм появляются смерчи — они крутят и ломают корабли, держитесь подальше.",
             "Дух команды" to "Победы, добыча, песни и порт поднимают дух, поражения и долгое плавание без добычи — опускают. Бодрая команда быстрее заряжает пушки и сильнее в абордаже. Ром в таверне поднимает дух. Если дух упадёт совсем низко — начнётся ропот.",
             "Артефакты" to "12 редких предметов: в затонувших храмах, кладах по карте, у капитанов с наградой и у морских чудовищ. Носить можно 3 — меню «Капитан».",
             "Свой флаг" to "Во вкладке «Вид» порта: нарисуйте флаг пальцем по клеткам и выберите узор парусов, например эмблему с флага.",

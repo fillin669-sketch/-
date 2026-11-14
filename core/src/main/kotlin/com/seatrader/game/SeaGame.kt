@@ -145,6 +145,7 @@ class SeaGame : ApplicationAdapter() {
     /** Список кораблей можно менять прямо во время его перебора (корабль тонет посреди кадра, появляется новый). */
     val ships = java.util.concurrent.CopyOnWriteArrayList<Ship>()
     val prologue = Prologue(this)
+    val adv = Adventure(this)
     /** Тесты на ПК пропускают предысторию. */
     var skipPrologue = false
     /** Тест защиты от вылетов: бросить ошибку в кадре. */
@@ -329,6 +330,7 @@ class SeaGame : ApplicationAdapter() {
                 serpentBodyModel = Models.serpentBody().also { models += it }
                 portRingModel = Models.portRing().also { models += it }
                 systems.initModels(models)
+                adv.initModels(models)
             }
             loadStep <= PORTS.size -> buildPort(loadStep - 1)
             loadStep == PORTS.size + 1 -> { systems.buildFortresses(models) { x, z, r, reg -> addIsland(x, z, r, reg, 777) }; living.buildBase(models); portView.build(models) }
@@ -338,6 +340,7 @@ class SeaGame : ApplicationAdapter() {
                 systems.placeBottles { x, z, m -> isWater(x, z, m) }
                 living.buildWorld { x, z, m -> isWater(x, z, m) }
                 extras.afterWorldBuilt()
+                adv.afterWorldBuilt()
                 fx.limit = intArrayOf(250, 450, 700, 900)[gfx]
                 // заранее строим модели всех врагов и наёмников — без подтормаживаний при их появлении
                 for (d in ENEMIES.values) shipModel(d.look)
@@ -458,6 +461,7 @@ class SeaGame : ApplicationAdapter() {
         heroId = prefs.getString("hero", "")
         systems.load(prefs)
         living.load(prefs)
+        adv.load(prefs)
         guilds.load(prefs)
         extras.load(prefs)
         flagPix = prefs.getString("flagPix", "").let { if (it.length == 48) upscaleFlag(it) else it }.takeIf { it.length == FLAG_W * FLAG_H } ?: ""
@@ -496,6 +500,7 @@ class SeaGame : ApplicationAdapter() {
         prefs.putBoolean("autoGfx", autoGfx)
         prefs.putString("hero", heroId)
         systems.save(prefs)
+        adv.save(prefs)
         living.save(prefs)
         extras.save(prefs)
         guilds.save(prefs)
@@ -656,9 +661,9 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
-    fun spawnEnemy(type: String, x: Float, z: Float, name: String? = null, boss: Boolean? = null): Ship {
+    fun spawnEnemy(type: String, x: Float, z: Float, name: String? = null, boss: Boolean? = null, look: Look? = null): Ship {
         val d = ENEMIES.getValue(type)
-        return createShip(name ?: d.name, enemyStats(d), Faction.PIRATE, d.look, x, z, rand(-PI.toFloat(), PI.toFloat()), boss ?: d.boss).also {
+        return createShip(name ?: d.name, enemyStats(d), Faction.PIRATE, look ?: d.look, x, z, rand(-PI.toFloat(), PI.toFloat()), boss ?: d.boss).also {
             it.type = type; it.coinsMin = d.coinsMin; it.coinsMax = d.coinsMax; it.gems = d.gems
             it.homeX = x; it.homeZ = z
             it.leash = if (it.boss || boss == true) 450f else 300f
@@ -1143,7 +1148,8 @@ class SeaGame : ApplicationAdapter() {
     }
 
     private fun updateFiring(s: Ship, dt: Float) {
-        s.reload[0] -= dt; s.reload[1] -= dt
+        val rdt = if (s === player) dt / adv.reloadSlow() else dt
+        s.reload[0] -= rdt; s.reload[1] -= rdt
         if (s.sinking) return
         val p = player
         if (s.faction == Faction.NEUTRAL && s.type != "navy") return
@@ -1312,6 +1318,7 @@ class SeaGame : ApplicationAdapter() {
             if (Random.nextFloat() < 0.4f) sfx.play("hit", volumeAt(b.x, b.z) * 0.7f)
             return true
         }
+        if (b.faction == Faction.PLAYER && adv.hitCreature(b.x, b.y, b.z, b.dmg)) return true
         val sp = serpent
         if (sp != null && b.faction == Faction.PLAYER && !sp.dead && !sp.diving) {
             for (seg in sp.segPos) {
@@ -1343,6 +1350,7 @@ class SeaGame : ApplicationAdapter() {
         if (s === systems.grappleTarget && s.hp - amount < 1f) { s.hp = 1f; return }
         if (s === player) amount *= (1f - extras.armor())
         if (s === player && amount > s.maxHp * 0.12f) extras.addMorale(-2f)
+        if (s === player && !silent && src != null) adv.onPlayerHit(amount, s)
         if (s.surrendered && src === player && !s.sinking) {
             s.surrendered = false
             living.addRep(2, -3); extras.addMorale(-3f)
@@ -1352,6 +1360,7 @@ class SeaGame : ApplicationAdapter() {
         if (s.faction == Faction.PIRATE && s.hp > 0 && (src === player || src?.ally == true)) extras.maybeSurrender(s)
         if (s.faction == Faction.NEUTRAL && src === player && !s.provoked) {
             s.provoked = true
+            adv.onProvoke(s)
             if (s.type == "navy") { living.addRep(1, -8); toast("Вы атаковали патруль флота!", 1.8f) }
             else { living.addRep(0, -3); living.addRep(1, -2); living.addRep(2, 1) }
         }
@@ -1368,6 +1377,7 @@ class SeaGame : ApplicationAdapter() {
     private fun sink(s: Ship, src: Ship?, ram: Boolean) {
         s.sinkT = 0.001f
         living.onSink(s, src)
+        adv.onSink(s, src)
         fx.explosion(s.x, 3f, s.z, 1.5f)
         sfx.play("sink", volumeAt(s.x, s.z))
         if (s.faction == Faction.PIRATE) {
@@ -1412,6 +1422,7 @@ class SeaGame : ApplicationAdapter() {
         } else {
             deathTimer = 2f
             extras.onPlayerDeath(s)
+            adv.onPlayerDeath()
             systems.vibrate(300)
         }
     }
@@ -1453,6 +1464,7 @@ class SeaGame : ApplicationAdapter() {
     }
 
     private fun collect(l: Loot, byAlly: Boolean = false) {
+        if (l.kind != 0) { adv.collect(l); return }
         if (!l.gem) {
             coins += l.value
             floatText(l.x, 4f, l.z, if (byAlly) "+${l.value} союзник" else "+${l.value}", rgb(0xffc93c), if (byAlly) ui.mid else ui.big)
@@ -1480,7 +1492,7 @@ class SeaGame : ApplicationAdapter() {
                     treasure = Treasure(isl, x, z, ModelInstance(treasureModel).also {
                         it.transform.setToTranslation(x, 1.2f, z).rotate(Vector3.Y, -a * MathUtils.radiansToDegrees)
                     })
-                    toast("На карте отмечено сокровище!")
+                    toast("На карте отмечен район клада!")
                 } else treasureTimer = 5f
             }
             return
@@ -1957,7 +1969,7 @@ class SeaGame : ApplicationAdapter() {
         val pirates = ships.filter { it.faction == Faction.PIRATE && !it.sinking && !it.hunter && !it.ghost && it.type != "navy" }
         val zone = hypot(p.x, p.z) / WORLD
         val want = 5 + (zone * 3).roundToInt()
-        if (pirates.size < want) findSpawnPoint(240f, 400f)?.let { spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second) }
+        if (pirates.size < want) findSpawnPoint(240f, 400f)?.let { if (!adv.nearCapturedFort(it.first, it.second)) spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second) }
         val q = quest()
         if ((q.type == QType.KILL || q.type == QType.RAM) && pirates.none { it.type == q.enemy }) {
             findSpawnPoint(260f, 380f)?.let { spawnEnemy(q.enemy, it.first, it.second) }
@@ -2195,6 +2207,7 @@ class SeaGame : ApplicationAdapter() {
         living.update(dt)
         extras.update(dt)
         guilds.update(dt)
+        adv.update(dt)
         if (aimActive) updateAim()
         for (i in abilityCd.indices) if (abilityCd[i] > 0) abilityCd[i] -= dt
         if (ammoT > 0) { ammoT -= dt; if (ammoT <= 0) ammo = Ammo.NORMAL }
@@ -2473,6 +2486,7 @@ class SeaGame : ApplicationAdapter() {
         living.render(modelBatch, env, lookX, lookZ)
         portView.render(modelBatch, env, lookX, lookZ)
         extras.render(modelBatch, env)
+        adv.render(modelBatch, env, lookX, lookZ)
         serpent?.let { sp ->
             if (hypot(sp.x - lookX, sp.z - lookZ) < 600) {
                 modelBatch.render(sp.head, env)

@@ -455,6 +455,16 @@ class Hud(private val g: SeaGame) {
         val mt = "Дух ${ex.morale.roundToInt()}"
         ui.text(b, ui.small, mt, lineRight, ly, Align.left, 80f, c = rgb(ex.moraleColor()))
         lineRight += ui.measure(ui.small, mt)
+        // экипаж (если не полный) и розыск — второй строкой
+        val ad = g.adv
+        val ly2 = ly - (if (g.guilds.contract != null) 36f else 18f)
+        var x2 = 12f
+        if (ad.sailors in 0 until ad.maxSailors()) {
+            val st = "Экипаж ${ad.sailors}/${ad.maxSailors()}"
+            ui.text(b, ui.small, st, x2, ly2, Align.left, 140f, c = rgb(if (ad.crewK() < 0.5f) 0xff8a80 else 0x81d4fa))
+            x2 += ui.measure(ui.small, st) + 10f
+        }
+        if (ad.stars > 0) ui.text(b, ui.small, "Розыск " + "★".repeat(ad.stars), x2, ly2, Align.left, 160f, c = rgb(0xff5252))
 
         drawMinimap()
 
@@ -543,7 +553,10 @@ class Hud(private val g: SeaGame) {
         }
         g.serpent?.let { sp -> if (!sp.dead) pt(sp.x, sp.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 11f, 11f, 0f, c(0x26a69a)) } }
         g.systems.kraken?.let { k -> if (!k.dead) pt(k.x, k.z)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 14f, 14f, 0f, c(0xd81b60)) } }
-        g.treasure?.let { t -> pt(t.x, t.z, true)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 14f, 14f) } }
+        g.treasure?.let { t ->
+            if (g.adv.treasureExact()) pt(t.x, t.z, true)?.let { (x, y) -> ui.icon(b, ui.xmark, x, y, 14f, 14f) }
+            else pt(g.adv.hintX, g.adv.hintZ, true)?.let { (x, y) -> ui.icon(b, ui.ring, x, y, 18f, 18f, 0f, c(0xffc93c)) }
+        }
         g.extras.lost?.let { l -> pt(l.x, l.z, true)?.let { (x, y) -> val pu = 1f + sin(g.now * 6) * 0.2f; ui.icon(b, ui.coin, x, y, 12f * pu, 12f * pu) } }
         g.systems.waypoint?.let { w -> pt(w[0], w[1], true)?.let { (x, y) -> ui.icon(b, ui.disc, x, y, 10f, 10f, 0f, c(0x4dd0e1)) } }
         g.questTarget()?.let { t ->

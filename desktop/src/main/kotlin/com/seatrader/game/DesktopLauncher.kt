@@ -125,6 +125,53 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_ADV") != null) {
+            val ad = g.adv
+            val p = g.player
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
+                10 -> { g.coins = 50000; ad.sailors = 8; ad.mats[0] = 1; g.openPort(0); press("Таверна") }
+                20 -> shot("a01_tavern")
+                21 -> press("Нанять 5")
+                25 -> { log.append("экипаж после найма: ${ad.sailors}/${ad.maxSailors()}\n"); press("Рынок") }
+                35 -> shot("a02_market")
+                36 -> { val u = g.ensureUp(g.shipId); u[0] = 2; g.guilds.shipXp[g.shipId] = 2000; press("Улучшения") }
+                45 -> shot("a03_upgrades")
+                46 -> press("Флот")
+                50 -> { press("Ближний"); log.append("караванов: ${ad.caravans.size}\n") }
+                55 -> shot("a04_fleet")
+                56 -> { g.menus.close(); g.closePort(); lootCoins = g.coins; ad.caravans.forEach { it.timeLeft = 0.1f } }
+                60 -> { log.append("караван вернулся: монет +${g.coins - lootCoins}, в пути ${ad.caravans.size}\n"); val l = ad.lair(1); tp(l[0], l[1] + 430f); p!!.h = 0f }
+                110 -> { shot("a05_legend"); log.append("легенда: " + g.ships.filter { it.legend >= 0 }.joinToString { "${it.name} hp=${it.hp.toInt()} trait=${it.trait}" } + "\n") }
+                111 -> { g.ships.filter { it.legend >= 0 }.forEach { g.removeShip(it) }; tp(500f, -500f); p!!.h = 0f; g.systems.autoFire = true
+                    featE = g.spawnEnemy("brig", p.x, p.z - 45f).also { it.h = 0f; it.ai = AiState.WANDER; it.stats = Stats(9999, 0.01f, 0.01f, 0, 0f, 99f, 1f, 1f); it.hp = 9999f; it.maxHp = 9999f } }
+                112 -> lootCoins = g.balls.size
+                130 -> { shot("a06_bow"); log.append("носовые пушки: ядер в полёте ${g.balls.count { it.owner === p }}, враг hp=${featE?.hp?.toInt()}\n"); featE?.let { g.removeShip(it) } }
+                135 -> { ad.debugCreature(0, p!!.x + 30f, p.z - 10f); ad.debugCreature(1, p.x - 15f, p.z - 25f) }
+                150 -> log.append("звери: " + g.adv.creatures.joinToString { "k${it.kind} (${it.x.toInt()},${it.z.toInt()}) dead=${it.deadT}" } + " игрок (${g.player!!.x.toInt()},${g.player!!.z.toInt()})\n")
+                160 -> { shot("a07_beasts"); if (System.getenv("SEA_LIFT") != null) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
+                161 -> { val w = ad.creatures.first { it.kind == 0 }; repeat(30) { ad.hitCreature(w.x, 0f, w.z, 20f) } }
+                170 -> { log.append("кит добыт: " + ad.creatures.count { it.deadT > 0 } + " · ящиков на воде ${g.loot.count { it.kind == 3 }}\n") }
+                175 -> { g.stormLevel = 1f; g.stormTarget = 1f; ad.debugSpout(p!!.x + 25f, p.z - 30f) }
+                215 -> shot("a08_spout")
+                216 -> { g.stormLevel = 0f; g.stormTarget = 0f; ad.spouts.clear()
+                    val n = g.spawnNeutral("navy", p!!.x + 60f, p.z); g.damage(n, 5f, p, false); ad.wanted = 3f; ad.debugHunters() }
+                260 -> { shot("a09_wanted"); log.append("розыск ★${ad.stars}, охотников: ${g.ships.count { it.hunter && it.type == "navy" }}\n") }
+                261 -> { ad.wanted = 0f; g.ships.filter { it.type == "navy" }.forEach { g.removeShip(it) }
+                    val fo = g.systems.fortresses[0]; g.systems.damageFortress(fo, 99999f); log.append("крепость захвачена: ${fo.idx in ad.captured}\n") }
+                300 -> { val fo = g.systems.fortresses[0]; tp(fo.x + 60f, fo.z + 60f); g.spawnEnemy("sloop", fo.x + 40f, fo.z - 60f) }
+                360 -> { shot("a10_fort"); log.append("крепость жива=${g.systems.fortresses[0].alive}, рядом спавн запрещён=${ad.nearCapturedFort(g.systems.fortresses[0].x + 100f, g.systems.fortresses[0].z)}\n") }
+                361 -> { g.questIdx = (0 until 40).first { questAt(it).type == QType.ADMIRAL }; tp(-600f, 300f); p!!.h = 0f
+                    g.spawnEnemy("admiral", p.x, p.z - 150f).also { it.ai = AiState.WANDER } }
+                420 -> { shot("a11_heroes"); log.append("капитанов на помощь: ${ad.heroCount}\n") }
+                421 -> { g.ships.filter { it.type == "admiral" || it.heroShip }.forEach { g.removeShip(it) }; g.questIdx = 0; g.menus.showJournal(questAt(0)) }
+                430 -> shot("a12_journal")
+                431 -> { g.menus.close(); g.openPause(); press("Карта") }
+                440 -> shot("a13_map")
+                441 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_LOOT") != null) {
             when (f) {
                 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
