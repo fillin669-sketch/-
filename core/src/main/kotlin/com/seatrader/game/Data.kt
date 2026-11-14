@@ -104,7 +104,11 @@ fun shipStats(s: ShipDef, up: IntArray?): Stats {
     )
 }
 
-fun enemyStats(e: EnemyDef) = Stats(e.hp, e.speed, e.turn, e.cannons, e.dmg, e.reload, e.range, e.mass)
+/** Баланс: обычные пираты бьют на четверть слабее и заряжаются чуть дольше (адмирал — как есть). */
+fun enemyStats(e: EnemyDef): Stats {
+    val soft = e.type != "admiral"
+    return Stats(e.hp, e.speed, e.turn, e.cannons, if (soft) e.dmg * 0.75f else e.dmg, if (soft) e.reload * 1.12f else e.reload, e.range, e.mass)
+}
 
 const val WORLD = 1800f // половина размера мира
 
@@ -119,6 +123,19 @@ fun regionAt(x: Float, z: Float): Region = when {
     x > Math.abs(z) * 0.9f -> Region.FIRE
     x < -Math.abs(z) * 0.9f -> Region.REEF
     else -> Region.ABYSS
+}
+
+/**
+ * Уровень опасности вод: 1 — у Гавани Ветров (только шлюпы), 2 — внешний архипелаг,
+ * 3 — Туманный риф, 4 — Огненные острова, 5 — Ледяное море, 6 — Бездна.
+ */
+fun zoneLevel(x: Float, z: Float): Int {
+    val d = Math.hypot(x.toDouble(), z.toDouble())
+    return when {
+        d < 480 -> 1
+        d < 1050 -> 2
+        else -> when (regionAt(x, z)) { Region.REEF -> 3; Region.FIRE -> 4; Region.ICE -> 5; Region.ABYSS -> 6; else -> 2 }
+    }
 }
 
 class PortDef(val name: String, val x: Float, val z: Float, val r: Float)

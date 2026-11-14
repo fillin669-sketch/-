@@ -161,6 +161,42 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f > 470 && storeT > 160 || f > 2000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_PORTTIME") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size }
+                10 -> { val p = g.player!!; featE = g.spawnNeutral("merchant", p.x + 150f, p.z + 60f).also { it.throttle = 0.6f }; g.openPort(0)
+                    lootCoins = 0; log.append("в порту: время суток ${"%.3f".format(g.dayTime)}, купец (${featE!!.x.toInt()},${featE!!.z.toInt()}), state=${g.state}\n") }
+                600 -> { log.append("через 600 кадров: время суток ${"%.3f".format(g.dayTime)}, купец (${featE!!.x.toInt()},${featE!!.z.toInt()}), state=${g.state}, игрок hp=${g.player!!.hp.toInt()}/${g.player!!.maxHp.toInt()}\n")
+                    g.menus.close(); g.closePort(); tp(700f, -700f) }
+                in 601..5000 -> if (f % 600 == 0) {
+                    val p = g.player!!
+                    val near = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking && Math.hypot((it.x - p.x).toDouble(), (it.z - p.z).toDouble()) < 450 }
+                    val minGap = near.flatMap { a -> near.filter { it !== a }.map { b -> Math.hypot((a.x - b.x).toDouble(), (a.z - b.z).toDouble()).toInt() } }.minOrNull()
+                    log.append("ур.${zoneLevel(p.x, p.z)}: пиратов рядом ${near.size}, атакуют ${near.count { it.ai == AiState.ATTACK }}, мин. расстояние между ними $minGap м; игрок hp ${p.hp.toInt()}\n")
+                    p.hp = p.maxHp
+                }
+            }
+            if (f == 5001) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_ZONES") != null) {
+            val p = g.player
+            fun types() = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking }.groupingBy { it.type }.eachCount().toString()
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; tp(80f, 120f) }
+                600 -> { log.append("ур.${zoneLevel(p!!.x, p.z)} у гавани: ${types()}\n")
+                    val killT = g.now; for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.damage(s, 99999f, p, false); lootCoins = g.ships.count { it.faction == Faction.PIRATE }; storeT = killT.toInt() }
+                in 610..3000 -> if (respawnAt < 0 && g.ships.any { it.faction == Faction.PIRATE && !it.sinking }) { respawnAt = f; log.append("новый пират появился через ${(g.now - storeT).toInt()} с игрового времени\n") }
+            }
+            if (f == 3001) { tp(1300f, 80f); p!!.h = 1.57f }
+            if (f == 3600) { log.append("ур.${zoneLevel(p!!.x, p.z)} Огненные: ${types()} · hp: " + g.ships.filter { it.faction == Faction.PIRATE }.joinToString { "${it.type}=${it.maxHp.toInt()}" } + "\n"); shot("z1_fire") }
+            if (f == 3601) { g.systems.shanties += 1; g.systems.shanties += 2; g.systems.shantiesOn = true; for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.removeShip(s); tp(-200f, 150f); p!!.h = 0f; p.throttle = 1f }
+            if (f in 3602..5000) { g.player!!.throttle = 1f; g.player!!.desired = g.player!!.h; g.combatT = 0f; for (s in ArrayList(g.ships)) if (s.faction == Faction.PIRATE) g.removeShip(s) }
+            if (f == 3900) { log.append("поёт песню ${g.sfx.currentShanty} (выбрана ${g.systems.shantyCur})\n"); g.sfx.debugSkipShanty() }
+            if (f == 4300) { log.append("после конца песни: выбрана ${g.systems.shantyCur}, играет ${g.sfx.currentShanty}\n")
+                Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (System.getenv("SEA_SHIPS") != null) {
             when (f) {
                 3 -> press("Вступить"); 5 -> press("Забрать")
@@ -802,6 +838,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     private var done = -1
     private var lootCoins = 0
     private var storeT = 0
+    private var respawnAt = -1
 
     private fun featTest(f: Int) {
         val ex = g.extras

@@ -537,7 +537,11 @@ class Systems(private val g: SeaGame) {
             if (k.diving) {
                 k.diveT -= dt
                 k.depth = min(14f, k.depth + dt * 10)
-                k.x += (p.x - k.x) * min(1f, dt * 0.6f); k.z += (p.z - 30 - k.z) * min(1f, dt * 0.6f)
+                // под водой подкрадывается к кораблю, но не быстрее 9 м/с
+                run {
+                    val dx = p.x - k.x; val dz = p.z - 30 - k.z; val dd = hypot(dx, dz)
+                    if (dd > 0.1f) { val step = min(dd, 9f * dt); k.x += dx / dd * step; k.z += dz / dd * step }
+                }
                 if (k.diveT <= 0) {
                     g.fx.splash(k.x, k.z, 3f); g.sfx.play("roar"); g.shake = max(g.shake, 0.5f)
                     for (s in g.ships) if (s.faction == Faction.PLAYER && hypot(s.x - k.x, s.z - k.z) < 22) g.damage(s, 30f, null, false)
@@ -549,8 +553,8 @@ class Systems(private val g: SeaGame) {
                 if (k.surfaceT <= 0) { k.diveT = 4f; k.slamIdx = -1 }
                 // держится рядом с игроком
                 val want = atan2(p.x - k.x, -(p.z - k.z))
-                k.h = wrapAngle(k.h + clamp(wrapAngle(want - k.h), -0.8f * dt, 0.8f * dt))
-                if (d > 26) { k.x += sin(k.h) * 7f * dt; k.z -= cos(k.h) * 7f * dt }
+                k.h = wrapAngle(k.h + clamp(wrapAngle(want - k.h), -0.5f * dt, 0.5f * dt))
+                if (d > 26) { k.x += sin(k.h) * 4.5f * dt; k.z -= cos(k.h) * 4.5f * dt }
                 // удар щупальцем
                 k.slamCd -= dt
                 if (k.slamIdx < 0 && k.slamCd <= 0 && d < 70 && !p.safe) {
@@ -783,12 +787,12 @@ class Systems(private val g: SeaGame) {
         val far = hypot(p.x, p.z) > 1000
         flotillaT -= dt
         val hasFlag = g.ships.any { it.type == "flagship" && !it.sinking }
-        if (!hasFlag && !p.safe && ((q.type == QType.FLAGSHIP) || (far && flotillaT <= 0))) {
+        if (!hasFlag && !p.safe && zoneLevel(p.x, p.z) >= 2 && ((q.type == QType.FLAGSHIP) || (far && flotillaT <= 0))) {
             flotillaT = rand(240f, 400f)
             g.findSpawnPoint(260f, 360f)?.let { (x, z) ->
                 val flag = g.spawnEnemy("flagship", x, z)
                 val escort = if (hypot(x, z) > 1300) "frigate" else "brig"
-                repeat(3) { k -> g.spawnEnemy(escort, x + (k - 1) * 18f, z + 22f).also { it.leader = flag } }
+                repeat(2) { k -> g.spawnEnemy(escort, x + (k * 2 - 1) * 18f, z + 22f).also { it.leader = flag } }
                 g.toast("Пиратская флотилия на горизонте!", 2.2f)
             }
         }
@@ -895,9 +899,10 @@ class Systems(private val g: SeaGame) {
 
     private fun updateAmbience(dt: Float, p: Ship) {
         // песни: по окончании — следующая из выученных
-        if (g.sfx.shantyFinished) {
+        if (g.sfx.takeShantyFinished() && shanties.isNotEmpty()) {
             val list = shanties.sorted()
             shantyCur = list[(list.indexOf(shantyCur) + 1) % list.size]
+            // та же песня единственная — начнётся заново; иначе следующая по списку
         }
         if (g.sfx.shantyIdx >= 0 && g.sfx.shantyIdx != lastShanty) { lastShanty = g.sfx.shantyIdx; shantyBanner = 5f }
         if (g.sfx.shantyIdx < 0 && lastShanty >= 0) lastShanty = -1

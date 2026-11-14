@@ -381,7 +381,7 @@ class SeaGame : ApplicationAdapter() {
                 spawnPlayer()
                 startX = player!!.x; startZ = player!!.z
                 repeat(4) { i ->
-                    findSpawnPoint(230f, 380f)?.let { spawnEnemy(if (i < 3) "sloop" else "brig", it.first, it.second) }
+                    findSpawnPoint(230f, 380f)?.let { spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second) }
                 }
                 spawnGulls()
                 state = State.PLAY
@@ -749,14 +749,16 @@ class SeaGame : ApplicationAdapter() {
         return null
     }
 
+    /** Тип пирата по уровню вод: у стартовой гавани — только шлюпы, дальше — сильнее. */
     private fun pickEnemyType(x: Float, z: Float): String {
-        val zone = min(1f, hypot(x, z) / 1000f)
-        val w = linkedMapOf(
-            "sloop" to max(0.15f, 1 - zone * 1.3f),
-            "brig" to if (zone < 0.2f) 0.15f else 0.7f,
-            "frigate" to if (zone > 0.4f) (zone - 0.3f) * 1.6f else 0f,
-            "galleon" to if (zone > 0.8f) 0.06f else 0f,
-        )
+        val w = when (zoneLevel(x, z)) {
+            1 -> linkedMapOf("sloop" to 1f)
+            2 -> linkedMapOf("sloop" to 0.6f, "brig" to 0.6f, "frigate" to 0.05f)
+            3 -> linkedMapOf("sloop" to 0.2f, "brig" to 0.8f, "frigate" to 0.4f)
+            4 -> linkedMapOf("brig" to 0.5f, "frigate" to 0.8f, "galleon" to 0.08f)
+            5 -> linkedMapOf("brig" to 0.3f, "frigate" to 0.9f, "galleon" to 0.15f)
+            else -> linkedMapOf("frigate" to 0.8f, "galleon" to 0.3f)
+        }
         var r = Random.nextFloat() * w.values.sum()
         for ((k, v) in w) { r -= v; if (r <= 0) return k }
         return "sloop"
@@ -1405,6 +1407,8 @@ class SeaGame : ApplicationAdapter() {
 
     fun damage(s: Ship, amount: Float, src: Ship?, ram: Boolean, silent: Boolean = false) {
         if (s.sinking || state == State.CUTSCENE) return
+        // корабли у причала в безопасности
+        if (state == State.PORT && (s === player || s.ally)) return
         var amount = if (s.trait == "armored") amount * 0.6f else amount
         // корабль на крюках не тонет до абордажной схватки (горение, ядра в полёте)
         if (s === systems.grappleTarget && s.hp - amount < 1f) { s.hp = 1f; return }
@@ -1644,7 +1648,8 @@ class SeaGame : ApplicationAdapter() {
             }
             val diff = wrapAngle(target - sp.h)
             sp.h = wrapAngle(sp.h + clamp(diff, -1.6f * dt, 1.6f * dt))
-            val speed = if (sp.diving) 20f else 13f
+            // змей медленнее корабля: от него можно уйти
+            val speed = if (sp.diving) 13f else 8f
             sp.x += sin(sp.h) * speed * dt
             sp.z -= cos(sp.h) * speed * dt
             for (isl in islands) {
@@ -1716,7 +1721,14 @@ class SeaGame : ApplicationAdapter() {
             val d = hypot(o.x - s.x, o.z - s.z) * (if (o.type == "merchant") 0.8f else 1f)
             if (d < td) { td = d; tgt = o }
         }
-        if (tgt != null && (td < aggro || (s.lastHit > now - 10 && td < aggro * 2))) { s.ai = AiState.ATTACK; s.target = tgt }
+        // не больше нескольких нападающих одновременно: остальные ждут, пока кто-то выйдет из боя
+        val provokedNow = s.lastHit > now - 10
+        val leaderFighting = s.leader?.let { it.ai == AiState.ATTACK && !it.sinking } == true
+        val crowded = s.ai != AiState.ATTACK && !provokedNow && !s.hunter && !leaderFighting && tgt?.faction == Faction.PLAYER && attackersNow >= maxAttackers
+        if (tgt != null && !crowded && (td < aggro || (provokedNow && td < aggro * 2))) {
+            if (s.ai != AiState.ATTACK && tgt.faction == Faction.PLAYER) attackersNow++
+            s.ai = AiState.ATTACK; s.target = tgt
+        }
         else if (s.ai == AiState.ATTACK && (tgt == null || td > aggro * 1.8f)) s.ai = AiState.WANDER
         val t = s.target
         val lead = s.leader
@@ -2063,18 +2075,55 @@ class SeaGame : ApplicationAdapter() {
     }
 
     // ================= Появление пиратов =================
+    /** Пауза перед появлением нового пирата — чтобы успевать отбиться и починиться. */
+    private var respawnCd = 20f
+    private var attackersNow = 0
+    private var maxAttackers = 3
+    private var lastZone = 1
+
+    /** Пират сильнее и богаче в опасных водах. */
+    private fun scaleForZone(s: Ship, lvl: Int) {
+        if (lvl <= 1) return
+        val k = 1f + 0.15f * (lvl - 1); val dk = 1f + 0.08f * (lvl - 1)
+        val st = s.stats
+        s.stats = Stats((st.hp * k).roundToInt(), st.speed, st.turn, st.cannons, st.dmg * dk, st.reload, st.range, st.mass)
+        s.hp = s.stats.hp.toFloat(); s.maxHp = s.hp
+        s.coinsMin = (s.coinsMin * (1f + 0.2f * (lvl - 1))).roundToInt(); s.coinsMax = (s.coinsMax * (1f + 0.2f * (lvl - 1))).roundToInt()
+    }
+
     private fun manageSpawns(dt: Float) {
         spawnTimer -= dt
         val p = player ?: return
         if (spawnTimer > 0) return
         spawnTimer = 1f
+        if (respawnCd > 0f && combatT <= 0f) respawnCd -= 1f
+        // вход в более опасные воды — предупреждение
+        val zl = zoneLevel(p.x, p.z)
+        if (zl > lastZone && zl >= 2) toast("Опасные воды: уровень $zl\n" + when (zl) { 2 -> "бригантины и одинокие фрегаты"; 3 -> "бригантины и фрегаты"; 4 -> "фрегаты, изредка галеоны"; 5 -> "фрегаты и галеоны"; else -> "галеоны — самые опасные воды" }, 2.4f)
+        lastZone = zl
         ships.removeAll { it.faction == Faction.PIRATE && !it.hunter && hypot(it.x - p.x, it.z - p.z) > 650 }
         val pirates = ships.filter { it.faction == Faction.PIRATE && !it.sinking && !it.hunter && !it.ghost && it.type != "navy" }
         val zone = hypot(p.x, p.z) / WORLD
-        val want = 5 + (zone * 3).roundToInt()
-        if (pirates.size < want) findSpawnPoint(240f, 400f)?.let { if (!adv.nearCapturedFort(it.first, it.second)) spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second) }
+        val want = when (zl) { 1 -> 2; 2 -> 3; else -> 4 }
+        // новый пират — только после паузы (пока идёт бой, пауза не убывает) и не рядом с другими: без скоплений
+        if (pirates.size < want && respawnCd <= 0f) {
+            var pt: Pair<Float, Float>? = null
+            repeat(6) {
+                if (pt == null) findSpawnPoint(260f, 420f)?.let { c -> if (pirates.none { o -> hypot(o.x - c.first, o.z - c.second) < 200f } && !adv.nearCapturedFort(c.first, c.second)) pt = c }
+            }
+            pt?.let {
+                val lvl = zoneLevel(it.first, it.second)
+                val lead = spawnEnemy(pickEnemyType(it.first, it.second), it.first, it.second).also { e -> scaleForZone(e, lvl) }
+                // иногда — пара кораблей (вожак и ведомый)
+                if (lvl >= 2 && pirates.size + 2 <= want && Random.nextFloat() < 0.3f)
+                    spawnEnemy(if (lvl >= 4) "brig" else "sloop", it.first + 18f, it.second + 20f).also { e -> scaleForZone(e, lvl); e.leader = lead }
+                respawnCd = rand(35f, 55f)
+            }
+        }
         val q = quest()
-        if ((q.type == QType.KILL || q.type == QType.RAM) && pirates.none { it.type == q.enemy }) {
+        // цель задания появляется, когда бой стих
+        if ((q.type == QType.KILL || q.type == QType.RAM) && pirates.none { it.type == q.enemy } && combatT <= 0f && respawnCd <= 0f && pirates.size < want) {
+            respawnCd = rand(20f, 30f)
             findSpawnPoint(260f, 380f)?.let { spawnEnemy(q.enemy, it.first, it.second) }
         }
     }
@@ -2280,12 +2329,39 @@ class SeaGame : ApplicationAdapter() {
         if (lightning > 0) lightning -= dt
     }
 
+    /**
+     * В порту мир живёт дальше: идут сутки и погода, контракты и караваны, чужие корабли плавают и воюют.
+     * Корабль игрока и его флот стоят у причала (их качает PortView) и не получают урона.
+     */
+    private fun portWorldUpdate(dt: Float) {
+        now += dt
+        shipsTmp.clear(); shipsTmp.addAll(ships)
+        attackersNow = 0; maxAttackers = 0
+        for (s in shipsTmp) {
+            if (s === player || s.ally) continue
+            when (s.faction) {
+                Faction.PIRATE -> updatePirateAI(s, dt)
+                Faction.NEUTRAL -> systems.neutralAI(s, dt)
+                else -> {}
+            }
+            updateShip(s, dt)
+        }
+        updateBalls(dt)
+        updateWorld(dt)
+        guilds.update(dt)
+        adv.updatePassive(dt)
+        if (combatT > 0) combatT -= dt
+        ships.removeAll { it !== player && it.sinkT > 3.5f }
+    }
+
     // ================= Обновление =================
     private fun update(dt: Float) {
         now += dt
         controlPlayer()
         recordTrail()
         shipsTmp.clear(); shipsTmp.addAll(ships)
+        attackersNow = ships.count { it.faction == Faction.PIRATE && !it.sinking && it.ai == AiState.ATTACK && it.target?.faction == Faction.PLAYER }
+        maxAttackers = player?.let { when (zoneLevel(it.x, it.z)) { 1 -> 1; 2 -> 2; else -> 3 } } ?: 3
         for (s in shipsTmp) when {
             s.faction == Faction.PIRATE -> updatePirateAI(s, dt)
             s.faction == Faction.NEUTRAL -> systems.neutralAI(s, dt)
@@ -2520,7 +2596,8 @@ class SeaGame : ApplicationAdapter() {
             afterRender?.invoke()
             return
         }
-        if (state == State.PLAY) update(dt) else if (state == State.CUTSCENE) cutsceneUpdate(dt) else now += dt * 0.3f
+        if (state == State.PLAY) update(dt) else if (state == State.CUTSCENE) cutsceneUpdate(dt)
+        else if (state == State.PORT && portView.active) portWorldUpdate(dt) else now += dt * 0.3f
         adaptQuality(dt)
         fx.time = now
         fx.update(dt)

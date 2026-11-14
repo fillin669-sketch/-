@@ -244,6 +244,14 @@ class Adventure(private val g: SeaGame) {
         updateHeroes(dt, p)
     }
 
+    /** В порту: караваны в пути, звери и смерчи живут дальше. */
+    fun updatePassive(dt: Float) {
+        val p = g.player ?: return
+        updateCaravans(dt)
+        updateCreatures(dt, p)
+        updateSpouts(dt, p)
+    }
+
     private fun updateHunters(dt: Float, p: Ship) {
         if (stars >= 2 && !p.inPort) {
             hunterT -= dt

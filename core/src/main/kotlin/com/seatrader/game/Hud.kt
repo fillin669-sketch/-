@@ -572,7 +572,8 @@ class Hud(private val g: SeaGame) {
         val wy = cy + kotlin.math.cos(g.windA) * (r + 2)
         ui.icon(b, ui.arrowIcon, wx, wy, 11f, 14f, -g.windA * MathUtils.radiansToDegrees, c(0xb3e5fc))
         val tags = ArrayList<String>()
-        tags += g.systems.region.title
+        val pl = g.player
+        tags += g.systems.region.title + (if (pl != null) " · ур. " + zoneLevel(pl.x, pl.z) else "")
         if (g.stormLevel > 0.3f) tags += "шторм"
         val tw = 2 * r + 60
         val regionTxt = tags.joinToString(" · ")

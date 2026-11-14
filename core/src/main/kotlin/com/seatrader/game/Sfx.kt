@@ -50,7 +50,11 @@ class Sfx : Disposable {
             sounds[name] = loadSound(name)
         }
         for (m in listOf(sea, battle, rain, wind, ambient)) m?.let { it.isLooping = true; it.volume = 0f; it.play() }
-        for (i in SHANTIES.indices) shantyMusic[i] = load(SHANTIES[i].file)?.also { it.isLooping = false; it.volume = 0f }
+        for (i in SHANTIES.indices) shantyMusic[i] = load(SHANTIES[i].file)?.also {
+            it.isLooping = false; it.volume = 0f
+            // песня доиграла до конца — следующая по списку (надёжнее, чем проверять «не играет»)
+            it.setOnCompletionListener { finishedIdx = i }
+        }
     }
 
     private fun load(path: String): Music? = try { Gdx.audio.newMusic(Gdx.files.internal(path)) } catch (e: Exception) { null }
@@ -88,9 +92,12 @@ class Sfx : Disposable {
         // смена песни: сначала затихает старая
         if (shanty != null && (wantShanty != shantyIdx || !singing)) {
             shantyVol -= dt * 0.6f
-            if (shantyVol <= 0f) { shanty?.pause(); shanty = null; shantyIdx = -1; shantyVol = 0f }
+            // песня прервана (бой, остановка) — запоминаем её, чтобы потом продолжить с того же места
+            if (shantyVol <= 0f) { shanty?.pause(); pausedIdx = shantyIdx; shanty = null; shantyIdx = -1; shantyVol = 0f }
         } else if (shanty == null && singing) {
-            shanty = shantyMusic.getOrNull(wantShanty)?.also { it.volume = 0f; try { it.position = 0f } catch (_: Exception) { }; it.play() }
+            val resume = pausedIdx == wantShanty
+            shanty = shantyMusic.getOrNull(wantShanty)?.also { it.volume = 0f; if (!resume) try { it.position = 0f } catch (_: Exception) { }; it.play() }
+            pausedIdx = -1
             shantyIdx = wantShanty
             shantyVol = 0f
         } else if (shanty != null) {
@@ -108,7 +115,20 @@ class Sfx : Disposable {
     }
 
     /** Песня закончилась — можно ставить следующую. */
-    val shantyFinished get() = shanty?.let { !it.isPlaying && shantyVol >= 1f } ?: false
+    @Volatile private var finishedIdx = -1
+    /** Для проверки на ПК: перемотать текущую песню к концу. */
+    fun debugSkipShanty() { try { shanty?.position = 100000f } catch (_: Exception) { } }
+    val currentShanty get() = shantyIdx
+    private var pausedIdx = -1
+    /** Песня доиграла до конца (один раз после события). */
+    fun takeShantyFinished(): Boolean {
+        val f = finishedIdx
+        if (f < 0) return false
+        finishedIdx = -1
+        if (shanty === shantyMusic.getOrNull(f)) { shanty = null; shantyIdx = -1; shantyVol = 0f }
+        if (pausedIdx == f) pausedIdx = -1
+        return true
+    }
 
     fun pauseAll() { for (m in listOf(sea, battle, rain, wind, ambient, shanty)) m?.pause() }
     fun resumeAll() { for (m in listOf(sea, battle, rain, wind, ambient, shanty)) m?.play() }

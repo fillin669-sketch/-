@@ -548,7 +548,7 @@ class Living(private val g: SeaGame) {
         ghostT -= dt
         if (ghostT <= 0) {
             ghostT = rand(120f, 220f)
-            if (g.ships.none { it.ghost } && !p.safe) g.findSpawnPoint(260f, 360f)?.let { pt ->
+            if (g.ships.none { it.ghost } && !p.safe && zoneLevel(p.x, p.z) >= 3) g.findSpawnPoint(260f, 360f)?.let { pt ->
                 g.spawnEnemy("ghost", pt.first, pt.second).also { it.ghost = true }
                 g.toast("Из ночного тумана выходит корабль-призрак…", 2.8f)
                 g.sfx.play("thunder_far", 0.5f)
