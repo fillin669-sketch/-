@@ -148,6 +148,8 @@ class SeaGame : ApplicationAdapter() {
     val adv = Adventure(this)
     /** Тесты на ПК пропускают предысторию. */
     var skipPrologue = false
+    /** Версия приложения (передаёт запуск на телефоне); показывается в настройках. */
+    var appVersion = ""
     /** Тест защиты от вылетов: бросить ошибку в кадре. */
     var debugThrow = false
     var player: Ship? = null

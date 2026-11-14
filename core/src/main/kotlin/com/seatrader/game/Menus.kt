@@ -576,6 +576,12 @@ class Menus(private val g: SeaGame) {
         list.add(gfxHint).growX().padTop(2f).row()
         for (bt in listOf(auto, vib, saveBtn, tut, back)) list.add(bt).growX().height(44f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
+        // версия приложения — в правом нижнем углу экрана
+        val ver = ui.label("Версия " + g.appVersion.ifEmpty { "для ПК" }, ui.small, rgb(0x90a4ae))
+        ver.pack()
+        ver.setPosition(g.wDp - ver.width - 10f, g.safeBottom + 8f)
+        ver.touchable = Touchable.disabled
+        stage.addActor(ver)
     }
 
     /** Кладёт список кнопок в панель; если по высоте не помещается (альбомная ориентация) — с прокруткой. */

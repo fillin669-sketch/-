@@ -33,6 +33,7 @@ class AndroidLauncher : AndroidApplication() {
                 it.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
-        initialize(SeaGame(), config)
+        val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
+        initialize(SeaGame().also { it.appVersion = version }, config)
     }
 }

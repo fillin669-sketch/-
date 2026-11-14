@@ -13,6 +13,8 @@ import com.badlogic.gdx.utils.ScreenUtils
 /** Запуск на компьютере (для разработки и автоматических проверок). */
 fun main() {
     val game = SeaGame()
+    // на ПК версию берём из сборки приложения
+    try { Regex("versionName = \"([^\"]+)\"").find(java.io.File("../../../build.gradle.kts").readText())?.let { game.appVersion = it.groupValues[1] } } catch (_: Exception) { }
     val test = System.getenv("SEA_TEST")
     if (test != null) TestScript(game, test).install()
     val config = Lwjgl3ApplicationConfiguration().apply {
@@ -123,6 +125,11 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 40) { press("Капитаны") }
             if (f == 46) shot("g5_heroes")
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
+        if (System.getenv("SEA_SETTINGS") != null) {
+            when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.openPause() }; 10 -> press("Настройки"); 20 -> shot("settings")
+                21 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
             return
         }
         if (System.getenv("SEA_ADV") != null) {
