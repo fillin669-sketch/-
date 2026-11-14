@@ -36,7 +36,12 @@ jobs:
             # собственный ключ из секретов репозитория
             echo "Подпись: постоянный ключ из секретов репозитория"
             # с телефона в строку легко попадают пробелы, переносы, кавычки — оставляем только символы base64
-            CLEAN="$(printf '%s' "$KEYSTORE_BASE64" | tr -cd 'A-Za-z0-9+/=')"
+            # вместе со значением могли скопироваться и подписи из инструкции (KEYSTORE_BASE64 и т. п.) — убираем их
+            CLEAN="$(printf '%s' "$KEYSTORE_BASE64" | sed 's/KEYSTORE_BASE64//g' | tr -cd 'A-Za-z0-9+/=')"
+            lastline() { printf '%s\n' "$1" | tr -d '\r' | sed "s/$2//g" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | tail -1; }
+            KEYSTORE_PASSWORD="$(lastline "$KEYSTORE_PASSWORD" KEYSTORE_PASSWORD)"
+            KEYSTORE_ALIAS="$(lastline "$KEYSTORE_ALIAS" KEYSTORE_ALIAS)"
+            echo "::add-mask::$KEYSTORE_PASSWORD"
             echo "Длина ключа в секрете: ${#CLEAN} символов"
             printf '%s' "$CLEAN" | base64 -d > "$DIR/own.jks" 2>/dev/null || true
             echo "Отпечаток файла ключа: $(sha256sum "$DIR/own.jks" | cut -c1-12)"
