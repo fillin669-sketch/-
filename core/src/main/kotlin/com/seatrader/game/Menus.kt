@@ -1011,6 +1011,20 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(min(g.wDp - 24, 440f))
     }
 
+    /** Злодей появляется: портрет и угроза. */
+    fun showVillain(line: String) = open(SeaGame.State.DIALOG) {
+        stage.clear()
+        val root = overlay()
+        val panel = Table().also { it.background = ui.panel(0x2a0c0c); it.pad(16f) }
+        val w = min(g.wDp - 24, 440f)
+        panel.add(Image(HeroArt.full(VILLAIN))).size(w * 0.5f, w * 0.5f * 4f / 3f).padBottom(8f).row()
+        panel.add(ui.label(VILLAIN.name, ui.big, rgb(0xff5252), align = Align.center)).growX().row()
+        panel.add(ui.label(VILLAIN.title, ui.small, rgb(0xffab91), align = Align.center)).growX().padBottom(6f).row()
+        panel.add(ui.label("«$line»", ui.mid, rgb(0xfff3e0), wrap = true, align = Align.center)).growX().padBottom(10f).row()
+        panel.add(ui.button("⚔  В бой!", 0xb71c1c, 0x7f0000, ui.mid).also { it.onClick { close() } }).growX().height(50f).row()
+        root.add(panel).width(w)
+    }
+
     fun showWhiteFlag() = open(SeaGame.State.DIALOG) {
         val ex = g.extras
         val refuse = ex.refusesRansom()
@@ -1345,7 +1359,7 @@ class Menus(private val g: SeaGame) {
         panel.add(ui.label(q.chapter ?: "Бортовой журнал", ui.big, rgb(0xffe0b2), wrap = true, align = Align.center)).growX().row()
         panel.add(ui.label(q.intro ?: "", ui.mid, rgb(0xfff3e0), wrap = true)).growX().pad(12f, 0f, 12f, 0f).row()
         g.adv.chapterVoice(q.chapter)?.let { (id, line) ->
-            val h = HEROES.firstOrNull { it.id == id }
+            val h = portraitOf(id)
             if (h != null) {
                 val r = Table().also { it.background = ui.panel(0x2a1c10) ; it.pad(8f) }
                 r.add(Image(HeroArt.face(h))).size(56f).padRight(10f).top()

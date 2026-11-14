@@ -1459,7 +1459,7 @@ class SeaGame : ApplicationAdapter() {
                     "flagship" -> { systems.addStat("flagships"); questEvent(QType.FLAGSHIP, "", false); toast("Флагман потоплен!", 2f) }
                     "admiral" -> {
                         systems.addStat("admirals"); questEvent(QType.ADMIRAL, "", false)
-                        toast("ПОБЕДА!\nАдмирал Гарпун повержен!", 3.5f)
+                        toast("ПОБЕДА!\nАдмирал Alex Gunov повержен!", 3.5f)
                     }
                 }
             }

@@ -15,7 +15,7 @@ import kotlin.random.Random
 
 /**
  * Предыстория: сценки на игровом движке. Юнга с брига «Надежда» попадает под залпы
- * адмирала Гарпуна, а капитаны Fin, Mihael и Hope спасают его и дарят шлюп «Чайка».
+ * адмирала Alex Gunov, а капитаны Fin, Mihael и Hope спасают его и дарят шлюп «Чайка».
  */
 class Prologue(private val g: SeaGame) {
     private class Shot(
@@ -231,7 +231,7 @@ class Prologue(private val g: SeaGame) {
             })
         // 6. Mihael и Hope бьют по флагману
         var fired6 = 0
-        shots += Shot("mihael", "Эй, Гарпун! Попробуй-ка моих ядер! Пушки — пли!", 6.5f, true,
+        shots += Shot("mihael", "Эй, Gunov! Попробуй-ка моих ядер! Пушки — пли!", 6.5f, true,
             {
                 fired6 = 0
                 val h = harpoon
@@ -253,7 +253,7 @@ class Prologue(private val g: SeaGame) {
                 val h = harpoon
                 orbit(h, 0.35f + tt * 0.05f, 92f, 46f, 2f)
             })
-        // 7. Гарпун уходит
+        // 7. Alex Gunov уходит
         shots += Shot("harpoon", "Мы ещё встретимся, щенки! Все Семь Ветров будут моими!", 6f, true,
             { harpoon.boostT = 0f },
             { tt ->
@@ -431,7 +431,7 @@ class Prologue(private val g: SeaGame) {
     private fun c(rgb: Int, a: Float = 1f) = col.set(((rgb shr 16) and 255) / 255f, ((rgb shr 8) and 255) / 255f, (rgb and 255) / 255f, a)
 
     private fun face(id: String): TextureRegion? = faces.getOrPut(id) {
-        HEROES.firstOrNull { it.id == id }?.let { try { HeroArt.face(it) } catch (_: Exception) { null } }
+        portraitOf(id)?.let { try { HeroArt.face(it) } catch (_: Exception) { null } }
     }
 
     fun draw() {
@@ -478,7 +478,7 @@ class Prologue(private val g: SeaGame) {
                 "fin" -> "Fin" to 0x64b5f6
                 "hope" -> "Hope" to 0xffd54f
                 "mihael" -> "Mihael" to 0xff8a65
-                else -> "Адмирал Гарпун" to 0xe53935
+                else -> "Alex Gunov" to 0xe53935
             }
             ui.rect(b, bx + pad - 2f, fy - 2f, ph + 4f, ph + 4f, c(color))
             val fr = face(s.who)

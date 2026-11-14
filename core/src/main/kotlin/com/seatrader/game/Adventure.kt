@@ -486,7 +486,7 @@ class Adventure(private val g: SeaGame) {
         if (admiral != null && hypot(admiral.x - p.x, admiral.z - p.z) < 700f) {
             for (h in heroes) { g.attackMove(h, admiral, dt); h.ai = AiState.ATTACK }
         } else {
-            if (heroesLeaveT == 0f) g.toast(if (admiral == null) "Hope: Получилось! Моря снова свободны. До встречи, капитан!" else "Fin: Гарпун ушёл… Мы ещё догоним его!", 3f)
+            if (heroesLeaveT == 0f) g.toast(if (admiral == null) "Hope: Получилось! Моря снова свободны. До встречи, капитан!" else "Fin: Alex Gunov ушёл… Мы ещё догоним его!", 3f)
             heroesLeaveT += dt
             for (h in heroes) { h.desired = h.h; h.throttle = 1f }
             if (heroesLeaveT > 25f) { g.ships.removeAll { it.heroShip }; heroes.clear(); heroesLeaveT = 0f }
@@ -624,12 +624,12 @@ class Adventure(private val g: SeaGame) {
         val c = chapter ?: return null
         return when {
             c.startsWith("Глава 1") -> "hope" to "Каждый капитан начинает с малого. Потопи пиратский шлюп — и о тебе заговорят в тавернах."
-            c.startsWith("Глава 2") -> "mihael" to "Бригантины Гарпуна рыщут у наших берегов. Покажи им, чьи это воды!"
+            c.startsWith("Глава 2") -> "mihael" to "Бригантины Alex Gunov рыщут у наших берегов. Покажи им, чьи это воды!"
             c.startsWith("Глава 3") -> "fin" to "Туманный риф хранит тайны. Держи курс на запад и не верь туману — я проверял."
             c.startsWith("Глава 4") -> "mihael" to "На Огненных островах куют пушки для «Кровавой Луны». Самое время их испытать — на них же."
-            c.startsWith("Глава 5") -> "fin" to "Ледяное море не прощает ошибок. Но след Гарпуна ведёт туда."
-            c.startsWith("Глава 6") -> "hope" to "Говорят, в Бездне Гарпун прячет казну. Будь осторожен, юнга — ты нам ещё нужен."
-            c.startsWith("Финал") -> "mihael" to "Найди «Кровавую Луну» — а мы придём на помощь, как двенадцать лет назад."
+            c.startsWith("Глава 5") -> "fin" to "Ледяное море не прощает ошибок. Но след Alex Gunov ведёт туда."
+            c.startsWith("Глава 6") -> "hope" to "Говорят, в Бездне Alex Gunov прячет казну. Будь осторожен, юнга — ты нам ещё нужен."
+            c.startsWith("Финал") -> "gunov" to "Ты вырос, юнга. Приходи в Бездну — закончим то, что я начал двенадцать лет назад. Твои друзья тебя не спасут."
             else -> null
         }
     }

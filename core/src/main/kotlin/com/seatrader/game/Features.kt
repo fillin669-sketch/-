@@ -802,7 +802,11 @@ class Systems(private val g: SeaGame) {
                 val adm = g.spawnEnemy("admiral", x, z)
                 repeat(2) { k -> g.spawnEnemy("frigate", x + (k * 2 - 1) * 24f, z + 26f).also { it.leader = adm } }
                 g.sfx.play("roar")
-                g.toast("«Кровавая Луна» адмирала Гарпуна!", 2.6f)
+                g.toast("«Кровавая Луна» адмирала Alex Gunov!", 2.6f)
+                if (g.state == SeaGame.State.PLAY) g.menus.showVillain(listOf(
+                    "Я помню тебя, юнга с «Надежды». Сегодня море заберёт тебя до конца.",
+                    "Все Семь Ветров будут моими — и ты станешь первым, кто это увидит.",
+                    "Двенадцать лет я ждал этой встречи. Пушки — к бою!").random())
             }
         }
     }

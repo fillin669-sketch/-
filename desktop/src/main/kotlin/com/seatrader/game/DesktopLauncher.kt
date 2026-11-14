@@ -161,6 +161,19 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f > 470 && storeT > 160 || f > 2000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_VILLAIN") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.menus.showVillain("Я помню тебя, юнга с «Надежды». Сегодня море заберёт тебя до конца.") }
+                20 -> shot("g1_villain_dialog")
+                21 -> { g.menus.close(); g.menus.showJournal(questAt((0 until 40).first { questAt(it).type == QType.ADMIRAL })) }
+                30 -> shot("g2_journal_final")
+                31 -> { g.menus.close(); g.startPrologue(false) }
+            }
+            if (f in 40..3000 && g.state == SeaGame.State.CUTSCENE && f % 25 == 0 && g.prologue.debugIdx < 2) { touch("down", g.wDp / 2, g.hDp / 2); touch("down", g.wDp / 2, g.hDp / 2) }
+            if (f > 40 && g.state == SeaGame.State.CUTSCENE && g.prologue.debugIdx == 2 && storeT++ == 120) shot("g3_prologue")
+            if (storeT > 125 || f > 3000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            return
+        }
         if (System.getenv("SEA_PORTTIME") != null) {
             when (f) {
                 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size }

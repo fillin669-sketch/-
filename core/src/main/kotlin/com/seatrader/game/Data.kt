@@ -57,7 +57,7 @@ val ENEMIES = mapOf(
         Look(26f, 8.2f, 3, 0x1a1210, 0xc9a227, 0x1c1c1c, 0x111111)),
     "flagship" to EnemyDef("flagship", "Флагман флотилии", 480, 13f, 1.25f, 6, 15f, 1.9f, 56f, 2.6f, 500, 800, 3f, true,
         Look(22f, 6.6f, 3, 0x241812, 0xffc107, 0x5d1010, 0x111111)),
-    "admiral" to EnemyDef("admiral", "«Кровавая Луна» адмирала Гарпуна", 1600, 13.5f, 1.0f, 12, 22f, 1.6f, 62f, 5.2f, 4000, 5000, 40f, true,
+    "admiral" to EnemyDef("admiral", "«Кровавая Луна» адмирала Alex Gunov", 1600, 13.5f, 1.0f, 12, 22f, 1.6f, 62f, 5.2f, 4000, 5000, 40f, true,
         Look(30f, 9f, 4, 0x140c0a, 0xb71c1c, 0x7f0000, 0x000000)),
     "ghost" to EnemyDef("ghost", "Корабль-призрак", 520, 13f, 1.3f, 6, 16f, 2.0f, 56f, 2.4f, 350, 600, 4f, true,
         Look(21f, 6.4f, 3, 0x2b3a38, 0x5fe3b0, 0xa7d9c9, 0x0b1f1a)),
@@ -174,7 +174,7 @@ class Quest(
 private val QUESTS = listOf(
     // Глава 1
     Quest(QType.KILL, "Потопи пиратский шлюп", 1, "sloop", coins = 100, chapter = "Глава 1. Новый капитан",
-        intro = "Бортовой журнал. Мне доверили «Чайку» — маленький шлюп и горстку матросов. Пираты адмирала Гарпуна грабят наши воды. Пора дать им отпор."),
+        intro = "Бортовой журнал. Мне доверили «Чайку» — маленький шлюп и горстку матросов. Пираты адмирала Alex Gunov грабят наши воды. Пора дать им отпор."),
     Quest(QType.RAM, "Протарань пиратский шлюп", 1, "sloop", coins = 150),
     Quest(QType.COLLECT, "Собери 300 монет", 300, gems = 3),
     Quest(QType.DELIVER, "Доставь 5 бочек рома в «Форт Чайки»", 5, port = 2, good = 1, coins = 250),
@@ -182,7 +182,7 @@ private val QUESTS = listOf(
     Quest(QType.ABILITY, "Выстрели огненными ядрами", coins = 150),
     // Глава 2
     Quest(QType.KILL, "Потопи 3 пиратские бригантины", 3, "brig", coins = 300, gems = 3, chapter = "Глава 2. Тень адмирала",
-        intro = "Бортовой журнал. Пленный пират проболтался: у адмирала Гарпуна целый флот и четыре тайные базы на краях моря. Нужен корабль покрепче и надёжные люди."),
+        intro = "Бортовой журнал. Пленный пират проболтался: у адмирала Alex Gunov целый флот и четыре тайные базы на краях моря. Нужен корабль покрепче и надёжные люди."),
     Quest(QType.BOARD, "Возьми пиратский корабль на абордаж", coins = 300, gems = 2),
     Quest(QType.TREASURE, "Найди сокровище на острове", coins = 200, gems = 2),
     Quest(QType.BUY, "Купи новый корабль на верфи", gems = 10),
@@ -206,11 +206,11 @@ private val QUESTS = listOf(
     Quest(QType.DELIVER, "Доставь 10 мешков пороха в «Северный причал»", 10, port = 5, good = 5, coins = 1500),
     // Глава 6
     Quest(QType.ZONE, "Спустись в Бездну (юг)", region = Region.ABYSS, coins = 600, chapter = "Глава 6. Бездна",
-        intro = "Бортовой журнал. В южной Бездне обитает кракен. Адмирал кормит его пленниками. Чтобы добраться до логова Гарпуна, придётся пройти мимо чудовища."),
+        intro = "Бортовой журнал. В южной Бездне обитает кракен. Адмирал кормит его пленниками. Чтобы добраться до логова Alex Gunov, придётся пройти мимо чудовища."),
     Quest(QType.KRAKEN, "Победи кракена", coins = 3000, gems = 25),
     Quest(QType.LEVEL, "Достигни 15 уровня капитана", 15, coins = 2000),
     // Финал
-    Quest(QType.ADMIRAL, "Потопи «Кровавую Луну» адмирала Гарпуна", coins = 8000, gems = 60, chapter = "Финал. Последняя битва",
+    Quest(QType.ADMIRAL, "Потопи «Кровавую Луну» адмирала Alex Gunov", coins = 8000, gems = 60, chapter = "Финал. Последняя битва",
         intro = "Бортовой журнал. Мы нашли его. «Кровавая Луна» — двенадцать пушек на борт и лучшая команда пиратов. Сегодня всё решится."),
 )
 
@@ -223,7 +223,7 @@ fun questAt(i: Int): Quest {
     return when (k % 8) {
         0 -> Quest(QType.KILL, "Потопи ${3 + lvl} пиратских бригантин", 3 + lvl, "brig", coins = 400 * lvl, gems = 3,
             chapter = if (k == 0) "Вольное плавание" else null,
-            intro = if (k == 0) "Бортовой журнал. Адмирал Гарпун повержен! Но пиратов в море меньше не стало. Вольное плавание продолжается." else null)
+            intro = if (k == 0) "Бортовой журнал. Адмирал Alex Gunov повержен! Но пиратов в море меньше не стало. Вольное плавание продолжается." else null)
         1 -> Quest(QType.TREASURE, "Найди сокровище на острове", coins = 300 * lvl, gems = 3)
         2 -> Quest(QType.BOARD, "Возьми на абордаж 2 корабля", 2, coins = 600 * lvl, gems = 4)
         3 -> Quest(QType.DELIVER, "Доставь 15 рулонов шёлка в «Вулканий порт»", 15, port = 6, good = 4, coins = 1200 * lvl)
@@ -495,6 +495,14 @@ class Hero(
     val dmg: Float = 0f, val reload: Float = 0f, val speed: Float = 0f, val turn: Float = 0f, val hp: Float = 0f,
     val loot: Float = 0f, val trade: Float = 0f, val upgrade: Float = 0f, val xp: Float = 0f,
 )
+
+/** Главный злодей: адмирал «Кровавой Луны» (не выбирается капитаном). */
+val VILLAIN = Hero("gunov", "Alex Gunov", "Адмирал «Кровавой Луны»",
+    "Двенадцать лет назад потопил бриг «Надежда». Хочет, чтобы все Семь Ветров служили ему.",
+    emptyList(), floatArrayOf(0.34f, 0.2f, 0.3f))
+
+/** Портрет по id: капитаны и злодей. */
+fun portraitOf(id: String): Hero? = if (id == VILLAIN.id || id == "harpoon") VILLAIN else HEROES.firstOrNull { it.id == id }
 
 val HEROES = listOf(
     Hero("mihael", "Mihael", "Канонир-бунтарь",
