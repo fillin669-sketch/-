@@ -125,6 +125,22 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f == 50) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_LOOT") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
+                10 -> { g.allies.clear(); g.allies += MERCS[0].id; g.allies += MERCS[1].id; tp(500f, -500f); g.spawnAllies(); g.player!!.h = 0f }
+                60 -> { val p = g.player!!; lootCoins = g.coins
+                    // добыча сбоку и сзади — далеко от флагмана, рядом с союзниками
+                    val al = g.ships.filter { it.ally }
+                    for ((k, a) in al.withIndex()) g.dropLootPublic(a.x + 30f * (if (k == 0) -1 else 1), a.z + 15f, 100, 0f)
+                    log.append("добыча: ${g.loot.size} шт., союзников ${al.size}\n") }
+                120 -> shot("loot1")
+                400 -> { shot("loot2"); log.append("через 5 с: добыча осталась ${g.loot.size}, монет +${g.coins - lootCoins}\n")
+                    log.append("союзники от флагмана: " + g.ships.filter { it.ally }.joinToString { Math.hypot((it.x - g.player!!.x).toDouble(), (it.z - g.player!!.z).toDouble()).toInt().toString() } + " м\n")
+                    Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_CME") != null) {
             when (f) {
                 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()
@@ -622,6 +638,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
         if (f > 9000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
     }
     private var done = -1
+    private var lootCoins = 0
 
     private fun featTest(f: Int) {
         val ex = g.extras

@@ -1424,19 +1424,27 @@ class SeaGame : ApplicationAdapter() {
         repeat(gemsN) { loot += Loot(true, 1, x + rand(-6f, 6f), z + rand(-6f, 6f), ModelInstance(gemModel), rand(0f, 6f)) }
     }
 
+    private val collectors = ArrayList<Ship>()
     private fun updateLoot(dt: Float) {
         val p = player
+        // добычу собирают корабль игрока и союзники (монеты и кристаллы идут в общую казну)
+        collectors.clear()
+        if (p != null && !p.sinking) collectors += p
+        for (s in ships) if (s.ally && !s.sinking) collectors += s
         val it = loot.iterator()
         while (it.hasNext()) {
             val l = it.next()
             l.t += dt; l.age += dt
-            if (p != null && !p.sinking) {
-                val dx = p.x - l.x; val dz = p.z - l.z; val d = hypot(dx, dz)
-                if (d < 24) {
-                    val sp = 30 + (24 - d) * 3
+            var c: Ship? = null; var cd = Float.MAX_VALUE
+            for (o in collectors) { val d = hypot(o.x - l.x, o.z - l.z); if (d < cd) { cd = d; c = o } }
+            if (c != null) {
+                val dx = c.x - l.x; val dz = c.z - l.z; val d = max(cd, 0.01f)
+                val mag = if (c === p) 24f else 16f
+                if (d < mag) {
+                    val sp = 30 + (mag - d) * 3
                     l.x += dx / d * sp * dt; l.z += dz / d * sp * dt
                 }
-                if (d < p.radius * 0.6f + 2) { collect(l); it.remove(); continue }
+                if (d < c.radius * 0.6f + 2) { collect(l, c !== p); it.remove(); continue }
             }
             if (l.age > 120) { it.remove(); continue }
             l.inst.transform.setToTranslation(l.x, waveHeight(l.x, l.z, now) + 0.9f + sin(l.t * 3) * 0.3f, l.z)
@@ -1444,10 +1452,10 @@ class SeaGame : ApplicationAdapter() {
         }
     }
 
-    private fun collect(l: Loot) {
+    private fun collect(l: Loot, byAlly: Boolean = false) {
         if (!l.gem) {
             coins += l.value
-            floatText(l.x, 4f, l.z, "+${l.value}", rgb(0xffc93c), ui.big)
+            floatText(l.x, 4f, l.z, if (byAlly) "+${l.value} союзник" else "+${l.value}", rgb(0xffc93c), if (byAlly) ui.mid else ui.big)
             sfx.play("coin")
             questEvent(QType.COLLECT, "", false, l.value)
         } else {
@@ -1808,6 +1816,18 @@ class SeaGame : ApplicationAdapter() {
             }
         }
         s.ai = AiState.FOLLOW
+        // рядом плавает добыча — союзник отходит из строя и подбирает её (недалеко от флагмана)
+        var lt: Loot? = null; var ld = 70f
+        for (l in loot) {
+            val d = hypot(l.x - s.x, l.z - s.z)
+            if (d < ld && hypot(l.x - p.x, l.z - p.z) < 150f && hypot(l.x - p.x, l.z - p.z) > 20f) { ld = d; lt = l }
+        }
+        if (lt != null) {
+            s.desired = atan2(lt.x - s.x, -(lt.z - s.z))
+            s.throttle = clamp(ld / 20f, 0.35f, 0.9f)
+            if (ld > 25f) steerAround(s, dt)
+            return
+        }
         // место в колонне: каждый следующий — дальше по следу флагмана
         val spacing = if (order == 2) 18f else 26f
         var rank = 0
