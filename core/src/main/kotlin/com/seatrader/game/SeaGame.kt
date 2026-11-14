@@ -638,7 +638,7 @@ class SeaGame : ApplicationAdapter() {
             sailPat = sailPat, sail2 = if (sail2Idx >= 0) FLAG_PALETTE[sail2Idx] else -1, flagPix = flagPix,
             hull = if (hull >= 0) hull else base.hull, mast = if (hull >= 0) base.hull else -1,
             trim = if (trimIdx >= 0) FLAG_PALETTE[trimIdx] else base.trim,
-            flagShape = flagShape, flagSize = flagSize, patScale = patScale)
+            flagShape = flagShape, flagSize = flagSize, patScale = patScale, rank = guilds.shipLevel())
     }
 
     fun shipModel(look: Look, up: IntArray? = null) = shipModels.getOrPut(look.toString() + "|" + (up?.joinToString(",") ?: "")) { Models.ship(look, up).also { models += it } }
@@ -1045,16 +1045,24 @@ class SeaGame : ApplicationAdapter() {
         s.rollVel += ((heel - s.roll) * 9f - s.rollVel * 3.5f) * dt
         s.roll += s.rollVel * dt
         s.y = waveY - (if (s.sinking) s.sinkT * s.sinkT * 1.6f else 0f)
-        val roll = s.roll + waveRoll + (if (s.sinking) min(0.9f, s.sinkT * 0.35f) else 0f)
+        // сильно повреждённый корабль кренится на один борт
+        val dmgList = if (!s.sinking && s.hp < s.maxHp * 0.3f) (1f - s.hp / (s.maxHp * 0.3f)) * 0.12f * (if (s.id % 2 == 0) 1f else -1f) else 0f
+        val roll = s.roll + waveRoll + dmgList + (if (s.sinking) min(0.9f, s.sinkT * 0.35f) else 0f)
         s.pitch = wavePitch + (if (s.sinking) min(0.35f, s.sinkT * 0.12f) else 0f)
         s.inst.transform.setToTranslation(s.x, s.y, s.z)
             .rotate(Vector3.Y, -s.h * MathUtils.radiansToDegrees)
             .rotate(Vector3.X, s.pitch * MathUtils.radiansToDegrees)
             .rotate(Vector3.Z, roll * MathUtils.radiansToDegrees)
 
-        // Паруса надуваются по ветру и от скорости
-        if (s.sails.isNotEmpty()) {
-            val fill = (0.5f + 0.5f * cos(s.h - windA)) * min(1f, abs(vf) / (st.speed * 0.4f) + 0.25f)
+        // флаг развевается по ветру
+        s.flagNode?.let { fn -> fn.rotation.set(Vector3.Y, wrapAngle(windA - s.h + PI.toFloat() / 2) * 0.25f * MathUtils.radiansToDegrees + sin(now * 5f + s.id) * 9f) }
+        // дымок из камбуза на корабле игрока
+        if (s === player && highQuality && !s.sinking && Random.nextFloat() < dt * 2.5f)
+            fx.spawn(fx.SMOKE, s.x + sin(s.h) * s.len * 0.1f, s.y + s.deckTop + 2.2f, s.z - cos(s.h) * s.len * 0.1f, 0f, 2.2f, 0f, 0.7f, 2.2f, Fx.Mode.PUFF)
+        // Паруса надуваются по ветру и от скорости; сильно повреждённые — провисают
+        if (s.sails.isNotEmpty() || s.flagNode != null) {
+            val sag = if (s.hp < s.maxHp * 0.35f) 0.55f + 0.45f * s.hp / (s.maxHp * 0.35f) else 1f
+            val fill = (0.5f + 0.5f * cos(s.h - windA)) * min(1f, abs(vf) / (st.speed * 0.4f) + 0.25f) * sag
             for ((i, node) in s.sails.withIndex()) {
                 if (i / 2 < s.mastHp.size && s.mastHp[i / 2] <= 0) { node.scale.set(0.01f, 0.01f, 0.01f); continue }
                 val flutter = sin(now * 7f + i * 1.7f + s.id) * 0.06f * (1.2f - fill)

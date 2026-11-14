@@ -92,6 +92,8 @@ class Ship(
     val mastHp = FloatArray(look.masts) { stats.hp * 0.18f }
     var brokenMasts = 0
     val sails: List<Node> = (0 until Models.sailCount(look)).mapNotNull { inst.getNode("sail$it") }
+    /** Флаг — отдельный узел: развевается на ветру. */
+    val flagNode: Node? = inst.getNode("flag")
     val sinking get() = sinkT > 0
     /** Скорость вдоль курса. */
     val speed get() = vx * kotlin.math.sin(h) - vz * kotlin.math.cos(h)

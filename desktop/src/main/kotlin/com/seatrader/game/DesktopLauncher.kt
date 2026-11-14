@@ -161,6 +161,31 @@ class TestScript(private val g: SeaGame, private val out: String) {
             if (f > 470 && storeT > 160 || f > 2000) { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
             return
         }
+        if (System.getenv("SEA_SHIPS") != null) {
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать")
+                8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; g.dayTime = 0.3f; g.openPort(0); press("Вид") }
+                30 -> shot("v1_sloop_plain")
+                31 -> { g.owned += "frigate"; g.shipId = "frigate"; g.ensureUp("frigate").fill(5); g.guilds.shipXp["frigate"] = 99999; g.rebuildPlayer() }
+                60 -> shot("v2_frigate_max")
+                61 -> g.portView.orbit = 1.6f
+                85 -> shot("v3_frigate_stern")
+                86 -> g.portView.orbit = -1.4f
+                110 -> shot("v4_frigate_bow")
+                111 -> { g.portView.orbit = 0f; press("Улучшения") }
+                125 -> g.portView.showUpgrade(1)
+                160 -> shot("v5_focus_sails")
+                161 -> g.portView.showUpgrade(0)
+                200 -> shot("v6_focus_hull")
+                201 -> { g.owned += "dragon"; g.shipId = "dragon"; g.ensureUp("dragon").fill(5); g.guilds.shipXp["dragon"] = 99999; g.rebuildPlayer(); press("Вид") }
+                235 -> shot("v7_dragon")
+                236 -> { g.menus.close(); g.closePort(); tp(300f, -300f); val p = g.player!!; p.h = 0f
+                    g.spawnEnemy("flagship", p.x + 25f, p.z - 25f).also { it.ai = AiState.WANDER; it.throttle = 0f; it.h = 1.2f }
+                    g.spawnEnemy("sloop", p.x - 22f, p.z - 20f).also { it.ai = AiState.WANDER; it.throttle = 0f } }
+                280 -> { shot("v8_sea"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_CAPT") != null) {
             fun scrollPane(): com.badlogic.gdx.scenes.scene2d.ui.ScrollPane? {
                 fun find(x: com.badlogic.gdx.scenes.scene2d.Actor): com.badlogic.gdx.scenes.scene2d.ui.ScrollPane? {

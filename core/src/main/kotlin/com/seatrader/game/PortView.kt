@@ -37,6 +37,24 @@ class PortView(private val g: SeaGame) {
     private val wantP = Vector3()
     private val wantL = Vector3()
     private var snap = false
+    /** Только что купленное улучшение: камера наезжает на эту часть корабля, вокруг — искры. */
+    private var focusPart = -1
+    private var focusT = 0f
+    private val partPos = Vector3()
+    private val sparkCol = com.badlogic.gdx.graphics.Color(1f, 0.85f, 0.3f, 1f)
+
+    fun showUpgrade(part: Int) { focusPart = part; focusT = 3.4f }
+
+    /** Где на корабле находится часть [part]: 0 корпус, 1 паруса, 2 пушки, 3 палуба с припасами. */
+    private fun partPosition(p: Ship, part: Int): Vector3 {
+        val fx = sin(p.h); val fz = -cos(p.h); val rx = cos(p.h); val rz = sin(p.h)
+        return when (part) {
+            0 -> partPos.set(p.x - fx * p.len * 0.3f, p.y + p.deckTop * 0.4f, p.z - fz * p.len * 0.3f)
+            1 -> partPos.set(p.x, p.y + p.deckTop + p.mastH * 0.62f, p.z)
+            2 -> partPos.set(p.x, p.y + p.deckTop + 0.3f, p.z)
+            else -> partPos.set(p.x, p.y + p.deckTop + 1f, p.z)
+        }
+    }
 
     fun build(models: MutableList<Model>) {
         val mdl = kinds.map { k -> Models2.station(k).also { models += it } }
@@ -150,7 +168,17 @@ class PortView(private val g: SeaGame) {
                 .rotate(Vector3.Z, roll * MathUtils.radiansToDegrees)
         }
         computeTarget()
-        val k = 1 - exp(-dt * 2.6f)
+        if (focusT > 0f) {
+            focusT -= dt
+            val pl = g.player
+            if (pl != null && kotlin.random.Random.nextFloat() < dt * 30f) {
+                val c = partPosition(pl, focusPart)
+                val spread = if (focusPart == 1) pl.width * 0.9f else 2.2f
+                g.fx.spawn(sparkCol, c.x + rand(-spread, spread), c.y + rand(-1.5f, 1.5f) * (if (focusPart == 1) 3f else 1f), c.z + rand(-spread, spread),
+                    0f, rand(0.5f, 2f), 0f, rand(0.25f, 0.5f), 0.9f, Fx.Mode.PUFF)
+            }
+        }
+        val k = 1 - exp(-dt * (if (focusT > 0f) 3.2f else 2.6f))
         camP.lerp(wantP, k); camL.lerp(wantL, k)
     }
 
@@ -175,6 +203,17 @@ class PortView(private val g: SeaGame) {
         when (kinds[station]) {
             "yard" -> {
                 val L = p?.len ?: 12f
+                if (focusT > 0f && p != null) {
+                    // наезд на улучшенную часть
+                    focus.set(partPosition(p, focusPart))
+                    dist = when (focusPart) { 1 -> 16f + L * 1.2f; 0 -> 12f + L * 1.0f; 3 -> 10f + L * 0.8f; else -> 9f + L * 0.85f }
+                    el = when (focusPart) { 1 -> 0.18f; 0 -> 0.45f; 3 -> 0.7f; else -> 0.3f }
+                    // со стороны воды — как обычный вид верфи, чуть ближе
+                    side = when (focusPart) { 0 -> 1.5f; 2 -> 1.25f; else -> 1.15f }
+                    val a = sp.angle + side + orbit
+                    setCam(dist, el, sin(a), cos(a))
+                    return
+                }
                 val mastH = L * 0.62f + 3
                 focus.set(p?.x ?: sp.pos.x, 1.5f + mastH * (if (variant == 6) 0.42f else 0.3f), p?.z ?: sp.pos.z)
                 dist = 22f + L * 1.75f

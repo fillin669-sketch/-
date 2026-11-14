@@ -14,6 +14,7 @@ import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -245,6 +246,39 @@ class Geo {
         return this
     }
 
+    /**
+     * Корпус «лофтом»: кольца контура [outline] на разных высотах, ring = [y, масштаб X, масштаб Z].
+     * Нижние кольца уже — у корабля появляется скула и узкое днище. [colors] — цвет каждого пояса.
+     */
+    fun loft(outline: List<Vector2>, rings: List<FloatArray>, colors: IntArray): Geo {
+        val sz = outline.size
+        var cx = 0f; var cz = 0f
+        for (p in outline) { cx += p.x; cz += p.y }
+        cx /= sz; cz /= sz
+        val en = Array(sz) { i ->
+            val a = outline[i]; val b = outline[(i + 1) % sz]
+            val v = Vector3(b.y - a.y, 0f, -(b.x - a.x)).nor()
+            if (v.x * ((a.x + b.x) / 2 - cx) + v.z * ((a.y + b.y) / 2 - cz) < 0) v.scl(-1f)
+            v
+        }
+        val vn = Array(sz) { i -> Vector3(en[i]).add(en[(i - 1 + sz) % sz]).nor() }
+        for (k in 0 until rings.size - 1) {
+            color(colors[minOf(k, colors.size - 1)])
+            val r0 = rings[k]; val r1 = rings[k + 1]
+            val dy = maxOf(0.01f, r1[0] - r0[0])
+            fun n(j: Int): Vector3 { val p = outline[j]; val grow = (r1[1] - r0[1]) * abs(p.x) + (r1[2] - r0[2]) * abs(p.y) * 0.3f; return Vector3(vn[j]).add(0f, -grow / dy, 0f).nor() }
+            for (i in 0 until sz) {
+                val j = (i + 1) % sz
+                val a = outline[i]; val b = outline[j]
+                val a0 = Vector3(a.x * r0[1], r0[0], a.y * r0[2]); val b0 = Vector3(b.x * r0[1], r0[0], b.y * r0[2])
+                val a1 = Vector3(a.x * r1[1], r1[0], a.y * r1[2]); val b1 = Vector3(b.x * r1[1], r1[0], b.y * r1[2])
+                val na = n(i); val nb = n(j)
+                quadN(a0, b0, b1, a1, na, nb, nb, na)
+            }
+        }
+        return this
+    }
+
     /** Выгнутый парус в плоскости XY, выпуклостью к -Z. */
     fun sail(w: Float, h: Float, bulge: Float): Geo {
         val keep = variation
@@ -388,23 +422,41 @@ object Models {
         val top = H * 0.6f
         val deck = 0xc89a62
         val dark = darker(look.hull, 0.78f)
+        val hl = u[0]; val sl = u[1]; val gl = u[2]; val rl = u[3]
+        val rank = look.rank
+        val gold = 0xd4a017
+        val pirate = look.flag == 0x111111 || look.flag == 0x000000
+        // ---------- Корпус: узкое днище, скула, развал бортов ----------
+        val bottomCol = if (hl >= 5) 0xb87333 else 0x4a2a1e
+        g.mat(if (hl >= 5) Shaders.METAL else Shaders.HULL)
+        g.loft(hull(L, W), listOf(floatArrayOf(top - H, 0.5f, 0.93f), floatArrayOf(0.06f, 0.86f, 0.985f)), intArrayOf(bottomCol))
         g.mat(Shaders.HULL)
-        g.extrude(hull(L, W), top - H, top, deck, look.hull)
-        // Полосы обшивки
+        g.loft(hull(L, W), listOf(floatArrayOf(0.06f, 0.86f, 0.985f), floatArrayOf(top - H * 0.2f, 1f, 1f), floatArrayOf(top, 1f, 1f)), intArrayOf(look.hull, look.hull))
+        g.extrude(hull(L * 0.999f, W * 0.999f), top - 0.05f, top, deck, look.hull)
+        // ватерлиния и пояса обшивки
+        g.extrude(hull(L * 0.9f * 1.0f + L * 0.0f, W * 0.875f), 0.04f, 0.18f, if (hl >= 5) 0xe0b060 else 0xe8e2d0, if (hl >= 5) 0xe0b060 else 0xe8e2d0)
         g.extrude(hull(L * 1.008f, W * 1.008f), top - H * 0.55f, top - H * 0.42f, dark, dark)
-        g.extrude(hull(L * 1.008f, W * 1.008f), top - H * 0.95f, top - H * 0.8f, dark, dark)
         g.extrude(hull(L * 1.03f, W * 1.03f), top - 0.7f, top - 0.25f, look.trim, look.trim)
         g.extrude(hull(L, W), top, top + 0.6f, look.hull, look.hull)
         g.mat(-1)
         g.extrude(hull(L * 0.92f, W * 0.86f), top + 0.02f, top + 0.63f, deck, deck)
+        // бак и ют — приподнятые палубы на носу и корме (линия борта поднимается к концам)
+        g.mat(Shaders.HULL)
+        g.extrude(hullPart(L, W, -L * 0.47f, -L * 0.3f), top + 0.6f, top + 1.15f, deck, look.hull)
+        g.extrude(hullPart(L, W, L * 0.22f, L * 0.5f), top + 0.6f, top + 1.35f, deck, look.hull)
+        g.color(look.trim)
+        g.extrude(hullPart(L * 1.01f, W * 1.01f, L * 0.22f, L * 0.5f), top + 1.3f, top + 1.45f, look.trim, look.trim)
+        g.mat(-1)
 
-        // Пушечные порты
+        // ---------- Пушечные порты (с крышками с 1-го уровня «Пушек») ----------
         val ports = max(2, minOf(7, round(L / 3.6f).toInt()))
-        g.color(0x1d1410)
-        for (sx in intArrayOf(-1, 1)) for (i in 0 until ports) {
+        val gs = clamp(W / 7f, 0.6f, 1f)
+        for (row in 0..(if (gl >= 3) 1 else 0)) for (sx in intArrayOf(-1, 1)) for (i in 0 until ports) {
             val z = -L * 0.28f + L * 0.56f * i / max(1, ports - 1)
             val half = halfWidthAt(L, W, z)
-            g.push().at(sx * (half + 0.02f), top - H * 0.28f, z).box(0.1f, 0.55f, 0.65f).pop()
+            val py = top - H * (if (row == 0) 0.28f else 0.6f)
+            g.color(0x1d1410).push().at(sx * (half + 0.02f), py, z).box(0.1f, 0.55f * gs, 0.65f * gs).pop()
+            if (gl >= 1) g.color(darker(look.hull, 0.85f)).push().at(sx * (half + 0.22f), py + 0.5f * gs, z).rotZ(sx * 55f).box(0.08f, 0.6f * gs, 0.7f * gs).pop()
         }
         // Леера (столбики по борту)
         g.color(darker(look.hull, 0.9f))
@@ -414,30 +466,95 @@ object Models {
             for (sx in intArrayOf(-1, 1)) g.push().at(sx * half * 0.97f, top + 0.95f, z).box(0.14f, 0.7f, 0.14f).pop()
             z += 1.3f
         }
-        // Кормовая надстройка с окнами
-        g.color(look.hull).push().at(0f, top + H * 0.35f, L * 0.36f).box(W * 0.72f, H * 0.7f, L * 0.2f).pop()
-        g.color(look.trim).push().at(0f, top + H * 0.72f, L * 0.36f).box(W * 0.78f, 0.25f, L * 0.22f).pop()
-        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.365f, top + H * 0.38f, L * 0.36f).rotY(sx * 90f).window(L * 0.06f, H * 0.22f).pop()
+        // ---------- Корма: надстройка, окна каюты, галерея, фонари ----------
+        g.color(look.hull).push().at(0f, top + H * 0.35f + 0.4f, L * 0.37f).box(W * 0.72f, H * 0.7f, L * 0.18f).pop()
+        g.color(if (rank >= 5) gold else look.trim).push().at(0f, top + H * 0.72f + 0.4f, L * 0.37f).box(W * 0.78f, 0.25f, L * 0.2f).pop()
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.365f, top + H * 0.38f + 0.4f, L * 0.37f).rotY(sx * 90f).window(L * 0.06f, H * 0.22f).pop()
         val sternZ = L * 0.5f
-        for (k in -1..1) g.push().at(k * W * 0.18f, top + H * 0.05f, sternZ + 0.02f).window(W * 0.12f, H * 0.22f).pop()
-        // Фонарь на корме и руль
-        g.color(0xffe08a).push().at(0f, top + H * 0.72f + 0.9f, L * 0.44f).box(0.5f, 0.7f, 0.5f).pop()
-        g.color(0x3b2a1e).push().at(0f, top + H * 0.72f + 0.4f, L * 0.44f).box(0.12f, 0.6f, 0.12f).pop()
+        val sternWins = if (L >= 20) 5 else 3
+        for (k in 0 until sternWins) {
+            val kx = (k - (sternWins - 1) / 2f) * W * (if (sternWins == 5) 0.14f else 0.18f)
+            g.push().at(kx, top + H * 0.05f, sternZ + 0.02f).window(W * (if (sternWins == 5) 0.1f else 0.12f), H * 0.22f).pop()
+            if (L >= 20) g.push().at(kx, top + H * 0.05f + 0.95f, sternZ + 0.02f).window(W * 0.09f, H * 0.16f).pop()
+        }
+        // резной транец (зеркало кормы)
+        g.color(if (hl >= 5 || rank >= 5) gold else look.trim).push().at(0f, top + 1.55f, sternZ - 0.05f).box(W * 0.8f, 0.22f, 0.2f).pop()
+        g.color(if (hl >= 5 || rank >= 5) gold else look.trim).push().at(0f, top - H * 0.22f, sternZ + 0.05f).box(W * 0.78f, 0.16f, 0.16f).pop()
+        if (L >= 15) {
+            // кормовая галерея (балкон) с перилами
+            g.color(darker(look.hull, 0.8f)).push().at(0f, top - H * 0.12f, sternZ + 0.55f).box(W * 0.7f, 0.12f, 1.0f).pop()
+            g.color(look.trim).push().at(0f, top + 0.35f, sternZ + 1.0f).box(W * 0.7f, 0.1f, 0.1f).pop()
+            for (k in -3..3) g.color(darker(look.hull, 0.9f)).push().at(k * W * 0.1f, top + 0.12f, sternZ + 1.0f).box(0.08f, 0.5f, 0.08f).pop()
+        }
+        // кормовые фонари: один у всех, три — у больших и прокачанных
+        val lanterns = if (L >= 21 || rank >= 7) listOf(-W * 0.3f, 0f, W * 0.3f) else listOf(0f)
+        for (lx in lanterns) {
+            g.color(0xffe08a).push().at(lx, top + H * 0.72f + 1.3f, L * 0.44f).box(0.5f, 0.7f, 0.5f).pop()
+            g.color(0x3b2a1e).push().at(lx, top + H * 0.72f + 0.8f, L * 0.44f).box(0.12f, 0.6f, 0.12f).pop()
+            g.color(gold).push().at(lx, top + H * 0.72f + 1.75f, L * 0.44f).cone(0.32f, 0.3f, 5).pop()
+        }
+        if (rank >= 7) g.color(0xffe08a).push().at(0f, top + 2.2f, -L * 0.46f).box(0.4f, 0.55f, 0.4f).pop()
+        // руль
         g.color(dark).push().at(0f, top - H * 0.55f, L * 0.5f + 0.25f).box(0.3f, H * 0.9f, 0.9f).pop()
-        // Носовая фигура
-        g.color(look.trim).push().at(0f, top - 0.2f, -L * 0.5f - 0.3f).rotX(-30f).box(0.35f, 1.1f, 0.7f).pop()
+        // ---------- Гальюнная фигура: у каждого класса своя ----------
+        figurehead(g, L, W, top, look, pirate, if (rank >= 10) gold else -1)
 
         // Бушприт
         val bowTip = Vector3(0f, top + 2.6f, -L * 0.72f)
-        g.color(look.hull).beam(Vector3(0f, top + 0.6f, -L * 0.42f), bowTip, 0.32f)
+        val mastC = if (look.mast >= 0) look.mast else look.hull
+        g.color(mastC).beam(Vector3(0f, top + 0.6f, -L * 0.42f), bowTip, 0.32f)
+        g.color(mastC).beam(Vector3(0f, top + 2.4f, -L * 0.68f), Vector3(0f, top + 3.5f, -L * 0.86f), 0.16f)
 
+        // ---------- Палуба: люки, штурвал, кабестан, бочки, шлюпка, якоря, бухты канатов ----------
         val n = look.masts
         val mastH = L * 0.62f + 3
+        for (i in 0 until n) {
+            val hz = mastZ(look, i) + (if (i == n - 1 && n > 1) -1.7f else 1.7f)
+            g.color(0x4e342e).push().at(0f, top + 0.7f, hz).box(W * 0.3f, 0.16f, 1.2f).pop()
+            g.color(0x2b1d14)
+            for (k in -1..1) g.push().at(k * W * 0.08f, top + 0.8f, hz).box(0.06f, 0.05f, 1.2f).pop()
+        }
+        // штурвал на юте
+        val wz = L * 0.28f
+        g.color(0x5d4037).push().at(0f, top + 1.9f, wz).box(0.2f, 0.9f, 0.2f).pop()
+        g.color(0x6d4c2f).push().at(0f, top + 2.35f, wz - 0.15f).rotX(90f).cylinder(0.55f, 0.55f, 0.08f, 10, caps = false).pop()
+        g.color(0x8d6e4a)
+        for (k in 0 until 4) g.push().at(0f, top + 2.35f, wz - 0.15f).rotZ(k * 45f).box(1.3f, 0.06f, 0.06f).pop()
+        // кабестан на баке
+        g.color(0x6d4c2f).push().at(0f, top + 1.45f, -L * 0.36f).cylinder(0.35f, 0.42f, 0.6f, 8).pop()
+        // бочки и бухты канатов
+        g.color(0x7a5230)
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.28f, top + 1.0f, -L * 0.12f).cylinder(0.3f, 0.3f, 0.7f, 8).pop()
+        g.color(0xc8b48a)
+        for (sx in intArrayOf(-1, 1)) g.push().at(sx * W * 0.3f, top + 0.7f, L * 0.12f).cylinder(0.38f, 0.38f, 0.16f, 10).pop()
+        // шлюпка на рострах
+        if (L >= 15) {
+            g.push().at(W * 0.05f, top + 1.0f, L * 0.08f)
+            g.extrude(hull(3.4f * (L / 18f), 1.3f * (L / 18f)), -0.25f, 0.25f, 0x8d6e4a, 0x6d4c2f)
+            g.pop()
+        }
+        // якоря у носа (на кат-балках)
+        val az = -L * 0.36f
+        for (sx in intArrayOf(-1, 1)) {
+            val ax = sx * (halfWidthAt(L, W, az) + 0.25f)
+            g.color(0x3a3f44)
+            g.push().at(ax, top - 0.4f, az).box(0.14f, 1.6f, 0.14f).pop()
+            g.push().at(ax, top + 0.3f, az).box(0.12f, 0.12f, 0.9f).pop()
+            g.push().at(ax, top - 1.2f, az).box(0.12f, 0.14f, 1.0f).pop()
+            for (k in intArrayOf(-1, 1)) g.push().at(ax, top - 1.0f, az + k * 0.5f).rotX(k * -40f).cone(0.15f, 0.45f, 4).pop()
+        }
+        // матросы на палубе
+        val crewN = if (L >= 15) 4 else 2
+        for (k in 0 until crewN) {
+            val cz2 = -L * 0.2f + k * L * 0.13f
+            sailor(g, (if (k % 2 == 0) -1 else 1) * W * 0.22f, top + 0.65f, cz2, k * 70f, intArrayOf(0xe8e2d0, 0xc62828, 0x1565c0, 0x2e7d32)[k % 4])
+        }
+
+        // ---------- Мачты, реи, марсы ----------
         val tops = ArrayList<Vector3>()
         for (i in 0 until n) {
             val mz = mastZ(look, i)
             val h = mastH * (if (i == 0 && n > 2) 0.88f else 1f)
-            val mastC = if (look.mast >= 0) look.mast else look.hull
             g.color(mastC).push().at(0f, top + h / 2, mz).cylinder(0.16f, 0.26f, h, 6).pop()
             val sw = W * (if (n == 1) 1.9f else 1.6f)
             for (k in 0..1) {
@@ -447,106 +564,112 @@ object Models {
                 g.color(mastC).push().at(0f, sy + sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.1f, 0.1f, ww * 1.05f, 5).pop()
                 g.color(mastC).push().at(0f, sy - sh / 2, mz - 0.1f).rotZ(90f).cylinder(0.07f, 0.07f, ww * 0.95f, 4).pop()
             }
-            g.color(mastC).push().at(0f, top + h * 0.86f, mz).cylinder(0.7f, 0.55f, 0.5f, 6).pop()
+            // марсовая площадка
+            g.color(mastC).push().at(0f, top + h * 0.86f, mz).cylinder(0.75f, 0.6f, 0.22f, 8).pop()
+            g.color(darker(mastC, 0.85f)).push().at(0f, top + h * 0.53f, mz).cylinder(0.55f, 0.45f, 0.16f, 8).pop()
+            // «воронье гнездо» на грот-мачте
+            if (n >= 2 && i == n / 2) g.color(darker(mastC, 0.8f)).push().at(0f, top + h * 0.97f, mz).cylinder(0.45f, 0.38f, 0.55f, 8, caps = false).pop()
             tops += Vector3(0f, top + h, mz)
-            if (i == n - 1) {
-                val fs = when (look.flagSize) { 1 -> 1.35f; 2 -> 1.7f; else -> 1f }
-                val fw = 2.2f * fs; val fh = 1.3f * fs
-                val fy0 = top + h + 0.5f + 0.65f - fh / 2
-                if (look.flagPix.length == FLAG_W * FLAG_H || look.flagShape != 0) {
-                    // рисованный флаг 16×12: клетки одного цвета подряд — одним брусом
-                    val cw = fw / FLAG_W; val ch = fh / FLAG_H
-                    for (fy in 0 until FLAG_H) {
-                        var fx = 0
-                        while (fx < FLAG_W) {
-                            if (!flagCellVisible(look.flagShape, fx, fy)) { fx++; continue }
-                            val c = colAt(look, fx, fy)
-                            var e = fx + 1
-                            while (e < FLAG_W && flagCellVisible(look.flagShape, e, fy) && colAt(look, e, fy) == c) e++
-                            val n = e - fx
-                            g.color(c).push().at(0f, fy0 + fh / 2 - (fy + 0.5f) * ch, mz + (fx + n * 0.5f) * cw).box(0.08f, ch * 1.02f, cw * n + cw * 0.02f).pop()
-                            fx = e
-                        }
-                    }
-                } else g.color(look.flag).push().at(0f, fy0 + fh / 2, mz + fw / 2).box(0.08f, fh, fw).pop()
-            }
         }
-        // Такелаж: штаги между мачтами и ванты к бортам
+        // Такелаж: штаги между мачтами, ванты к бортам с выбленками (верёвочными лестницами)
         g.color(0x2b2118)
         g.beam(bowTip, tops[0], 0.07f)
         for (i in 0 until tops.size - 1) g.beam(tops[i], tops[i + 1], 0.07f)
         g.beam(tops.last(), Vector3(0f, top + 1.6f, L * 0.45f), 0.07f)
         for (t in tops) for (sx in intArrayOf(-1, 1)) {
             val hw = halfWidthAt(L, W, t.z)
-            g.beam(Vector3(t.x, t.y * 0.86f, t.z), Vector3(sx * hw, top + 0.7f, t.z + 0.8f), 0.05f)
+            val upA = Vector3(t.x, t.y * 0.86f, t.z); val upB = Vector3(t.x, t.y * 0.86f, t.z + 0.1f)
+            val loA = Vector3(sx * hw, top + 0.7f, t.z + 0.8f); val loB = Vector3(sx * hw, top + 0.7f, t.z - 0.6f)
+            g.beam(upA, loA, 0.05f); g.beam(upB, loB, 0.05f)
+            for (k in 1..5) {
+                val f = k / 6.5f
+                g.beam(Vector3(loA).lerp(upA, f), Vector3(loB).lerp(upB, f), 0.025f)
+            }
         }
-        // Пушки: вид зависит от уровня «Пушки»
+        // Флажки расцвечивания на штагах — с 3-го уровня корабля
+        if (rank >= 3) {
+            val cols = intArrayOf(0xc62828, 0xffc107, 0x1565c0, 0xf5f5f5, 0x2e7d32)
+            fun bunting(a: Vector3, b: Vector3) {
+                val cnt = (a.dst(b) / 1.1f).toInt()
+                for (k in 1 until cnt) g.color(cols[k % cols.size]).push().at(a.x + (b.x - a.x) * k / cnt, a.y + (b.y - a.y) * k / cnt - 0.3f, a.z + (b.z - a.z) * k / cnt).box(0.04f, 0.5f, 0.4f).pop()
+            }
+            bunting(bowTip, tops[0])
+            for (i in 0 until tops.size - 1) bunting(tops[i], tops[i + 1])
+        }
+
+        // ---------- Пушки по уровню «Пушки» ----------
         val guns = max(2, minOf(6, round(L / 4).toInt()))
-        val gl = u[2]
-        val gunCol = when { gl >= 4 -> 0x1c1c1c; gl >= 2 -> 0xb5873a; else -> 0x2a2a2a }
-        val ringCol = when { gl >= 4 -> 0xd4a017; gl >= 2 -> 0x8a6a2a; else -> 0x4a4a4a }
-        // размер пушек — по размеру корабля, чтобы на шлюпе они не выглядели огромными
-        val gs = clamp(W / 7f, 0.6f, 1f)
+        val bronze = gl >= 5
+        val gunCol = when { bronze -> 0xc08a3a; gl >= 4 -> 0x1c1c1c; gl >= 2 -> 0xb5873a; else -> 0x2a2a2a }
+        val ringCol = when { gl >= 4 -> gold; gl >= 2 -> 0x8a6a2a; else -> 0x4a4a4a }
         val gunLen = (1.3f + gl * 0.1f) * gs
         val gunR = (0.19f + gl * 0.012f) * gs
         for (sx in intArrayOf(-1, 1)) for (i in 0 until guns) {
             val gz = -L * 0.25f + L * 0.5f * i / max(1, guns - 1)
             val hw = halfWidthAt(L, W, gz)
-            g.color(gunCol).push().at(sx * (hw + gunLen * 0.12f), top + 0.32f, gz)
-                .rotZ(90f).cylinder(gunR, gunR * 1.35f, gunLen, 7).pop()
+            g.color(gunCol).push().at(sx * (hw + gunLen * 0.12f), top + 0.32f, gz).rotZ(90f).cylinder(gunR, gunR * 1.35f, gunLen, 7).pop()
             if (gl >= 1) g.color(ringCol).push().at(sx * (hw + gunLen * 0.58f), top + 0.32f, gz).rotZ(90f).cylinder(gunR * 1.2f, gunR * 1.2f, 0.1f * gs, 7).pop()
             if (gl >= 2) g.color(0x5d4037).push().at(sx * (hw - gunLen * 0.35f), top + 0.12f, gz).box(0.45f * gs, 0.25f * gs, 0.55f * gs).pop()
-            if (gl >= 5) {
+            if (bronze) g.color(gold).push().at(sx * (hw - gunLen * 0.05f), top + 0.32f + gunR * 1.2f, gz).box(0.22f * gs, 0.06f, 0.22f * gs).pop()
+            if (gl >= 3) {
                 // нижняя батарейная палуба
-                g.color(0x1d1410).push().at(sx * (hw + 0.02f), top - H * 0.36f, gz).box(0.1f, 0.55f * gs, 0.6f * gs).pop()
-                g.color(gunCol).push().at(sx * (hw + 0.25f * gs), top - H * 0.36f, gz).rotZ(90f).cylinder(gunR * 0.85f, gunR * 1.05f, 0.7f * gs, 7).pop()
+                g.color(gunCol).push().at(sx * (hw + 0.25f * gs), top - H * 0.6f, gz).rotZ(90f).cylinder(gunR * 0.85f, gunR * 1.05f, 0.7f * gs, 7).pop()
             }
+            // канониры у пушек — с 5-го уровня «Заряжания»
+            if (rl >= 5 && i % 2 == 0) sailor(g, sx * (hw - 1.1f * gs), top + 0.65f, gz + 0.5f, sx * 90f, 0x8d6e4a)
         }
         if (gl >= 4) {
             // вертлюжные пушки на носу и корме
             for (pz in floatArrayOf(-L * 0.4f, L * 0.42f)) for (sx in intArrayOf(-1, 1)) {
                 val hw = halfWidthAt(L, W, pz)
-                g.color(0xb5873a).push().at(sx * hw * 0.85f, top + 1.35f, pz).rotY(sx * 60f).rotZ(90f).cylinder(0.08f * gs, 0.11f * gs, 0.75f * gs, 6).pop()
-                g.color(0x3e2723).push().at(sx * hw * 0.85f, top + 1.0f, pz).box(0.12f, 0.8f, 0.12f).pop()
+                g.color(0xb5873a).push().at(sx * hw * 0.85f, top + 1.85f, pz).rotY(sx * 60f).rotZ(90f).cylinder(0.08f * gs, 0.11f * gs, 0.75f * gs, 6).pop()
+                g.color(0x3e2723).push().at(sx * hw * 0.85f, top + 1.45f, pz).box(0.12f, 0.8f, 0.12f).pop()
             }
         }
 
-        // Корпус: броня по уровню «Корпус»
-        val hl = u[0]
+        // ---------- Корпус: броня по уровню «Корпус» ----------
         if (hl >= 1) {
             val iron = 0x4a4f55
-            g.extrude(hull(L * 1.014f, W * 1.014f), top - H * 0.72f, top - H * 0.64f, iron, iron)
-            g.extrude(hull(L * 1.014f, W * 1.014f), top - H * 0.2f, top - H * 0.12f, iron, iron)
+            for (yy in floatArrayOf(top - H * 0.7f, top - H * 0.16f)) {
+                g.extrude(hull(L * 1.018f, W * 1.018f), yy - H * 0.06f, yy + H * 0.06f, iron, iron)
+                // заклёпки вдоль железных поясов
+                g.color(0xb0b7be)
+                var rz = -L * 0.38f
+                while (rz < L * 0.46f) {
+                    val hw = halfWidthAt(L, W, rz) * 1.018f
+                    for (sx in intArrayOf(-1, 1)) g.push().at(sx * (hw + 0.04f), yy, rz).box(0.08f, 0.12f, 0.12f).pop()
+                    rz += 1.2f
+                }
+            }
         }
         if (hl >= 2) {
-            // бронированная корма с заклёпками
             val plate = 0x6b7178
             g.color(plate).push().at(0f, top - H * 0.3f, L * 0.5f + 0.12f).box(W * 0.86f, H * 0.95f, 0.22f).pop()
             for (sx in intArrayOf(-1, 1)) g.color(plate).push().at(sx * W * 0.43f, top - H * 0.3f, L * 0.42f).box(0.18f, H * 0.95f, L * 0.16f).pop()
             g.color(0xb0b7be)
             for (k in -2..2) for (j in 0..1) g.push().at(k * W * 0.16f, top - H * (0.1f + j * 0.42f), L * 0.5f + 0.25f).box(0.16f, 0.16f, 0.1f).pop()
-            g.color(plate).push().at(0f, top + H * 0.72f + 0.2f, L * 0.36f).box(W * 0.82f, 0.18f, L * 0.24f).pop()
         }
         if (hl >= 3) {
-            // броневые плиты вдоль бортов между портами
-            val plate = 0x5f666d
+            val plate = 0x3f454b
             var pz = -L * 0.3f
             while (pz < L * 0.34f) {
                 val hw = halfWidthAt(L, W, pz)
-                for (sx in intArrayOf(-1, 1)) g.color(plate).push().at(sx * (hw + 0.06f), top - H * 0.62f, pz).box(0.14f, H * 0.36f, L * 0.09f).pop()
+                for (sx in intArrayOf(-1, 1)) g.color(plate).push().at(sx * (hw + 0.07f), top - H * 0.45f, pz).box(0.16f, H * 0.5f, L * 0.1f).pop()
                 pz += L * 0.12f
             }
         }
         if (hl >= 4) {
-            // железный таран на носу
-            g.color(0x8a8f96).beam(Vector3(0f, top - H * 0.75f, -L * 0.45f), Vector3(0f, top - H * 0.62f, -L * 0.62f), 0.6f)
-            g.color(0xd4a017).push().at(0f, top - H * 0.62f, -L * 0.63f).ico(0.35f).pop()
+            // железный таран-«клюв» на носу
+            g.color(0x8a8f96).beam(Vector3(0f, top - H * 0.8f, -L * 0.44f), Vector3(0f, top - H * 0.6f, -L * 0.66f), 0.7f)
+            g.color(0x6b7178).push().at(0f, top - H * 0.6f, -L * 0.66f).rotX(-90f).cone(0.55f, 1.2f, 6).pop()
+            g.color(gold).push().at(0f, top - H * 0.62f, -L * 0.6f).ico(0.32f).pop()
         }
         if (hl >= 5) {
-            g.extrude(hull(L * 1.035f, W * 1.035f), top + 0.05f, top + 0.2f, 0xd4a017, 0xd4a017)
+            // золочёная кромка борта
+            g.extrude(hull(L * 1.035f, W * 1.035f), top + 0.05f, top + 0.2f, gold, gold)
         }
-        // Боеприпасы на палубе по уровню «Заряжание»
-        val rl = u[3]
+
+        // ---------- Боеприпасы по уровню «Заряжание» ----------
         if (rl >= 1) {
             g.color(0x8d6e4a)
             for (k in 0..1) g.push().at((k * 2 - 1) * W * 0.2f, top + 1.05f, L * 0.18f).box(0.9f, 0.8f, 0.9f).pop()
@@ -560,34 +683,55 @@ object Models {
             for (k in 0..1) {
                 g.color(0x6d4c2f).push().at((k * 2 - 1) * W * 0.22f, top + 1.15f, -L * 0.02f).cylinder(0.4f, 0.4f, 0.95f, 8).pop()
                 g.color(0xc62828).push().at((k * 2 - 1) * W * 0.22f, top + 1.15f, -L * 0.02f).cylinder(0.42f, 0.42f, 0.14f, 8).pop()
+                g.color(0xfff3e0).push().at((k * 2 - 1) * W * 0.22f, top + 1.25f, -L * 0.02f + 0.41f).box(0.3f, 0.3f, 0.02f).pop()
             }
+            // подъёмник у люка: стойка, стрела, канат и ящик
+            val cz2 = mastZ(look, n / 2) + 1.7f
+            g.color(0x5d4037).push().at(W * 0.3f, top + 1.9f, cz2).box(0.18f, 2.6f, 0.18f).pop()
+            g.color(0x5d4037).push().at(W * 0.15f, top + 3.1f, cz2).box(0.5f + W * 0.3f, 0.14f, 0.14f).pop()
+            g.color(0xc8b48a).push().at(0f, top + 2.4f, cz2).box(0.04f, 1.3f, 0.04f).pop()
+            g.color(0x8d6e4a).push().at(0f, top + 1.55f, cz2).box(0.6f, 0.45f, 0.6f).pop()
         }
         if (rl >= 5) {
             for (k in 0..2) {
-                g.color(0x6d4c2f).push().at((k - 1) * 0.9f, top + 1.15f, L * 0.3f).cylinder(0.4f, 0.4f, 0.95f, 8).pop()
-                g.color(0xd4a017).push().at((k - 1) * 0.9f, top + 1.15f, L * 0.3f).cylinder(0.42f, 0.42f, 0.14f, 8).pop()
+                g.color(0x6d4c2f).push().at((k - 1) * 0.9f, top + 1.6f, L * 0.3f).cylinder(0.4f, 0.4f, 0.95f, 8).pop()
+                g.color(gold).push().at((k - 1) * 0.9f, top + 1.6f, L * 0.3f).cylinder(0.42f, 0.42f, 0.14f, 8).pop()
             }
         }
-        // Паруса по уровню «Паруса»: вымпелы, верхние паруса, лисели
-        val sl = u[1]
+
+        // ---------- Паруса по уровню «Паруса»: вымпелы, брамсели, лисели, бом-брамсели ----------
         for (i in 0 until n) {
             val mz = mastZ(look, i)
             val h = mastH * (if (i == 0 && n > 2) 0.88f else 1f)
             if (sl >= 2 || (sl >= 1 && i == 0)) g.color(look.trim).push().at(0f, top + h + 0.25f, mz + 1.9f).box(0.05f, 0.3f, 3.2f).pop()
-            if (sl >= 5 && i == n / 2) g.color(0xd4a017).push().at(0f, top + h + 0.6f, mz + 3.2f).box(0.05f, 0.5f, 6f).pop()
+            if (sl >= 5 && i == n / 2) g.color(gold).push().at(0f, top + h + 0.6f, mz + 3.4f).box(0.05f, 0.55f, 6.5f).pop()
             if (sl >= 3) {
-                g.color(look.hull).push().at(0f, top + h * 0.93f, mz - 0.1f).rotZ(90f).cylinder(0.06f, 0.06f, W * 0.95f, 4).pop()
+                g.color(mastC).push().at(0f, top + h * 0.93f, mz - 0.1f).rotZ(90f).cylinder(0.06f, 0.06f, W * 0.95f, 4).pop()
                 g.mat(Shaders.CLOTH).color(look.sail).push().at(0f, top + h * 0.88f, mz - 0.2f).sail(W * 0.8f, h * 0.12f, W * 0.12f).pop()
+            }
+            if (sl >= 5) {
+                // бом-брамсель — самый верхний маленький парус
+                g.mat(-1).color(mastC).push().at(0f, top + h * 1.02f, mz).cylinder(0.08f, 0.1f, h * 0.12f, 5).pop()
+                g.color(mastC).push().at(0f, top + h * 1.04f, mz - 0.1f).rotZ(90f).cylinder(0.05f, 0.05f, W * 0.65f, 4).pop()
+                g.mat(Shaders.CLOTH).color(look.sail).push().at(0f, top + h * 1.0f, mz - 0.2f).sail(W * 0.55f, h * 0.08f, W * 0.08f).pop()
             }
             if (sl >= 4 && i == (if (n > 1) 1 else 0)) {
                 for (sx in intArrayOf(-1, 1)) g.mat(Shaders.CLOTH).color(look.sail).push().at(sx * W * 1.15f, top + h * 0.36f, mz - 0.3f).sail(W * 0.5f, h * 0.3f, W * 0.1f).pop()
             }
+            g.mat(-1)
         }
-        if (sl >= 4) {
-            g.mat(Shaders.CLOTH).color(look.sail).triangle(Vector3(0f, top + 1.6f, -L * 0.7f), Vector3(0f, top + mastH * 0.6f, -L * 0.3f), Vector3(0f, top + 1.8f, -L * 0.34f))
+        // косые паруса: второй кливер у многомачтовых, бизань (контр-бизань) на кормовой мачте
+        g.mat(Shaders.CLOTH).color(look.sail)
+        if (n >= 2 || sl >= 4) g.triangle(Vector3(0f, top + 2.4f, -L * 0.82f), Vector3(0f, top + mastH * 0.55f, -L * 0.3f), Vector3(0f, top + 2.2f, -L * 0.42f))
+        if (n >= 2) {
+            val mz = mastZ(look, n - 1); val h = mastH
+            g.triangle(Vector3(0f, top + 1.8f, mz + 0.3f), Vector3(0f, top + h * 0.62f, mz + 0.3f), Vector3(0f, top + 2.0f, mz + L * 0.2f))
+            g.triangle(Vector3(0f, top + h * 0.62f, mz + 0.3f), Vector3(0f, top + h * 0.5f, mz + L * 0.17f), Vector3(0f, top + 2.0f, mz + L * 0.2f))
+            g.mat(-1).color(mastC).beam(Vector3(0f, top + 1.9f, mz + 0.2f), Vector3(0f, top + 1.9f, mz + L * 0.22f), 0.08f)
         }
+        g.mat(-1)
 
-        // Паруса — отдельные узлы, чтобы надуваться от ветра
+        // Паруса и флаг — отдельные узлы: паруса надуваются от ветра, флаг развевается
         val mb = ModelBuilder()
         mb.begin()
         val mat = Geo.solidMaterial()
@@ -613,7 +757,103 @@ object Models {
         jib.triangle(Vector3(0f, top + 1f, -L * 0.62f), Vector3(0f, top + mastH * 0.75f, -L * 0.2f), Vector3(0f, top + 1.2f, -L * 0.26f))
         mb.node().id = "jib"
         mb.part("jib", jib.mesh(), GL20.GL_TRIANGLES, 0, jib.vertexCount, mat)
+        // флаг на кормовой мачте — узел с осью у мачты
+        run {
+            val i = n - 1
+            val mz = mastZ(look, i)
+            val h = mastH * (if (i == 0 && n > 2) 0.88f else 1f)
+            val fg = Geo()
+            val fs = when (look.flagSize) { 1 -> 1.35f; 2 -> 1.7f; else -> 1f }
+            val fw = 2.2f * fs; val fh = 1.3f * fs
+            if (look.flagPix.length == FLAG_W * FLAG_H || look.flagShape != 0) {
+                val cw = fw / FLAG_W; val ch = fh / FLAG_H
+                for (fy in 0 until FLAG_H) {
+                    var fx = 0
+                    while (fx < FLAG_W) {
+                        if (!flagCellVisible(look.flagShape, fx, fy)) { fx++; continue }
+                        val c = colAt(look, fx, fy)
+                        var e = fx + 1
+                        while (e < FLAG_W && flagCellVisible(look.flagShape, e, fy) && colAt(look, e, fy) == c) e++
+                        val cnt = e - fx
+                        fg.color(c).push().at(0f, fh / 2 - (fy + 0.5f) * ch, (fx + cnt * 0.5f) * cw).box(0.08f, ch * 1.02f, cw * cnt + cw * 0.02f).pop()
+                        fx = e
+                    }
+                }
+            } else fg.color(look.flag).push().at(0f, 0f, fw / 2).box(0.08f, fh, fw).pop()
+            val fnode = mb.node()
+            fnode.id = "flag"
+            fnode.translation.set(0f, top + h + 0.5f + 0.65f, mz)
+            mb.part("flag", fg.mesh(), GL20.GL_TRIANGLES, 0, fg.vertexCount, mat)
+        }
         return mb.end()
+    }
+
+    /** Часть контура корпуса между [z0] и [z1] (для бака и юта). */
+    private fun hullPart(L: Float, W: Float, z0: Float, z1: Float): List<Vector2> {
+        val pts = ArrayList<Vector2>()
+        val steps = 6
+        for (k in 0..steps) { val zz = z0 + (z1 - z0) * k / steps; pts += Vector2(halfWidthAt(L, W, zz) * 0.97f, zz) }
+        for (k in steps downTo 0) { val zz = z0 + (z1 - z0) * k / steps; pts += Vector2(-halfWidthAt(L, W, zz) * 0.97f, zz) }
+        return pts
+    }
+
+    /** Фигурка матроса: штаны, рубаха, голова, шапка. */
+    private fun sailor(g: Geo, x: Float, y: Float, z: Float, rot: Float, shirt: Int) {
+        g.push().at(x, y, z).rotY(rot)
+        g.color(0x3e3a5a).push().at(0f, 0.35f, 0f).box(0.32f, 0.7f, 0.2f).pop()
+        g.color(shirt).push().at(0f, 0.95f, 0f).box(0.4f, 0.55f, 0.24f).pop()
+        g.color(0xd7a77a).push().at(0f, 1.38f, 0f).ico(0.17f).pop()
+        g.color(0x2b2118).push().at(0f, 1.55f, 0f).box(0.3f, 0.1f, 0.3f).pop()
+        g.pop()
+    }
+
+    /** Гальюнная фигура на носу: дельфин, дева, орёл, лев, единорог, дракон; у пиратов — череп. */
+    private fun figurehead(g: Geo, L: Float, W: Float, top: Float, look: Look, pirate: Boolean, goldOverride: Int) {
+        val k = clamp(W / 6f, 0.7f, 1.4f)
+        val gold = 0xd4a017
+        val main = if (goldOverride >= 0) goldOverride else look.trim
+        g.push().at(0f, top - 0.1f, -L * 0.5f - 0.55f * k).rotX(-35f).scale(k, k, k)
+        when {
+            pirate -> {
+                g.color(0xeeeeee).push().at(0f, 0.5f, -0.2f).ico(0.55f).pop()
+                g.color(0x111111)
+                for (sx in intArrayOf(-1, 1)) g.push().at(sx * 0.2f, 0.55f, -0.66f).box(0.18f, 0.18f, 0.1f).pop()
+                g.color(0xdddddd).push().at(0f, 0.1f, -0.35f).box(0.4f, 0.22f, 0.3f).pop()
+            }
+            L < 13 -> { // дельфин
+                g.color(if (goldOverride >= 0) goldOverride else 0x78909c).push().at(0f, 0.4f, -0.3f).scale(0.45f, 0.4f, 1f).ico(0.7f).pop()
+                g.push().at(0f, 0.75f, 0f).rotX(-30f).cone(0.12f, 0.5f, 4).pop()
+                g.push().at(0f, 0.4f, -1.0f).scale(0.6f, 0.6f, 1f).cone(0.15f, 0.35f, 4).pop()
+            }
+            L < 16 -> { // дева
+                g.color(if (goldOverride >= 0) goldOverride else 0xfaf3e0).push().at(0f, 0.2f, -0.2f).cylinder(0.25f, 0.45f, 1.2f, 7).pop()
+                g.color(0xd7a77a).push().at(0f, 1.0f, -0.25f).ico(0.24f).pop()
+                g.color(if (goldOverride >= 0) goldOverride else 0xc9a227).push().at(0f, 1.05f, -0.1f).box(0.45f, 0.4f, 0.3f).pop()
+            }
+            L < 19 -> { // орёл
+                g.color(main).push().at(0f, 0.4f, -0.3f).scale(0.6f, 0.6f, 1f).ico(0.6f).pop()
+                for (sx in intArrayOf(-1, 1)) g.color(main).push().at(sx * 0.65f, 0.6f, -0.1f).rotZ(sx * -25f).box(1.0f, 0.12f, 0.6f).pop()
+                g.color(gold).push().at(0f, 0.55f, -0.95f).rotX(-90f).cone(0.14f, 0.35f, 4).pop()
+            }
+            L < 23 -> { // лев
+                g.color(if (goldOverride >= 0) goldOverride else 0xc9a227).push().at(0f, 0.5f, -0.2f).ico(0.65f).pop()
+                g.color(if (goldOverride >= 0) goldOverride else 0xe0b060).push().at(0f, 0.45f, -0.7f).ico(0.38f).pop()
+                g.color(0x3e2723).push().at(0f, 0.45f, -1.05f).box(0.15f, 0.12f, 0.08f).pop()
+            }
+            L < 27 -> { // единорог
+                g.color(if (goldOverride >= 0) goldOverride else 0xf5f5f5).push().at(0f, 0.5f, -0.4f).box(0.45f, 0.55f, 1.0f).pop()
+                g.color(0x9e9e9e).push().at(0f, 0.85f, 0.05f).box(0.15f, 0.5f, 0.6f).pop()
+                g.color(gold).push().at(0f, 0.95f, -0.6f).rotX(-60f).cone(0.08f, 0.8f, 5).pop()
+            }
+            else -> { // дракон
+                g.color(if (goldOverride >= 0) goldOverride else 0x2e7d32).push().at(0f, 0.5f, -0.5f).rotX(-90f).cone(0.45f, 1.5f, 6).pop()
+                g.color(if (goldOverride >= 0) goldOverride else 0x1b5e20).push().at(0f, 0.25f, -0.55f).box(0.5f, 0.15f, 1.0f).pop()
+                for (sx in intArrayOf(-1, 1)) g.color(gold).push().at(sx * 0.25f, 0.85f, -0.1f).rotX(30f).cone(0.08f, 0.6f, 4).pop()
+                g.color(0xffd54f)
+                for (sx in intArrayOf(-1, 1)) g.push().at(sx * 0.2f, 0.62f, -0.75f).box(0.1f, 0.08f, 0.08f).pop()
+            }
+        }
+        g.pop()
     }
 
     fun sailCount(look: Look) = look.masts * 2

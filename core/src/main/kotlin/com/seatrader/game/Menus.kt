@@ -366,7 +366,9 @@ class Menus(private val g: SeaGame) {
         g.coins -= cost
         u[i]++
         g.rebuildPlayer()
+        g.portView.showUpgrade(i)
         g.sfx.play("coin")
+        g.sfx.play("hit", 0.5f)
         g.questEvent(QType.UPGRADE, "", false)
         g.toast("На корабле: " + UPGRADE_LOOKS[i][u[i] - 1], 2f)
         g.save()

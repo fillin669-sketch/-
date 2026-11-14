@@ -8,6 +8,8 @@ data class Look(
     val sailPat: Int = 0, val sail2: Int = -1, val flagPix: String = "",
     /** Форма флага (0 — прямоугольник, 1 — ласточкин хвост, 2 — вымпел), размер 0..2, масштаб узора 0..2, цвет мачт (-1 — как корпус). */
     val flagShape: Int = 0, val flagSize: Int = 0, val patScale: Int = 1, val mast: Int = -1,
+    /** Уровень корабля игрока (0 — чужой корабль): с ним растёт богатство отделки. */
+    val rank: Int = 0,
 )
 
 class ShipDef(
