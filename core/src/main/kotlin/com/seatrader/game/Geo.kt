@@ -279,6 +279,44 @@ class Geo {
         return this
     }
 
+    /**
+     * Фальшборт с седловатостью: верх борта плавно поднимается к носу ([sheerBow]) и корме ([sheerStern]).
+     * Внешняя стенка, внутренняя стенка и планширь сверху — приподнятый борт не просвечивает.
+     */
+    fun bulwark(outline: List<Vector2>, yBase: Float, h: Float, sheerBow: Float, sheerStern: Float, halfLen: Float,
+                outer: Int, inner: Int, rail: Int, thick: Float = 0.22f): Geo {
+        val sz = outline.size
+        var cx = 0f; var cz = 0f
+        for (p in outline) { cx += p.x; cz += p.y }
+        cx /= sz; cz /= sz
+        val en = Array(sz) { i ->
+            val a = outline[i]; val b = outline[(i + 1) % sz]
+            val v = Vector3(b.y - a.y, 0f, -(b.x - a.x)).nor()
+            if (v.x * ((a.x + b.x) / 2 - cx) + v.z * ((a.y + b.y) / 2 - cz) < 0) v.scl(-1f)
+            v
+        }
+        val vn = Array(sz) { i -> Vector3(en[i]).add(en[(i - 1 + sz) % sz]).nor() }
+        fun topY(z: Float): Float { val t = (z / halfLen).coerceIn(-1f, 1f); return yBase + h + (if (t < 0) sheerBow else sheerStern) * t * t }
+        // внутренний контур — сдвиг внутрь по нормали на толщину борта
+        val inn = Array(sz) { i -> Vector2(outline[i].x - vn[i].x * thick, outline[i].y - vn[i].z * thick) }
+        val up = Vector3(0f, 1f, 0f)
+        for (i in 0 until sz) {
+            val j = (i + 1) % sz
+            val a = outline[i]; val b = outline[j]
+            val ta = topY(a.y); val tb = topY(b.y)
+            color(outer)
+            quadN(Vector3(a.x, yBase, a.y), Vector3(b.x, yBase, b.y), Vector3(b.x, tb, b.y), Vector3(a.x, ta, a.y), vn[i], vn[j], vn[j], vn[i])
+            val ia = inn[i]; val ib = inn[j]
+            val tia = topY(ia.y); val tib = topY(ib.y)
+            color(inner)
+            val na = Vector3(vn[i]).scl(-1f); val nb = Vector3(vn[j]).scl(-1f)
+            quadN(Vector3(ib.x, yBase, ib.y), Vector3(ia.x, yBase, ia.y), Vector3(ia.x, tia, ia.y), Vector3(ib.x, tib, ib.y), nb, na, na, nb)
+            color(rail)
+            quadN(Vector3(a.x, ta, a.y), Vector3(b.x, tb, b.y), Vector3(ib.x, tib, ib.y), Vector3(ia.x, tia, ia.y), up, up, up, up)
+        }
+        return this
+    }
+
     /** Выгнутый парус в плоскости XY, выпуклостью к -Z. */
     fun sail(w: Float, h: Float, bulge: Float): Geo {
         val keep = variation
@@ -399,11 +437,12 @@ object Models {
         val pts = ArrayList<Vector2>()
         val bow = Vector2(0f, -l / 2)
         pts += bow
-        bezier(pts, bow, Vector2(w * 0.5f, -l * 0.28f), Vector2(w * 0.5f, l * 0.08f), 6)
-        pts += Vector2(w * 0.42f, l / 2)
-        pts += Vector2(-w * 0.42f, l / 2)
-        pts += Vector2(-w * 0.5f, l * 0.08f)
-        bezier(pts, Vector2(-w * 0.5f, l * 0.08f), Vector2(-w * 0.5f, -l * 0.28f), bow, 5)
+        // нос острее (вогнутые скулы у форштевня), корма уже и скруглённая
+        bezier(pts, bow, Vector2(w * 0.4f, -l * 0.36f), Vector2(w * 0.5f, l * 0.02f), 8)
+        bezier(pts, Vector2(w * 0.5f, l * 0.02f), Vector2(w * 0.5f, l * 0.36f), Vector2(w * 0.36f, l / 2), 4)
+        pts += Vector2(-w * 0.36f, l / 2)
+        bezier(pts, Vector2(-w * 0.36f, l / 2), Vector2(-w * 0.5f, l * 0.36f), Vector2(-w * 0.5f, l * 0.02f), 4)
+        bezier(pts, Vector2(-w * 0.5f, l * 0.02f), Vector2(-w * 0.4f, -l * 0.36f), bow, 7)
         return pts
     }
 
@@ -431,21 +470,24 @@ object Models {
         g.mat(if (hl >= 5) Shaders.METAL else Shaders.HULL)
         g.loft(hull(L, W), listOf(floatArrayOf(top - H, 0.5f, 0.93f), floatArrayOf(0.06f, 0.86f, 0.985f)), intArrayOf(bottomCol))
         g.mat(Shaders.HULL)
-        g.loft(hull(L, W), listOf(floatArrayOf(0.06f, 0.86f, 0.985f), floatArrayOf(top - H * 0.2f, 1f, 1f), floatArrayOf(top, 1f, 1f)), intArrayOf(look.hull, look.hull))
-        g.extrude(hull(L * 0.999f, W * 0.999f), top - 0.05f, top, deck, look.hull)
+        // над водой борта сначала чуть расходятся, а к палубе сходятся внутрь (завал бортов)
+        g.loft(hull(L, W), listOf(floatArrayOf(0.06f, 0.86f, 0.985f), floatArrayOf(top - H * 0.3f, 1.02f, 1f), floatArrayOf(top, TUMBLE, 0.99f)), intArrayOf(look.hull, look.hull))
         // ватерлиния и пояса обшивки
         g.extrude(hull(L * 0.9f * 1.0f + L * 0.0f, W * 0.875f), 0.04f, 0.18f, if (hl >= 5) 0xe0b060 else 0xe8e2d0, if (hl >= 5) 0xe0b060 else 0xe8e2d0)
         g.extrude(hull(L * 1.008f, W * 1.008f), top - H * 0.55f, top - H * 0.42f, dark, dark)
         g.extrude(hull(L * 1.03f, W * 1.03f), top - 0.7f, top - 0.25f, look.trim, look.trim)
-        g.extrude(hull(L, W), top, top + 0.6f, look.hull, look.hull)
+        // палуба и фальшборт с седловатостью: линия борта плавно поднимается к носу и корме
         g.mat(-1)
-        g.extrude(hull(L * 0.92f, W * 0.86f), top + 0.02f, top + 0.63f, deck, deck)
+        g.extrude(hull(L * 0.99f, W * TUMBLE), top - 0.02f, top + 0.63f, deck, look.hull)
+        g.mat(Shaders.HULL)
+        val sheer = L / 18f
+        g.bulwark(hull(L * 0.99f, W * TUMBLE), top + 0.55f, 0.6f, 1.15f * sheer, 0.8f * sheer, L * 0.495f, look.hull, darker(look.hull, 0.8f), look.trim)
+        // форштевень-водорез: нос наклонён вперёд
+        g.color(look.hull).beam(Vector3(0f, top - H * 0.95f, -L * 0.47f), Vector3(0f, top + 0.6f + 1.15f * sheer, -L * 0.535f), 0.24f)
         // бак и ют — приподнятые палубы на носу и корме (линия борта поднимается к концам)
         g.mat(Shaders.HULL)
-        g.extrude(hullPart(L, W, -L * 0.47f, -L * 0.3f), top + 0.6f, top + 1.15f, deck, look.hull)
-        g.extrude(hullPart(L, W, L * 0.22f, L * 0.5f), top + 0.6f, top + 1.35f, deck, look.hull)
-        g.color(look.trim)
-        g.extrude(hullPart(L * 1.01f, W * 1.01f, L * 0.22f, L * 0.5f), top + 1.3f, top + 1.45f, look.trim, look.trim)
+        g.extrude(hullPart(L, W * TUMBLE * 0.95f, -L * 0.47f, -L * 0.3f), top + 0.6f, top + 1.15f, deck, look.hull)
+        g.extrude(hullPart(L, W * TUMBLE * 0.95f, L * 0.22f, L * 0.49f), top + 0.6f, top + 1.35f, deck, look.hull)
         g.mat(-1)
 
         // ---------- Пушечные порты (с крышками с 1-го уровня «Пушек») ----------
@@ -666,7 +708,7 @@ object Models {
         }
         if (hl >= 5) {
             // золочёная кромка борта
-            g.extrude(hull(L * 1.035f, W * 1.035f), top + 0.05f, top + 0.2f, gold, gold)
+            g.extrude(hull(L * 1.0f, W * (TUMBLE + 0.035f)), top - 0.05f, top + 0.12f, gold, gold)
         }
 
         // ---------- Боеприпасы по уровню «Заряжание» ----------
@@ -865,12 +907,27 @@ object Models {
 
     /** Полуширина корпуса на расстоянии z от центра (для портов и попаданий). */
     fun halfWidthAt(L: Float, W: Float, z: Float): Float {
-        val t = (z / L + 0.5f).coerceIn(0f, 1f)
-        return when {
-            t < 0.58f -> W * 0.5f * Math.sqrt((t / 0.58f).toDouble()).toFloat()
-            else -> W * (0.5f - 0.08f * (t - 0.58f) / 0.42f)
+        val t = (z / L + 0.5f).coerceIn(0f, 1f) * (HW_N - 1)
+        val i = t.toInt().coerceIn(0, HW_N - 2); val f = t - i
+        return W * (hwTable[i] * (1 - f) + hwTable[i + 1] * f)
+    }
+
+    private const val HW_N = 49
+    /** Полуширина контура корпуса (при ширине 1 и длине 1) от носа к корме. */
+    private val hwTable: FloatArray by lazy {
+        val right = hull(1f, 1f).filter { it.x >= 0f }.sortedBy { it.y }
+        FloatArray(HW_N) { k ->
+            val zz = -0.5f + k / (HW_N - 1f)
+            val j = right.indexOfFirst { it.y >= zz }
+            when {
+                j <= 0 -> right.first().x
+                else -> { val a = right[j - 1]; val b = right[j]; val f = if (b.y - a.y > 1e-5f) (zz - a.y) / (b.y - a.y) else 0f; a.x + (b.x - a.x) * f }
+            }
         }
     }
+
+    /** Ширина корпуса у палубы относительно ватерлинии (завал бортов). */
+    private const val TUMBLE = 0.93f
 
     private fun darker(c: Int, k: Float): Int {
         val r = ((c shr 16 and 255) * k).toInt(); val gg = ((c shr 8 and 255) * k).toInt(); val b = ((c and 255) * k).toInt()
