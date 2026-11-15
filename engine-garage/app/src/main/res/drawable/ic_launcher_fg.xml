@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- поршень -->
+    <path android:fillColor="#FFF2A93B" android:pathData="M38,30 h32 a4,4 0 0 1 4,4 v18 h-40 v-18 a4,4 0 0 1 4,-4z"/>
+    <path android:fillColor="#FF15171B" android:pathData="M34,36 h40 v3 h-40z M34,42 h40 v3 h-40z"/>
+    <!-- шатун -->
+    <path android:fillColor="#FFC9CED6" android:pathData="M49,52 h10 l4,26 h-18z"/>
+    <path android:fillColor="#FFC9CED6" android:pathData="M54,72 m-10,0 a10,10 0 1 0 20,0 a10,10 0 1 0 -20,0"/>
+    <path android:fillColor="#FF15171B" android:pathData="M54,72 m-4,0 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0"/>
+</vector>

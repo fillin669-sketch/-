@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Мотор-Гараж</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand">МОТОР<span>·</span>ГАРАЖ</div>
+    <div class="money" id="money">₽ 0</div>
+  </header>
+
+  <main id="main">
+    <!-- ДВИГАТЕЛЬ -->
+    <section class="tab" id="tab-engine">
+      <div class="sticky-view">
+        <div class="viewer">
+          <canvas id="cvEngine"></canvas>
+          <div class="view-btns">
+            <button class="seg" data-view="front">Разрез спереди</button>
+            <button class="seg" data-view="side">Сбоку</button>
+          </div>
+          <div class="eng-name" id="engName"></div>
+        </div>
+        <div class="statsbar" id="engStats"></div>
+      </div>
+      <div class="pad">
+        <div class="card calc">
+          <div class="card-h"><span>Расчётная кривая (полный газ)</span><span class="legend"><i class="lg-nm"></i>Н·м <i class="lg-hp"></i>л.с.</span></div>
+          <canvas id="cvCalc"></canvas>
+          <div id="warns"></div>
+        </div>
+        <div id="engSections"></div>
+        <div class="spacer"></div>
+      </div>
+      <div class="buildbar" id="buildBar" hidden></div>
+    </section>
+
+    <!-- СТЕНД -->
+    <section class="tab" id="tab-dyno" hidden>
+      <div class="dyno-view">
+        <canvas id="cvDyno"></canvas>
+        <div class="dyno-alert" id="dynoAlert"></div>
+        <div class="health"><span>Ресурс</span><div class="hbar"><i id="healthBar"></i></div><b id="healthTxt">100%</b></div>
+        <div class="dyno-viewbtn"><button class="seg small" id="dynoView">Вид</button></div>
+      </div>
+      <canvas id="cvGauges"></canvas>
+      <div class="pad dyno-pad">
+        <div class="row btnrow">
+          <button class="btn big" id="btnStart">Запуск</button>
+          <button class="btn big accent" id="btnSweep">Замер мощности</button>
+        </div>
+        <div class="row btnrow">
+          <button class="btn" id="btnAuto">Автонастройка ЭБУ</button>
+          <button class="btn nos" id="btnNos" hidden>Закись (держать)</button>
+        </div>
+        <div class="field">
+          <div class="f-h"><label for="loadRange">Нагрузка тормоза стенда</label><b id="loadVal">0%</b></div>
+          <input type="range" id="loadRange" min="0" max="100" step="5" value="0">
+          <div class="hint">С нагрузкой обороты держатся и турбина успевает раскрутиться</div>
+        </div>
+        <div class="card">
+          <div class="card-h"><span>Замер на стенде</span><span class="legend"><i class="lg-nm"></i>Н·м <i class="lg-hp"></i>л.с. <i class="lg-old"></i>прошлый</span></div>
+          <canvas id="cvDynoGraph"></canvas>
+          <div class="dyno-res" id="dynoRes">Нажмите «Замер мощности»: стенд прогонит двигатель на полном газу от 1500 об/мин до отсечки.</div>
+        </div>
+        <div class="card">
+          <div class="card-h"><span>Настройка ЭБУ на ходу</span></div>
+          <div id="dynoTune"></div>
+        </div>
+        <div class="spacer tall"></div>
+      </div>
+      <div class="pedal-wrap" id="pedalWrap">
+        <div class="pedal" id="pedal"><div class="pedal-plate"><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="pedal-lbl" id="pedalLbl">ГАЗ 0%</div>
+      </div>
+    </section>
+
+    <!-- МАШИНА -->
+    <section class="tab" id="tab-car" hidden>
+      <div class="sticky-view">
+        <div class="viewer car">
+          <canvas id="cvCar"></canvas>
+          <div class="eng-name" id="carName"></div>
+        </div>
+        <div class="statsbar" id="carStats"></div>
+      </div>
+      <div class="pad">
+        <div class="card">
+          <div class="card-h"><span>Двигатель под капотом</span></div>
+          <div id="carEngine"></div>
+        </div>
+        <div class="card" id="carPerf"></div>
+        <div id="carSections"></div>
+        <div class="spacer"></div>
+      </div>
+      <div class="buildbar" id="carBuildBar" hidden></div>
+    </section>
+
+    <!-- ЗАЕЗД -->
+    <section class="tab" id="tab-race" hidden>
+      <div class="pad">
+        <h2 class="h">Заезды на 402 метра</h2>
+        <p class="lead">Держите газ на старте, отпустите обороты до зелёного, переключайтесь на отсечке. Победа приносит деньги, а следующий соперник открывается после победы над предыдущим.</p>
+        <div id="raceCar"></div>
+        <div id="rivals"></div>
+        <div class="spacer"></div>
+      </div>
+    </section>
+
+    <!-- ГАРАЖ -->
+    <section class="tab" id="tab-garage" hidden>
+      <div class="pad">
+        <h2 class="h">Двигатели</h2>
+        <div id="engList"></div>
+        <button class="btn wide" id="btnNewEngine">+ Новый двигатель</button>
+        <h2 class="h">Машины</h2>
+        <div id="carList"></div>
+        <button class="btn wide" id="btnNewCar">+ Новая машина</button>
+        <h2 class="h">Заказы</h2>
+        <p class="lead">Заказ выполняется сам после замера на стенде, если двигатель подходит.</p>
+        <div id="contracts"></div>
+        <h2 class="h">Настройки</h2>
+        <div class="card" id="settings"></div>
+        <div class="spacer"></div>
+      </div>
+    </section>
+  </main>
+
+  <nav id="tabs">
+    <button data-tab="engine" class="on"><svg viewBox="0 0 24 24"><path d="M7 5h6v2h-2v2h4l2 2h2v-2h2v8h-2v-2h-2l-2 3H9l-2-2H5v2H3V9h2v2h2V9h2V7H7z"/></svg><span>Двигатель</span></button>
+    <button data-tab="dyno"><svg viewBox="0 0 24 24"><path d="M12 4a9 9 0 0 0-9 9c0 2.4.9 4.6 2.5 6.2l1.4-1.4A7 7 0 1 1 19 13c0 1.9-.8 3.7-2 5l1.4 1.4A9 9 0 0 0 12 4zm4.2 4.4-5 4.2a1.6 1.6 0 1 0 2.2 2.2z"/></svg><span>Стенд</span></button>
+    <button data-tab="car"><svg viewBox="0 0 24 24"><path d="M5 11l2-5h10l2 5h1a1 1 0 0 1 1 1v5h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-5a1 1 0 0 1 1-1zm2.3 0h9.4l-1.2-3h-7z"/></svg><span>Машина</span></button>
+    <button data-tab="race"><svg viewBox="0 0 24 24"><path d="M5 3h2v18H5zm3 1h11l-2 4 2 4H8z"/></svg><span>Заезд</span></button>
+    <button data-tab="garage"><svg viewBox="0 0 24 24"><path d="M12 3l9 5v13h-3v-9H6v9H3V8zm-4 11h8v2H8zm0 3h8v2H8z"/></svg><span>Гараж</span></button>
+  </nav>
+
+  <!-- экран гонки -->
+  <div id="raceScreen" hidden>
+    <canvas id="cvRace"></canvas>
+    <canvas id="cvRaceHud"></canvas>
+    <button class="btn shift" id="btnShift">ПЕРЕДАЧА +</button>
+    <button class="btn nos racenos" id="btnRaceNos" hidden>ЗАКИСЬ</button>
+    <button class="btn ghost raceexit" id="btnRaceExit">Выйти</button>
+    <label class="autoshift"><input type="checkbox" id="chkAuto"> Автопереключение</label>
+    <div class="pedal-wrap race" id="racePedalWrap">
+      <div class="pedal" id="racePedal"><div class="pedal-plate"><i></i><i></i><i></i><i></i><i></i></div></div>
+    </div>
+  </div>
+
+  <div id="modal" hidden><div class="modal-box" id="modalBox"></div></div>
+  <div id="toast"></div>
+</div>
+<script src="js/sim.js"></script>
+<script src="js/data.js"></script>
+<script src="js/render.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

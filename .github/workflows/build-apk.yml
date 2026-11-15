@@ -2,6 +2,10 @@ name: Сборка APK
 
 on:
   push:
+    # игра «Мотор-Гараж» собирается своим workflow (engine-garage.yml)
+    paths-ignore:
+      - 'engine-garage/**'
+      - '.github/workflows/engine-garage.yml'
   workflow_dispatch:
 
 permissions:
