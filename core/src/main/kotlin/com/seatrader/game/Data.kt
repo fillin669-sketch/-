@@ -337,10 +337,15 @@ val ABILITIES = listOf(
     Ability("mortar", "Мортира", "Тяжёлый снаряд по навесной дуге в ближайшего врага, урон по площади.", 10f, 0f),
     Ability("rockets", "Ракеты", "Залп из 6 зажигательных ракет вперёд.", 14f, 0f),
     Ability("mines", "Мины", "Сбрасывает 3 мины за кормой.", 18f, 0f),
+    Ability("barrels", "Огненные бочки", "Сбрасывает 4 горящие бочки за кормой: поджигают и разрывают преследователей.", 16f, 0f),
 )
+/** Блок «Укрыться!»: время действия, перезарядка и множитель урона. */
+const val BRACE_TIME = 1.6f
+const val BRACE_CD = 12f
+const val BRACE_MUL = 0.3f
 
 /** Оружие, которое нужно купить в арсенале (индексы в ABILITIES). */
-val WEAPON_PRICES = mapOf(3 to Pair(2500, 0), 4 to Pair(4000, 5), 5 to Pair(3000, 3))
+val WEAPON_PRICES = mapOf(3 to Pair(2500, 0), 4 to Pair(4000, 5), 5 to Pair(3000, 3), 6 to Pair(3500, 2))
 
 // ---------- Наёмники ----------
 class Mercenary(val id: String, val name: String, val price: Int, val enemyLook: String,

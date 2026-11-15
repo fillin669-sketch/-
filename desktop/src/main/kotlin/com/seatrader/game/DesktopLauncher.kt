@@ -352,6 +352,55 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        if (System.getenv("SEA_AC4") != null) {
+            val p = g.player
+            fun foes() = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking }
+            fun err() = Gdx.app.getPreferences("seawolves").getString("lastError", "нет")
+            when (f) {
+                3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size }
+                10 -> { tp(400f, -400f); p!!.h = 0f; p.desired = 0f; p.hp = p.maxHp * 5; p.maxHp *= 5; g.systems.ownedWeapons += 6
+                    featE = g.spawnEnemy("sloop", p.x, p.z + 45f).also { it.h = 0f; it.desired = 0f } }
+                11 -> { featE!!.x = p!!.x; featE!!.z = p.z + 45f }
+                40 -> shot("ac0_hud")
+                150 -> { log.append("корма: шлюп сзади hp ${featE!!.hp.toInt()}/${featE!!.maxHp.toInt()}\n"); clearArea()
+                    featE = g.spawnEnemy("brig", p!!.x + 20f, p.z - 32f).also { it.h = 0f; it.desired = 0f; it.hp = it.maxHp * 0.5f; it.vx = 0f; it.vz = 0f } }
+                in 151..400 -> { featE?.let { if (!it.sinking) { it.x = p!!.x + 20f; it.z = p.z - 32f; it.vx = 0f; it.vz = 0f; it.h = 0f } }; p!!.reload[0] = 5f; p.reload[1] = 5f }
+            }
+            when (f) {
+                160 -> { val e = featE!!; log.append("слабое место: weakT=${"%.1f".format(e.weakT)} сторона=${e.weakSide} lf=${"%.1f".format(e.weakLf)}\n"); e.weakSide = -1; e.weakT = 6f
+                    e.ai = AiState.ATTACK; e.reload[0] = 0.5f; e.reload[1] = 0.5f }
+                161 -> { featE!!.reload[0] = 0.5f; featE!!.reload[1] = 0.5f }
+                162 -> { g.toastT = 0f; log.append("залп: ai=${featE!!.ai} reload=${featE!!.reload.joinToString { "%.2f".format(it) }} range=${featE!!.stats.range}\n"); shot("ac1_weak_volley") }
+                170 -> { val e = featE!!; e.reload[0] = 9f; e.reload[1] = 9f; e.ai = AiState.WANDER
+                    val wx = e.x + kotlin.math.sin(e.h) * e.weakLf + kotlin.math.cos(e.h) * e.weakSide * (e.width * 0.5f)
+                    val wz = e.z - kotlin.math.cos(e.h) * e.weakLf
+                    storeT = e.hp.toInt()
+                    g.launchBall(p, Faction.PLAYER, p!!.x + 6f, p.y + 3f, p.z, wx, wz, 0f, 0f, 20f, Ammo.NORMAL, 0f, 0f) }
+                230 -> { val e = featE!!; log.append("выстрел в слабое место (урон 20): hp ${storeT} → ${e.hp.toInt()}, weakT=${"%.1f".format(e.weakT)}\n") }
+                240 -> { val h0 = p!!.hp; g.tryBrace(); g.damage(p, 100f, featE, false); log.append("блок: урон 100 → ${(h0 - p.hp).toInt()} (braceCd=${g.braceCd.toInt()})\n") }
+                300 -> { val h0 = p!!.hp; g.damage(p, 100f, featE, false); log.append("без блока: урон 100 → ${(h0 - p.hp).toInt()}\n") }
+                310 -> { featE!!.x = p!!.x; featE!!.z = p.z + 18f; g.abilityCd[6] = 0f; storeT = featE!!.hp.toInt(); g.useAbility(6); log.append("бочек: ${g.systems.barrels.size}\n") }
+                311 -> { featE!!.x = p!!.x + 2f; featE!!.z = p.z + 18f }
+                320 -> shot("ac2_barrels")
+            }
+            if (f in 312..400) featE?.let { if (!it.sinking) { it.x = p!!.x + 2f; it.z = p.z + 18f; it.vx = 0f; it.vz = 0f } }
+            when (f) {
+                400 -> { val e = featE!!; log.append("бочки: hp ${storeT} → ${e.hp.toInt()}, горит=${e.burnT > 0}, осталось бочек ${g.systems.barrels.size}\n")
+                    clearArea(); featE = g.spawnEnemy("frigate", p!!.x + 30f, p.z - 50f).also { it.vx = 0f; it.vz = 0f } }
+                401 -> { featE!!.x = p!!.x + 30f; featE!!.z = p.z - 50f; featE!!.vx = 0f; featE!!.vz = 0f }
+                405 -> { val e = featE!!; val sp = g.toScreen(e.x, e.y + e.deckTop + 1f, e.z)
+                    if (sp != null) { val sx = sp.x; val sy = sp.y; touch("down", sx, g.hDp - sy); touch("up", sx, g.hDp - sy) }
+                    log.append("подзорная труба: ${g.scopeShip?.name} ур.${g.scopeShip?.lvl}\n") }
+                406 -> { featE!!.x = p!!.x + 30f; featE!!.z = p.z - 50f }
+                412 -> shot("ac3_scope")
+                420 -> { g.adv.wanted = 2.2f; g.menus.showBoarding(featE!!); g.menus.boardingResult(featE!!, true) }
+                430 -> shot("ac4_board")
+                431 -> { val h0 = p!!.hp; p.hp = p.maxHp * 0.3f; press("Доски"); log.append("доски: hp ${(p.maxHp * 0.3f).toInt()} → ${p.hp.toInt()} (из ${p.maxHp.toInt()}), state=${g.state}\n") }
+                440 -> { featE = g.spawnEnemy("sloop", p!!.x + 30f, p.z - 50f); g.menus.showBoarding(featE!!); g.menus.boardingResult(featE!!, true); press("Сдать"); log.append("сдать: розыск ${"%.1f".format(g.adv.wanted)} звёзд ${g.adv.stars}\n") }
+                450 -> { log.append("ошибка=${err()}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_CME") != null) {
             when (f) {
                 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> g.menus.close()

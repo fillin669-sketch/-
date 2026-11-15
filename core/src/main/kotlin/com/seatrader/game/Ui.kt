@@ -53,6 +53,8 @@ class Ui(val scale: Float) : Disposable {
     val mortarIcon: TextureRegion
     val rocketIcon: TextureRegion
     val mineIcon: TextureRegion
+    val barrelIcon: TextureRegion
+    val shieldIcon: TextureRegion
     val aimIcon: TextureRegion
     val swordsIcon: TextureRegion
     val squareIcon: TextureRegion
@@ -64,7 +66,7 @@ class Ui(val scale: Float) : Disposable {
     init {
         val gen = FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans-Bold.ttf"))
         val chars = FreeTypeFontGenerator.DEFAULT_CHARS +
-            "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№·×☠⚓⚔★☆✓▶↺⚙❤⬆✕♪♫⚑⌂≈▲▼✎⚐⚖✦→←↑↓•"
+            "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№·×☠⚓⚔★☆✓▶↺⚙❤⬆✕♪♫⚑⌂≈▲▼✎⚐⚖✦→←↑↓•−"
         fun font(dp: Float, border: Float): BitmapFont {
             val p = FreeTypeFontGenerator.FreeTypeFontParameter().apply {
                 size = (dp * scale).toInt()
@@ -191,6 +193,18 @@ class Ui(val scale: Float) : Disposable {
             p.setColor(rgb(0x90a4ae)); p.fillRectangle(29, 4, 6, 56); p.fillRectangle(4, 29, 56, 6)
             p.setColor(rgb(0x263238)); p.fillCircle(32, 32, 17)
             p.setColor(rgb(0xe53935)); p.fillCircle(32, 32, 5)
+        })
+        barrelIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x6d4c2f)); p.fillRectangle(16, 14, 32, 42); p.fillCircle(32, 14, 16); p.fillCircle(32, 56, 6)
+            p.setColor(rgb(0x8d6e4a)); p.fillRectangle(22, 14, 6, 42)
+            p.setColor(rgb(0x37474f)); p.fillRectangle(14, 24, 36, 4); p.fillRectangle(14, 44, 36, 4)
+            p.setColor(rgb(0xff6d00)); p.fillCircle(32, 8, 7); p.fillTriangle(25, 8, 39, 8, 32, 0)
+            p.setColor(rgb(0xffeb3b)); p.fillCircle(32, 9, 3)
+        })
+        shieldIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x90a4ae)); p.fillRectangle(10, 6, 44, 28); p.fillTriangle(10, 34, 54, 34, 32, 60)
+            p.setColor(rgb(0x1565c0)); p.fillRectangle(15, 11, 34, 23); p.fillTriangle(15, 34, 49, 34, 32, 53)
+            p.setColor(rgb(0xffc93c)); p.fillRectangle(29, 13, 6, 34); p.fillRectangle(19, 22, 26, 6)
         })
         aimIcon = region(pix(64, 64) { p ->
             p.setColor(Color.WHITE)

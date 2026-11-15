@@ -1237,6 +1237,16 @@ object Models {
         return g.build()
     }
 
+    fun fireBarrel(): Model {
+        val g = Geo()
+        g.color(0x6d4c2f).push().at(0f, 0.6f, 0f).cylinder(0.75f, 0.75f, 1.5f, 10).pop()
+        g.color(0x8d6e4a).push().at(0f, 0.6f, 0f).cylinder(0.85f, 0.85f, 0.7f, 10).pop()
+        g.color(0x37474f)
+        for (y in listOf(0.05f, 1.15f)) g.push().at(0f, y, 0f).cylinder(0.8f, 0.8f, 0.1f, 10).pop()
+        g.color(0xff6d00).push().at(0f, 1.45f, 0f).cylinder(0.5f, 0.5f, 0.12f, 8).pop()
+        return g.build()
+    }
+
     fun wreck(): Model {
         val g = Geo()
         g.color(0x4e342e).push().at(0f, 2f, 0f).rotZ(18f).cylinder(0.3f, 0.35f, 8f, 5).pop()

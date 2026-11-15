@@ -1,6 +1,7 @@
 package com.seatrader.game
 
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.math.MathUtils
@@ -8,6 +9,7 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -20,7 +22,7 @@ class Hud(private val g: SeaGame) {
     private val ui get() = g.ui
     private val cTmp = Color()
     private val cTmp2 = Color()
-    private val abilityIcons by lazy { listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon) }
+    private val abilityIcons by lazy { listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon) }
     private var visCache: List<Int> = emptyList()
     private var visKey = -1
     private fun c(hex: Int, a: Float = 1f): Color = cTmp.set(rgb(hex, a))
@@ -81,6 +83,93 @@ class Hud(private val g: SeaGame) {
         val right = !g.leftHanded
         return if (landscape) (if (right) g.wDp - 50f else 50f) to (g.safeBottom + 215f)
         else (if (right) g.wDp - 122f else 122f) to (g.safeBottom + 100f)
+    }
+
+    /** «Укрыться!» — между автоогнём и способностями (в альбомной — над автоогнём). */
+    fun bracePos(): Pair<Float, Float> {
+        val right = !g.leftHanded
+        return if (landscape) (if (right) g.wDp - 50f else 50f) to (g.safeBottom + 278f)
+        else (if (right) g.wDp - 186f else 186f) to (g.safeBottom + 96f)
+    }
+
+    private var volleyHintShown = false
+    private var scopeHintShown = false
+
+    /** Метки над кораблями: слабые места, «!» перед вражеским залпом, карточка подзорной трубы. */
+    private fun drawShipMarks(b: Batch, p: Ship, dt: Float) {
+        for (s in g.ships) {
+            if (s.faction != Faction.PIRATE || s.sinking || s.surrendered) continue
+            val dx = p.x - s.x; val dz = p.z - s.z; val d = hypot(dx, dz)
+            if (d > 260f) continue
+            if (s.weakT > 0f) {
+                val half = Models.halfWidthAt(s.len, s.width, -s.weakLf)
+                val wx = s.x + sin(s.h) * s.weakLf + cos(s.h) * s.weakSide * (half + 0.3f)
+                val wz = s.z - cos(s.h) * s.weakLf + sin(s.h) * s.weakSide * (half + 0.3f)
+                val sp = g.toScreen(wx, s.y + s.deckTop * 0.55f, wz)
+                if (sp != null) {
+                    val sx = sp.x; val sy = sp.y
+                    val pulse = 1f + sin(g.now * 8f) * 0.18f
+                    val a = if (s.weakT < 1.5f) s.weakT / 1.5f else 1f
+                    ui.icon(b, ui.ring, sx, sy, 26f * pulse, 26f * pulse, 0f, c(0xff1744, a))
+                    ui.icon(b, ui.ring, sx, sy, 16f * pulse, 16f * pulse, 0f, c(0xffc93c, a))
+                    ui.icon(b, ui.disc, sx, sy, 6f, 6f, 0f, c(0xff1744, a))
+                }
+            }
+            // враг вот-вот даст залп по игроку
+            if (s.ai == AiState.ATTACK && d < s.stats.range && d > 2f) {
+                val lr = dx * cos(s.h) + dz * sin(s.h)
+                val si = if (lr > 0) 1 else 0
+                if (abs(lr) / d > 0.42f && s.reload[si] in 0f..0.9f) {
+                    val sp = g.toScreen(s.x, s.y + s.mastH + 3f, s.z)
+                    if (sp != null) {
+                        val sx = sp.x; val sy = sp.y
+                        val pulse = 1f + sin(g.now * 14f) * 0.12f
+                        ui.icon(b, ui.disc, sx, sy, 30f * pulse, 30f * pulse, 0f, c(0xd50000, 0.9f))
+                        ui.text(b, ui.big, "!", sx - 15, sy + 13, Align.center, 30f)
+                        if (!volleyHintShown && g.braceCd <= 0f) {
+                            volleyHintShown = true
+                            g.toast("Красный «!» — враг готовит залп по вам.\nЖмите щит «Укрыться!», чтобы снизить урон", 3.5f)
+                        }
+                    }
+                }
+            }
+        }
+        // подзорная труба: карточка над выбранным кораблём
+        val t = g.scopeShip
+        if (t != null && g.scopeT > 0f) {
+            g.scopeT -= dt
+            if (t.sinking || !g.ships.contains(t)) { g.scopeShip = null; return }
+            val sp = g.toScreen(t.x, t.y + t.mastH + 6f, t.z) ?: return
+            val w = 262f; val h = 116f
+            // карточка не заходит на верхнюю панель (валюта, задание, мини-карта)
+            val topLimit = g.hDp - g.safeTop - questHeight - 120f - h
+            var y = sp.y + 14f
+            if (y > topLimit) y = (g.toScreen(t.x, t.y, t.z)?.y ?: sp.y) - h - 30f
+            y = y.coerceIn(g.safeBottom + 10f, topLimit)
+            val x = (sp.x - w / 2).coerceIn(6f, g.wDp - w - 6f)
+            val a = min(1f, g.scopeT / 0.4f)
+            val mine = p.maxHp * p.stats.dmg * p.stats.cannons
+            val theirs = t.maxHp * t.stats.dmg * t.stats.cannons
+            val k = theirs / mine.coerceAtLeast(1f)
+            val (danger, dc) = when {
+                t.faction == Faction.NEUTRAL -> "мирное судно" to 0x90caf9
+                k < 0.6f -> "лёгкая цель" to 0x81c784
+                k < 1.3f -> "равный бой" to 0xffd54f
+                else -> "опасно!" to 0xff5252
+            }
+            ui.round(b, x, y, w, h, c(0x0a141e, 0.85f * a))
+            ui.round(b, x, y + h - 4, w, 4f, c(dc, a))
+            ui.text(b, ui.mid, t.name, x + 10, y + h - 10, Align.left, w - 20, c = c(0xffffff, a))
+            ui.text(b, ui.small, "Ур. ${t.lvl} · $danger", x + 10, y + h - 36, Align.left, w - 20, c = c(dc, a))
+            ui.text(b, ui.small, "Корпус ${t.hp.roundToInt()}/${t.maxHp.roundToInt()} · пушек ${t.stats.cannons}", x + 10, y + 58, Align.left, w - 20, c = c(0xcfd8dc, a))
+            ui.round(b, x + 10, y + 32, w - 20, 7f, c(0x37474f, a))
+            ui.round(b, x + 10, y + 32, (w - 20) * (t.hp / t.maxHp).coerceIn(0f, 1f), 7f, c(0xe53935, a))
+            val loot = if (t.coinsMax > 0) "${t.coinsMin}–${t.coinsMax}" else "пусто"
+            ui.icon(b, ui.coin, x + 18, y + 14, 14f, 14f, 0f, c(0xffffff, a))
+            val lw = ui.measure(ui.small, "Груз: $loot")
+            ui.text(b, ui.small, "Груз: $loot", x + 30, y + 21, Align.left, w - 40, c = c(0xffe082, a))
+            if (t.gems > 0f) ui.icon(b, ui.gem, x + 40 + lw, y + 14, 14f, 12f, 0f, c(0xffffff, a))
+        }
     }
 
     private val mapR = 50f
@@ -354,6 +443,16 @@ class Hud(private val g: SeaGame) {
             }
             if (on && i < 2) ui.text(b, ui.small, "${kotlin.math.ceil(g.ammoT).toInt()} с", ax - 30, ay - 36, Align.center, 60f, c = rgb(0xffc93c))
         }
+        // Укрыться!
+        run {
+            val (bx3, by3) = bracePos()
+            val on = g.braceT > 0f
+            ui.icon(b, ui.disc, bx3, by3, 48f, 48f, 0f, c(if (on) 0x1565c0 else 0x0a1e32, if (on) 0.9f else 0.5f))
+            ui.icon(b, ui.ring, bx3, by3, 51f, 51f, 0f, if (on) c(0x90caf9) else c(0xffffff, 0.5f))
+            ui.icon(b, ui.shieldIcon, bx3, by3, 30f, 30f, 0f, if (g.braceCd > 0f && !on) c(0xffffff, 0.45f) else Color.WHITE)
+            if (g.braceCd > 0f && !on) ui.pie(b, bx3, by3, 22f, g.braceCd / BRACE_CD, c(0x0a1e32, 0.55f))
+        }
+        if (p != null) drawShipMarks(b, p, dt)
         // Прицел
         val (axx, ayy) = aimPos()
         ui.icon(b, ui.disc, axx, ayy, 74f, 74f, 0f, c(0x0a1e32, if (g.aimActive) 0.75f else 0.5f))

@@ -220,6 +220,12 @@ class SeaGame : ApplicationAdapter() {
 
     // Способности: перезарядка и активные боеприпасы
     val abilityCd = FloatArray(ABILITIES.size)
+    /** Блок «Укрыться!»: сколько ещё действует и перезарядка. */
+    var braceT = 0f
+    var braceCd = 0f
+    /** Подзорная труба: корабль, на который нажали, и сколько ещё видна карточка. */
+    var scopeShip: Ship? = null
+    var scopeT = 0f
     var ammo = Ammo.NORMAL
     var ammoT = 0f
     var tutorialT = 0f
@@ -774,6 +780,7 @@ class SeaGame : ApplicationAdapter() {
             if (hud.pauseHit(x, y)) { sfx.play("click"); openPause(); return true }
             if (dockAt != -1 && hud.dockHit(x, y)) { sfx.play("click"); enterDock(); return true }
             run { val (bx, by) = hud.boostPos(); if (hypot(x - bx, y - by) < 30) { tryBoost(); return true } }
+            run { val (bx, by) = hud.bracePos(); if (hypot(x - bx, y - by) < 27) { tryBrace(); return true } }
             run {
                 val (fx, fy) = hud.autoPos()
                 if (hypot(x - fx, y - fy) < 26) {
@@ -799,6 +806,8 @@ class SeaGame : ApplicationAdapter() {
             if (extras.touch(x, y)) return true
             if (living.touch(x, y)) return true
             if (hud.minimapHit(x, y)) { sfx.play("click"); joyActive = false; menus.showMap(); return true }
+            // подзорная труба: нажатие на корабль показывает его силу и груз (руль при этом работает)
+            scopeAt(x, y)
             if (!joyActive) {
                 joyActive = true; joyPointer = pointer
                 joyOx = x; joyOy = y; joyMag = 0f
@@ -838,6 +847,8 @@ class SeaGame : ApplicationAdapter() {
                 Input.Keys.NUM_4 -> useAbility(3)
                 Input.Keys.NUM_5 -> useAbility(4)
                 Input.Keys.NUM_6 -> useAbility(5)
+                Input.Keys.NUM_7 -> useAbility(6)
+                Input.Keys.Q -> tryBrace()
                 Input.Keys.B -> systems.boardTarget?.let { systems.throwGrapples(it) }
                 Input.Keys.M -> if (state == State.PLAY) menus.showMap()
             }
@@ -854,6 +865,28 @@ class SeaGame : ApplicationAdapter() {
             State.PLAY -> openPause()
             else -> {}
         }
+    }
+
+    fun tryBrace() {
+        val p = player ?: return
+        if (state != State.PLAY || p.sinking || braceCd > 0) return
+        braceT = BRACE_TIME; braceCd = BRACE_CD
+        sfx.play("chain", 0.8f)
+        floatText(p.x, p.y + 6 + p.width * 0.5f, p.z, "Укрыться!", rgb(0x90caf9), ui.mid)
+        systems.vibrate(20)
+    }
+
+    private fun scopeAt(x: Float, y: Float) {
+        var best: Ship? = null; var bd = 46f
+        for (s in ships) {
+            if (s === player || s.sinking || s.faction == Faction.PLAYER) continue
+            val sp = toScreen(s.x, s.y + s.deckTop + 1f, s.z) ?: continue
+            val d = hypot(sp.x - x, sp.y - y)
+            if (d < bd) { bd = d; best = s }
+        }
+        val t = best ?: return
+        scopeShip = t; scopeT = 5f
+        sfx.play("click")
     }
 
     fun tryBoost() {
@@ -882,6 +915,7 @@ class SeaGame : ApplicationAdapter() {
             "mortar" -> fireMortar(p)
             "rockets" -> fireRockets(p)
             "mines" -> { systems.dropMines(p); sfx.play("splash") }
+            "barrels" -> { systems.dropBarrels(p); sfx.play("splash"); sfx.play("fire", 0.6f) }
         }
         // особые ядра сразу перезаряжают пушки
         if (a.id == "fire" || a.id == "chain") { p.reload[0] = min(p.reload[0], 0.2f); p.reload[1] = min(p.reload[1], 0.2f) }
@@ -1345,11 +1379,18 @@ class SeaGame : ApplicationAdapter() {
             val hull = abs(lr) < half + 0.4f && ly < s.deckTop + 1.3f && ly > -1.5f
             val sail = !hull && abs(lr) < s.width * 0.95f && ly > s.deckTop + 1f && ly < s.deckTop + s.mastH
             if (!hull && !sail) continue
-            val mul = when {
+            var mul = when {
                 hull && b.ammo == Ammo.CHAIN -> 0.6f
                 hull -> 1f
                 b.ammo == Ammo.CHAIN -> 1f
                 else -> 0.35f
+            }
+            // слабое место: попадание в отмеченную точку борта — двойной урон
+            if (hull && s.weakT > 0f && b.faction == Faction.PLAYER && (if (lr > 0) 1 else -1) == s.weakSide && abs(lf - s.weakLf) < s.len * 0.2f) {
+                mul *= 2f; s.weakT = 0f
+                fx.explosion(b.x, b.y, b.z, 1.3f)
+                floatText(s.x, s.y + 9 + s.width * 0.5f, s.z, "Слабое место! ×2", rgb(0xffc93c), ui.mid)
+                if (b.owner === player) systems.vibrate(40)
             }
             if (hull && s.holes.size < 8 && Random.nextFloat() < 0.5f) s.holes += Vector3(lf, clamp(ly, -0.3f, s.deckTop - 0.3f), if (lr > 0) half + 0.1f else -half - 0.1f)
             if (sail && s.mastHp.isNotEmpty()) {
@@ -1413,6 +1454,8 @@ class SeaGame : ApplicationAdapter() {
         // корабль на крюках не тонет до абордажной схватки (горение, ядра в полёте)
         if (s === systems.grappleTarget && s.hp - amount < 1f) { s.hp = 1f; return }
         if (s === player) amount *= (1f - extras.armor())
+        val braced = s === player && braceT > 0f
+        if (braced) amount *= BRACE_MUL
         if (s === player && amount > s.maxHp * 0.12f) extras.addMorale(-2f)
         if (s === player && !silent && src != null) adv.onPlayerHit(amount, s)
         if (s.surrendered && src === player && !s.sinking) {
@@ -1432,9 +1475,9 @@ class SeaGame : ApplicationAdapter() {
         if (s.faction == Faction.PLAYER || src?.faction == Faction.PLAYER) combatT = 8f
         if (!silent) {
             val a = max(1, amount.roundToInt())
-            floatText(s.x, s.y + 4 + s.width * 0.5f, s.z, "-$a", if (s === player) rgb(0xff8a80) else Color.WHITE, ui.mid)
+            floatText(s.x, s.y + 4 + s.width * 0.5f, s.z, if (braced) "блок -$a" else "-$a", if (braced) rgb(0x90caf9) else if (s === player) rgb(0xff8a80) else Color.WHITE, ui.mid)
         }
-        if (s === player && !silent) { flash = 0.25f; shake = max(shake, 0.25f); systems.vibrate(30) }
+        if (s === player && !silent && !braced) { flash = 0.25f; shake = max(shake, 0.25f); systems.vibrate(30) }
         if (s.hp <= 0) { s.hp = 0f; sink(s, src, ram) }
     }
 
@@ -2083,6 +2126,7 @@ class SeaGame : ApplicationAdapter() {
 
     /** Пират сильнее и богаче в опасных водах. */
     private fun scaleForZone(s: Ship, lvl: Int) {
+        s.lvl = lvl
         if (lvl <= 1) return
         val k = 1f + 0.15f * (lvl - 1); val dk = 1f + 0.08f * (lvl - 1)
         val st = s.stats
@@ -2390,6 +2434,8 @@ class SeaGame : ApplicationAdapter() {
         checkQuestDone(dt)
         if (aimActive) updateAim()
         for (i in abilityCd.indices) if (abilityCd[i] > 0) abilityCd[i] -= dt
+        if (braceT > 0f) braceT -= dt
+        if (braceCd > 0f) braceCd -= dt
         if (ammoT > 0) { ammoT -= dt; if (ammoT <= 0) ammo = Ammo.NORMAL }
         if (combatT > 0) combatT -= dt
         ships.removeAll { it !== player && it.sinkT > 3.5f }

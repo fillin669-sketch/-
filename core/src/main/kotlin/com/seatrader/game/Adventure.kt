@@ -168,6 +168,7 @@ class Adventure(private val g: SeaGame) {
     private var creatureT = 5f
     private var spoutT = 10f
     private var bowCd = 1f
+    private var sternCd = 2f
 
     private lateinit var whaleModel: Model
     private lateinit var sharkModel: Model
@@ -241,6 +242,8 @@ class Adventure(private val g: SeaGame) {
         updateCreatures(dt, p)
         updateSpouts(dt, p)
         updateBow(dt, p)
+        updateStern(dt, p)
+        updateWeakSpots(dt, p)
         updateHeroes(dt, p)
     }
 
@@ -466,6 +469,47 @@ class Adventure(private val g: SeaGame) {
                 p.stats.dmg * 0.75f, Ammo.NORMAL, k * 0.15f, 0.8f)
         }
         g.sfx.play("cannon", 0.7f)
+    }
+
+    /** Кормовые пушки: тяжёлые ядра по тем, кто висит на хвосте. */
+    private fun updateStern(dt: Float, p: Ship) {
+        sternCd -= dt
+        if (sternCd > 0f || p.sinking || p.inPort || !g.systems.autoFire) return
+        val fx = -sin(p.h); val fz = cos(p.h)
+        var best: Ship? = null; var bd = p.stats.range * 0.9f
+        for (o in g.ships) {
+            if (o.sinking || o.surrendered || o === g.systems.grappleTarget) continue
+            val hostile = o.faction == Faction.PIRATE || (o.faction == Faction.NEUTRAL && o.provoked)
+            if (!hostile) continue
+            if (g.systems.boardable(o) && hypot(o.x - p.x, o.z - p.z) < 45f) continue
+            val dx = o.x - p.x; val dz = o.z - p.z; val d = hypot(dx, dz)
+            if (d < 8f || d > bd) continue
+            if ((dx * fx + dz * fz) / d < 0.88f) continue
+            bd = d; best = o
+        }
+        val t = best ?: return
+        sternCd = 4.5f * reloadSlow()
+        val bx = p.x + fx * p.len * 0.5f; val bz = p.z + fz * p.len * 0.5f
+        for (k in 0..1) {
+            val side = (k - 0.5f) * 1.4f
+            g.launchBall(p, Faction.PLAYER, bx + cos(p.h) * side, p.y + p.deckTop + 0.9f, bz + sin(p.h) * side, t.x, t.z, t.vx, t.vz,
+                p.stats.dmg * 1.1f, Ammo.NORMAL, k * 0.2f, 0.7f)
+        }
+        g.sfx.play("cannon", 0.8f)
+    }
+
+    /** Слабые места: у повреждённого врага на борту загорается мишень (двойной урон). */
+    private fun updateWeakSpots(dt: Float, p: Ship) {
+        for (s in g.ships) {
+            if (s.faction != Faction.PIRATE) continue
+            if (s.sinking || s.surrendered) { s.weakT = 0f; continue }
+            if (s.weakT > 0f) { s.weakT -= dt; continue }
+            s.weakCd -= dt
+            if (s.weakCd > 0f || s.hp > s.maxHp * 0.6f || hypot(s.x - p.x, s.z - p.z) > 220f) continue
+            s.weakT = 6f; s.weakCd = rand(9f, 14f)
+            s.weakSide = if (kotlin.random.Random.nextBoolean()) 1 else -1
+            s.weakLf = rand(-0.28f, 0.28f) * s.len
+        }
     }
 
     // ---------- Капитаны в финальной битве ----------

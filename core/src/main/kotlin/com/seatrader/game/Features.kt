@@ -50,6 +50,7 @@ class Kraken(var x: Float, var z: Float, val head: ModelInstance, val tentacles:
 }
 
 class Mine(var x: Float, var z: Float, val inst: ModelInstance) { var t = 0f }
+class FireBarrel(var x: Float, var z: Float, var vx: Float, var vz: Float, val inst: ModelInstance) { var t = 0f; var fireT = 0f }
 class Bottle(val song: Int, val x: Float, val z: Float, val inst: ModelInstance) { var t = 0f }
 
 /** Туман войны: какие клетки карты капитан уже видел. */
@@ -129,6 +130,7 @@ class Systems(private val g: SeaGame) {
     // ---------- Мир ----------
     val fortresses = ArrayList<Fortress>()
     val mines = ArrayList<Mine>()
+    val barrels = ArrayList<FireBarrel>()
     val wrecks = ArrayList<Wreck>()
     val reefs = ArrayList<ReefRock>()
     var kraken: Kraken? = null
@@ -147,6 +149,7 @@ class Systems(private val g: SeaGame) {
     var boardTarget: Ship? = null
 
     lateinit var mineModel: Model
+    lateinit var barrelModel: Model
     lateinit var wreckModel: Model
     lateinit var reefModel: Model
     lateinit var krakenHeadModel: Model
@@ -154,6 +157,7 @@ class Systems(private val g: SeaGame) {
 
     fun initModels(models: MutableList<Model>) {
         mineModel = Models.mine().also { models += it }
+        barrelModel = Models.fireBarrel().also { models += it }
         wreckModel = Models.wreck().also { models += it }
         reefModel = Models.reefRock().also { models += it }
         krakenHeadModel = Models.krakenHead().also { models += it }
@@ -357,6 +361,7 @@ class Systems(private val g: SeaGame) {
         updateFortresses(dt, p)
         updateKraken(dt, p)
         updateMines(dt)
+        updateBarrels(dt)
         updateReefs(p)
         updateWrecks(dt, p)
         updateMerchants(dt, p)
@@ -610,6 +615,51 @@ class Systems(private val g: SeaGame) {
             val bx = p.x - sin(p.h) * (p.len * 0.6f + 2) + cos(p.h) * i * 4f
             val bz = p.z + cos(p.h) * (p.len * 0.6f + 2) + sin(p.h) * i * 4f
             mines += Mine(bx, bz, ModelInstance(mineModel))
+        }
+    }
+
+    /** Огненные бочки: 4 горящие бочки скатываются с кормы веером. */
+    fun dropBarrels(p: Ship) {
+        val bx = -sin(p.h); val bz = cos(p.h)
+        for (i in 0..3) {
+            val side = (i - 1.5f) * 2.6f
+            val x = p.x + bx * (p.len * 0.55f + 1.5f) + cos(p.h) * side
+            val z = p.z + bz * (p.len * 0.55f + 1.5f) + sin(p.h) * side
+            val spd = 4f + i % 2 * 2f
+            barrels += FireBarrel(x, z, p.vx * 0.25f + bx * spd + cos(p.h) * side * 0.6f, p.vz * 0.25f + bz * spd + sin(p.h) * side * 0.6f,
+                ModelInstance(barrelModel))
+        }
+    }
+
+    private fun updateBarrels(dt: Float) {
+        val it = barrels.iterator()
+        while (it.hasNext()) {
+            val b = it.next()
+            b.t += dt
+            b.x += b.vx * dt; b.z += b.vz * dt
+            b.vx *= (1f - 0.6f * dt); b.vz *= (1f - 0.6f * dt)
+            val wy = waveHeight(b.x, b.z, g.now)
+            b.inst.transform.setToTranslation(b.x, wy + 0.1f, b.z).rotate(Vector3.Z, sin(b.t * 1.7f) * 12f).rotate(Vector3.X, cos(b.t * 1.3f) * 10f)
+            b.fireT -= dt
+            if (b.fireT <= 0f) {
+                b.fireT = if (g.highQuality) 0.06f else 0.12f
+                g.fx.spawn(g.fx.FIRE, b.x + rand(-0.3f, 0.3f), wy + 1.3f, b.z + rand(-0.3f, 0.3f), 0f, rand(1.5f, 3f), 0f, rand(0.5f, 0.9f), 0.4f, Fx.Mode.PUFF)
+            }
+            val hit = b.t > 0.5f && g.ships.any { it.faction == Faction.PIRATE && !it.sinking && hypot(it.x - b.x, it.z - b.z) < it.radius * 0.7f + 3.5f }
+            if (hit || b.t > 45f) {
+                if (hit) {
+                    g.fx.explosion(b.x, 2f, b.z, 1.6f); g.fx.splash(b.x, b.z, 1.4f)
+                    g.sfx.play("fire", g.volumeAt(b.x, b.z))
+                    for (s in g.ships) {
+                        if (s.faction != Faction.PIRATE || s.sinking) continue
+                        val d = hypot(s.x - b.x, s.z - b.z)
+                        if (d > s.radius * 0.7f + 11f) continue
+                        g.damage(s, 40f * gunMul() * (1f - d / 30f), g.player, false)
+                        s.burnT = max(s.burnT, 6f); s.burnDps = max(s.burnDps, 6f * gunMul())
+                    }
+                }
+                it.remove()
+            }
         }
     }
 
@@ -938,6 +988,7 @@ class Systems(private val g: SeaGame) {
     fun render(batch: ModelBatch, env: Environment, lookX: Float, lookZ: Float) {
         for (f in fortresses) if (hypot(f.x - lookX, f.z - lookZ) < 600) batch.render(if (f.alive) f.inst else f.ruins, env)
         for (m in mines) batch.render(m.inst, env)
+        for (b in barrels) batch.render(b.inst, env)
         val p = g.player
         for (r in reefs) if (p != null && hypot(r.x - p.x, r.z - p.z) < 170) batch.render(r.inst, env)
         for (w in wrecks) if (hypot(w.x - lookX, w.z - lookZ) < 500) batch.render(w.inst, env)

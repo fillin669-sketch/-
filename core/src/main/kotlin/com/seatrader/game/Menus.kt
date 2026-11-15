@@ -659,7 +659,7 @@ class Menus(private val g: SeaGame) {
     }
 
     // ===================== Арсенал =====================
-    private val weaponIcons get() = listOf(ui.mortarIcon, ui.rocketIcon, ui.mineIcon)
+    private val weaponIcons get() = listOf(ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon)
 
     private fun arsenalCards(content: Table) {
         val head = card()
@@ -1484,7 +1484,7 @@ class Menus(private val g: SeaGame) {
         build()
     }
 
-    private fun boardingResult(target: Ship, win: Boolean) {
+    fun boardingResult(target: Ship, win: Boolean) {
         stage.clear()
         val root = overlay()
         val panel = panelTable()
@@ -1535,6 +1535,34 @@ class Menus(private val g: SeaGame) {
                 }
             }
             panel.add(loot).growX().height(52f).row()
+            // как в «Чёрном флаге»: доски на ремонт или сдать корабль властям ради снижения розыска
+            if (p != null) {
+                val heal = (p.maxHp * 0.4f).roundToInt()
+                val fix = ui.button("Доски на ремонт +$heal", 0x6d4c41, 0x4e342e, ui.mid).also {
+                    it.onClick {
+                        p.hp = min(p.maxHp, p.hp + p.maxHp * 0.4f); p.holes.clear(); p.burnT = 0f
+                        if (p.brokenMasts > 0) { p.brokenMasts = 0; for (i in p.mastHp.indices) p.mastHp[i] = p.maxHp * 0.18f; for (n in p.sails) n.scale.set(1f, 1f, 1f) }
+                        val coins = (target.coinsMax * 0.5f).roundToInt(); g.coins += coins
+                        target.sinkT = 0.001f
+                        g.sfx.play("repair")
+                        g.toast("Команда разобрала корабль на доски\nКорпус +$heal · +$coins монет", 2.2f)
+                        g.save(); close()
+                    }
+                }
+                panel.add(fix).growX().height(48f).padTop(8f).row()
+            }
+            if (g.adv.stars > 0) {
+                val turn = ui.button("Сдать властям: -1★", 0x37474f, 0x263238, ui.mid).also {
+                    it.onClick {
+                        g.adv.wanted = max(0f, g.adv.wanted - 1f)
+                        g.ships.remove(target); g.living.addRep(1, 3)
+                        g.sfx.play("quest")
+                        g.toast("Пиратов передали флоту. Охотники за вами поостынут.", 2.2f)
+                        g.save(); close()
+                    }
+                }
+                panel.add(turn).growX().height(48f).padTop(8f).row()
+            }
             val release = ui.blue("Отпустить команду").also {
                 it.onClick {
                     g.ships.remove(target); g.living.addRep(2, 4); g.extras.addMorale(2f)
