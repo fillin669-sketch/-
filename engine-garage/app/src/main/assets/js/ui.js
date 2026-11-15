@@ -32,7 +32,7 @@ function freshState() {
   const e = makePreset(0); e.id = newId();
   e.built = hwSnapshot(e);
   const c = defaultCar(); c.id = newId(); c.engineId = e.id; c.built = carHw(c);
-  return { money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true }, view: 'front', openSec: 'layout', openCarSec: 'body' };
+  return { money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true }, view: '3d', xray: true, openSec: 'layout', openCarSec: 'body' };
 }
 function load() {
   try {
@@ -59,7 +59,7 @@ function hwKeys(e) { return Object.keys(defaultEngine()).filter(k => !TUNE_KEYS.
 function hwSnapshot(e) { const o = {}; hwKeys(e).forEach(k => o[k] = e[k]); return o; }
 function builtEngine(e) { if (!e || !e.built) return null; return Object.assign({}, e, e.built); }
 function hwChanged(e) { if (!e.built) return true; return hwKeys(e).some(k => e[k] !== e.built[k]); }
-const CAR_META = ['id', 'built', 'name', 'color', 'stripe', 'engineId'];
+const CAR_META = ['id', 'built', 'name', 'color', 'stripe', 'engineId', 'finish', 'tint', 'caliper'];
 function carHw(c) { const o = {}; Object.keys(defaultCar()).filter(k => !CAR_META.includes(k)).forEach(k => o[k] = c[k]); return o; }
 function builtCar(c) { if (!c || !c.built) return null; return Object.assign({}, c, c.built); }
 function carChanged(c) { if (!c.built) return true; const hw = carHw(c); return Object.keys(hw).some(k => hw[k] !== c.built[k]); }
@@ -138,7 +138,14 @@ function fieldInfo(k, e) {
 // ---------- Универсальная отрисовка списка деталей ----------
 // spec: [{id,title,icon,fields}], obj — редактируемый объект
 function renderSpec(root, spec, obj, cfg) {
-  root.innerHTML = '';
+  const scroller = root.closest('.tab');
+  const keepTop = scroller ? scroller.scrollTop : 0;
+  const frag = document.createDocumentFragment();
+  renderSpecInto(frag, root, spec, obj, cfg);
+  root.replaceChildren(frag);
+  if (scroller) scroller.scrollTop = keepTop;
+}
+function renderSpecInto(rootFrag, root, spec, obj, cfg) {
   for (const sec of spec) {
     const open = cfg.open() === sec.id;
     const title = val(sec.title, obj);
@@ -158,7 +165,7 @@ function renderSpec(root, spec, obj, cfg) {
       }
       box.append(body);
     }
-    root.append(box);
+    rootFrag.append(box);
   }
 }
 function scrollSecIntoView(box) {
@@ -200,8 +207,7 @@ function renderField(f, o, cfg, rerender) {
     inp.addEventListener('change', () => { cfg.onChange(f.k, true); rerender(); });
     const step = (d) => { o[f.k] = clamp(Math.round((o[f.k] + d * st) / st) * st, mn, mx); o[f.k] = parseFloat(o[f.k].toFixed(4)); inp.value = o[f.k]; cfg.onChange(f.k, true); upd(); };
     const rep = (d) => { let t, n = 0; const go = () => { step(d * (n > 8 ? 5 : 1)); n++; t = setTimeout(go, n === 1 ? 380 : 70); }; return { down: () => go(), up: () => clearTimeout(t) }; };
-    const mk = (txt, d) => { const r = rep(d); const b = h('button', { 'aria-label': d < 0 ? 'Меньше' : 'Больше' }, txt); b.addEventListener('pointerdown', (ev) => { ev.preventDefault(); r.down(); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(x => b.addEventListener(x, () => { r.up(); rerenderSoon(); })); return b; };
-    let rr = 0; const rerenderSoon = () => { clearTimeout(rr); rr = setTimeout(rerender, 250); };
+    const mk = (txt, d) => { const r = rep(d); const b = h('button', { 'aria-label': d < 0 ? 'Меньше' : 'Больше' }, txt); b.addEventListener('pointerdown', (ev) => { ev.preventDefault(); r.down(); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(x => b.addEventListener(x, () => r.up())); b.addEventListener('click', (ev) => ev.preventDefault()); return b; };
     wrap.append(h('div', { class: 'f-h' }, h('label', { for: 'f-' + f.k }, label, isTune ? h('span', { class: 'free' }, 'ЭБУ') : null), valB),
       h('div', { class: 'rng' }, mk('−', -1), inp, mk('+', 1)), info);
     upd();
@@ -284,22 +290,46 @@ function renderBuildBar() {
 
 // анимация двигателя в конструкторе
 const engAnim = { crank: 0, t: 0, parts: new Particles() };
+let eng3d = null, car3d = null;
+function engKey(e) { const k = hwSnapshot(e); k.coverColor = e.coverColor; return k; }
+function hide3D(host) { if (G3.canvas && G3.canvas.parentNode === host) G3.canvas.style.display = 'none'; }
+function want3D(view) { return view === '3d' && init3D(); }
 function tickEngineView(dt) {
   const e = curEngine();
+  const host = $('#tab-engine .viewer');
+  const is3d = want3D(S.view);
+  $('#btnXray').hidden = !is3d; $('#hint3d').hidden = !is3d;
+  if (is3d) {
+    if (!eng3d) eng3d = new Engine3D();
+    show3D(host, eng3d); G3.canvas.style.display = '';
+    $('#cvEngine').style.visibility = 'hidden';
+    eng3d.xray = S.xray !== false;
+    eng3d.setEngine(engKey(e));
+    engAnim.crank = (engAnim.crank + dt * 360 * 1.4) % 720; engAnim.t += dt;
+    eng3d.update({ crank: engAnim.crank, rpm: 900, spool: 0.2, egt: 0.1, highlight: SEC_HL[S.openSec], t: engAnim.t }, dt);
+    render3D(eng3d, dt);
+    return;
+  }
+  hide3D(host); $('#cvEngine').style.visibility = '';
   const { ctx, W, H } = fit($('#cvEngine'));
   engAnim.crank = (engAnim.crank + dt * 360 * 1.4) % 720; engAnim.t += dt;
   engAnim.parts.step(dt);
   drawEngine(ctx, e, W, H, { crank: engAnim.crank, rpm: 900, throttle: 0.05, spool: 0.15, egt: 0.15, view: S.view, highlight: SEC_HL[S.openSec], t: engAnim.t, emit: true, load: 0 }, engAnim.parts);
 }
 $$('#tab-engine .view-btns .seg').forEach(b => b.addEventListener('click', () => { S.view = b.dataset.view; save(); syncViewBtns(); }));
-function syncViewBtns() { $$('#tab-engine .view-btns .seg').forEach(b => b.classList.toggle('on', b.dataset.view === S.view)); }
+function syncViewBtns() {
+  if (S.view === '3d' && !init3D()) S.view = 'front';
+  $$('#tab-engine .view-btns .seg').forEach(b => { b.classList.toggle('on', b.dataset.view === S.view); if (b.dataset.view === '3d' && !G3.ok) b.hidden = true; });
+  $('#btnXray').classList.toggle('on', S.xray !== false);
+}
+$('#btnXray').addEventListener('click', () => { S.xray = S.xray === false; save(); syncViewBtns(); });
 
 // ================= ВКЛАДКА «СТЕНД» =================
 const snd = new EngineSound();
 const D = {
   on: false, starting: 0, rpm: 0, spool: 0, coolT: 25, egtS: 0, thrPedal: 0, thrEff: 0, idleI: 0.05, cut: false,
   sweep: null, load: 0, nos: false, crank: 0, lastThr: 0, popT: 0, t: 0, parts: new Particles(), out: null, reset: true,
-  cause: {}, view: 'front', alert: '', alertT: 0, curPts: null, dmgAcc: 0,
+  cause: {}, view: '3d', alert: '', alertT: 0, curPts: null, dmgAcc: 0,
 };
 const DMG_TEXT = {
   rod: 'Оборвался шатун: обороты выше предела деталей',
@@ -309,6 +339,7 @@ const DMG_TEXT = {
   egt: 'Прогорели выпускные клапаны: перегрев выхлопа',
   overheat: 'Пробило прокладку головки: двигатель перегрелся',
   turbo: 'Разрушилась турбина: раскрутка сверх предела',
+  bearings: 'Провернуло вкладыши: масляному насосу не хватило производительности',
 };
 function dynoEngine() { return builtEngine(curEngine()); }
 function dynoPrepare() {
@@ -325,7 +356,8 @@ function renderDynoTab() {
   const e = curEngine();
   const be = dynoPrepare();
   $('#btnNos').hidden = !(be && be.nitrous);
-  $('#dynoView').textContent = D.view === 'front' ? 'Вид: разрез' : 'Вид: сбоку';
+  if (D.view === '3d' && !init3D()) D.view = 'front';
+  $('#dynoView').textContent = DYNO_VIEWS[D.view];
   // настройки ЭБУ на ходу
   const tune = $('#dynoTune'); tune.innerHTML = '';
   if (!be) {
@@ -408,7 +440,8 @@ const nosBtn = $('#btnNos');
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => nosBtn.addEventListener(ev, () => { D.nos = false; nosBtn.classList.remove('on'); }));
 $('#loadRange').addEventListener('input', (ev) => { D.load = ev.target.value / 100; $('#loadVal').textContent = ev.target.value + '%'; ev.target.style.setProperty('--p', ev.target.value + '%'); });
 $('#loadRange').style.setProperty('--p', '0%');
-$('#dynoView').addEventListener('click', () => { D.view = D.view === 'front' ? 'side' : 'front'; $('#dynoView').textContent = D.view === 'front' ? 'Вид: разрез' : 'Вид: сбоку'; });
+const DYNO_VIEWS = { '3d': 'Вид: 3D', front: 'Вид: разрез', side: 'Вид: сбоку' };
+$('#dynoView').addEventListener('click', () => { const order = G3.ok ? ['3d', 'front', 'side'] : ['front', 'side']; D.view = order[(order.indexOf(D.view) + 1) % order.length]; $('#dynoView').textContent = DYNO_VIEWS[D.view]; });
 
 // педаль газа
 function bindPedal(el, onVal) {
@@ -447,7 +480,17 @@ function tickDyno(dt) {
   const bal = be ? balanceInfo(be).score : 80;
   const shake = D.on ? (1 - bal / 100) * 3 * clamp(D.rpm / 4000, 0.3, 1.5) + (D.cut ? 1.2 : 0) + (o && o.knock > 0.2 ? 1.5 : 0) : 0;
   const egtN = o && D.on ? clamp((D.egtS - 400) / 700, 0, 1) : clamp(D.egtS / 1100, 0, 0.3);
-  if (be) drawEngine(ctx, be, W, H, {
+  const dhost = $('.dyno-view');
+  if (be && want3D(D.view)) {
+    if (!eng3d) eng3d = new Engine3D();
+    show3D(dhost, eng3d); G3.canvas.style.display = ''; $('#cvDyno').style.visibility = 'hidden';
+    eng3d.xray = S.xray !== false;
+    eng3d.setEngine(engKey(be));
+    eng3d.orbit.auto = D.on ? 0 : 0.18;
+    eng3d.update({ crank: D.crank, rpm: D.on ? D.rpm : 0, spool: D.spool, egt: egtN, off: !D.on, shake, pop: D.popNow, t: D.t }, dt);
+    render3D(eng3d, dt);
+  } else { hide3D(dhost); $('#cvDyno').style.visibility = ''; }
+  if (be && !want3D(D.view)) drawEngine(ctx, be, W, H, {
     crank: D.crank, rpm: D.on ? D.rpm : 0, throttle: D.thrEff, spool: D.spool, egt: egtN, view: D.view, t: D.t, emit: D.on, load: D.thrEff,
     shake, blown: e.blown, nitrous: D.nos && be.nitrous, pop: D.popNow, off: !D.on, blackSmoke: FUELS[be.fuel].diesel && D.thrEff > 0.6,
   }, D.parts);
@@ -529,8 +572,8 @@ function dynoStep(be, e, dt) {
   }
   // температуры
   const heat = Math.max(0, o.power) * 0.7355;
-  const cap = ({ stock: 180, large: 330, race: 550 })[be.radiator] * (be.oilCooler ? 1.15 : 1);
-  const tEq = Math.max(88, 25 + 65 * (heat + 12) / cap);
+  const cap = ({ stock: 180, large: 330, race: 550 })[be.radiator] * (be.oilCooler ? 1.15 : 1) * ({ mech: 1, electric: 1.08, dual: 1.16 })[be.fan || 'mech'];
+  const tEq = Math.max(be.thermostat === 'low' ? 76 : 88, 25 + 65 * (heat + 12) / cap);
   D.coolT += (tEq - D.coolT) * dt / (tEq > D.coolT ? 22 : 12);
   D.egtS += (o.egt - D.egtS) * Math.min(1, dt * 3);
   // повреждения
@@ -542,6 +585,7 @@ function dynoStep(be, e, dt) {
   if (D.egtS > 1000) { dmg.egt = (D.egtS - 1000) * 0.09; setAlert('ПЕРЕГРЕВ ВЫХЛОПА'); }
   if (D.coolT > 115) { dmg.overheat = (D.coolT - 115) * 0.7; setAlert('ПЕРЕГРЕВ'); }
   if (o.flags.includes('turbo') && D.spool > 0.8) dmg.turbo = 3;
+  if (D.rpm > 8500 && be.oilPump !== 'high' && be.oilSystem !== 'dry' && !isRotary(be)) { dmg.bearings = (D.rpm - 8500) / 1000 * 9; setAlert('ПАДАЕТ ДАВЛЕНИЕ МАСЛА'); }
   if (o.flags.includes('lean') && D.thrEff > 0.5) setAlert('БЕДНАЯ СМЕСЬ');
   if (o.ecuRetard > 0.5 && D.thrEff > 0.5 && !D.alertT) setAlert('ЭБУ УБИРАЕТ УГОЛ');
   let total = 0;
@@ -658,7 +702,15 @@ const CAR_SPEC = [
   { id: 'body', title: 'Кузов', icon: 'body', fields: [
     { k: 'body', label: 'Тип кузова', opts: Object.entries(BODIES).map(([k, b]) => [k, b.name, b.price, b.mass + ' кг, Cx ' + b.cd]) },
     { k: 'color', label: 'Цвет', type: 'color', palette: true, tune: true, opts: PAINT.map(c => [c, c, 0]) },
+    { k: 'finish', label: 'Покрытие', tune: true, opts: [['gloss', 'Глянец', 0, ''], ['metal', 'Металлик', 0, ''], ['pearl', 'Перламутр', 0, ''], ['candy', 'Кэнди', 0, 'Глубокий насыщенный блеск'], ['matte', 'Матовое', 0, '']] },
     { k: 'stripe', label: 'Гоночная полоса', type: 'toggle', price: 0 },
+    { k: 'kit', label: 'Обвес', opts: [['stock', 'Штатный', 0, ''], ['sport', 'Спортивный', 1800, 'Пороги, меньше сопротивления'], ['wide', 'Широкий кузов', 6500, 'Расширители арок, шире колея, +3% сцепления']] },
+    { k: 'hood', label: 'Капот', opts: [['stock', 'Штатный', 0, ''], ['scoop', 'С воздухозаборником', 900, ''], ['carbon', 'Карбоновый', 2800, '−9 кг']] },
+    { k: 'roof', label: 'Крыша', show: (c) => !['roadster', 'dragster'].includes(c.body), opts: [['stock', 'Штатная', 0, ''], ['carbon', 'Карбоновая', 2200, '−6 кг, ниже центр тяжести']] },
+    { k: 'lights', label: 'Фары', opts: [['stock', 'Галогеновые', 0, ''], ['led', 'Светодиодные', 1200, 'Холодный свет и светящаяся полоса сзади']] },
+    { k: 'tint', label: 'Тонировка', tune: true, opts: [['none', 'Нет', 0, ''], ['light', 'Лёгкая', 0, ''], ['dark', 'Тёмная', 0, ''], ['limo', 'Лимузин', 0, '']] },
+    { k: 'seats', label: 'Сиденья', opts: [['stock', 'Штатные', 0, ''], ['bucket', 'Ковши', 1400, '−25 кг']] },
+    { k: 'cage', label: 'Каркас безопасности', type: 'toggle', price: 2500, hint: '+35 кг, но кузов жёстче: +2% сцепления' },
     { k: 'reduction', label: 'Облегчение', opts: [[0, 'Нет', 0, ''], [1, 'Ст. 1 (−60 кг)', 1500, 'Без лишнего салона'], [2, 'Ст. 2 (−140 кг)', 3500, 'Пластиковые стёкла, ковши'], [3, 'Карбон (−240 кг)', 9000, 'Карбоновые панели']] },
   ] },
   { id: 'trans', title: 'Трансмиссия', icon: 'gear', fields: [
@@ -679,10 +731,12 @@ const CAR_SPEC = [
   { id: 'susp', title: 'Подвеска и тормоза', icon: 'susp', fields: [
     { k: 'suspension', label: 'Подвеска', opts: [['stock', 'Штатная', 0, ''], ['sport', 'Спортивная', 900, ''], ['coilover', 'Винтовая', 2500, 'Регулировка клиренса'], ['drag', 'Дрэг', 1800, 'Мягкий зад для старта']] },
     { k: 'rideHeight', label: 'Клиренс', type: 'range', min: (c) => c.suspension === 'stock' ? -20 : c.suspension === 'sport' ? -40 : -80, max: 80, step: 5, unit: 'мм', price: 0 },
+    { k: 'caliper', label: 'Цвет суппортов', tune: true, opts: [['black', 'Чёрный', 0, ''], ['red', 'Красный', 0, ''], ['yellow', 'Жёлтый', 0, ''], ['blue', 'Синий', 0, ''], ['green', 'Зелёный', 0, ''], ['orange', 'Оранжевый', 0, '']] },
     { k: 'brakes', label: 'Тормоза', opts: [['stock', 'Штатные', 0, ''], ['sport', 'Спортивные', 800, ''], ['race', 'Гоночные', 2000, ''], ['ceramic', 'Карбон-керамика', 6000, '−18 кг']] },
   ] },
   { id: 'aero', title: 'Аэродинамика', icon: 'aero', fields: [
     { k: 'spoiler', label: 'Антикрыло', opts: [['none', 'Нет', 0, ''], ['lip', 'Губа', 200, ''], ['wing', 'Крыло', 900, 'Прижим'], ['big', 'Большое крыло', 1800, 'Много прижима, но и сопротивления']] },
+    { k: 'tips', label: 'Насадки выхлопа', opts: [['single', 'Одна', 0, ''], ['dual', 'Две по краям', 300, ''], ['center', 'Две по центру', 400, ''], ['quad', 'Четыре', 700, '']] },
     { k: 'splitter', label: 'Сплиттер', type: 'toggle', price: 400 },
     { k: 'diffuser', label: 'Диффузор', type: 'toggle', price: 700 },
   ] },
@@ -759,6 +813,14 @@ function renderCarBuildBar() {
 }
 const carView = { rot: 0 };
 function tickCarView(dt) {
+  const host = $('#tab-car .viewer');
+  if (carView.c && init3D()) {
+    if (!car3d) car3d = new Car3D();
+    show3D(host, car3d); G3.canvas.style.display = ''; $('#cvCar').style.visibility = 'hidden';
+    car3d.setCar(carView.c, carView.st);
+    render3D(car3d, dt);
+    return;
+  }
   const { ctx, W, H } = fit($('#cvCar'));
   ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
   const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1a1d22'); g.addColorStop(1, '#101114');
@@ -786,6 +848,21 @@ function renderRace() {
   });
 }
 const R = { on: false, thr: 0 };
+function rivalLook(r) {
+  return Object.assign(defaultCar(), { body: r.hp > 2000 ? 'dragster' : r.hp > 900 ? 'super' : r.hp > 400 ? 'coupe' : r.hp > 150 ? 'sedan' : 'hatch', color: r.color, rim: r.hp > 300 ? 18 : 15, tireWidth: r.hp > 300 ? 245 : 195, profile: r.hp > 300 ? 40 : 55, rimStyle: r.hp > 600 ? 'forged' : r.hp > 150 ? 'alloy' : 'steel', tire: 'sport', spoiler: r.hp > 300 ? 'wing' : 'none', rideHeight: r.hp > 300 ? -25 : 0, kit: r.hp > 600 ? 'wide' : r.hp > 300 ? 'sport' : 'stock', lights: r.hp > 300 ? 'led' : 'stock', tips: r.hp > 300 ? 'quad' : 'single', caliper: r.hp > 300 ? 'red' : 'black', hood: r.hp > 450 ? 'carbon' : 'stock' });
+}
+function drawSprite(ctx, sp, frontX, groundY, ppm, dist) {
+  const k = ppm / sp.ppm;
+  ctx.save(); ctx.translate(frontX, groundY); ctx.scale(-k, k);
+  ctx.drawImage(sp.body, -sp.ox, -sp.groundPx);
+  sp.axles.forEach((ax, i) => {
+    const img = (i === 0 && sp.wheelF) ? sp.wheelF : sp.wheel;
+    const rr = (i === 0 ? sp.rF : sp.rW);
+    ctx.save(); ctx.translate(ax * sp.ppm, -rr * sp.ppm); ctx.rotate(dist / rr);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2); ctx.restore();
+  });
+  ctx.restore();
+}
 function rivalCar(r) {
   // упрощённая машина соперника
   return { r, v: 0, x: 0, gear: 0, rpm: 1000, t: 0, shiftT: 0, gears: r.hp > 2000 ? [1.8, 1.0] : [3.3, 2.1, 1.55, 1.22, 1.0, 0.83], fd: r.hp > 2000 ? 3.2 : 3.7, rw: r.hp > 2000 ? 0.45 : 0.31, mu: r.hp > 2000 ? 2.4 : r.hp > 600 ? 1.35 : r.hp > 250 ? 1.15 : 1.0, launched: false };
@@ -818,6 +895,15 @@ function startRace(i) {
   const bc = builtCar(c);
   Object.assign(R, { on: true, idx: i, rival: r, me: newCarState(bc, e), op: rivalCar(r), phase: 'stage', t: 0, green: null, rt: null, opRt: 0.12 + Math.random() * 0.25 * (1 - i / RIVALS.length), done: false, thr: 0, e, c: bc, parts: new Particles(), cam: 0, myTime: null, opTime: null, fault: false });
   R.me.rpm = e.idle;
+  R.spMe = R.spOp = null;
+  try {
+    if (init3D()) {
+      if (!car3d) car3d = new Car3D();
+      R.spMe = car3d.sprite(bc, R.me.st);
+      R.spOp = car3d.sprite(rivalLook(r), { rWheel: 0.31 });
+      car3d.key = '';
+    }
+  } catch (err) { console.warn(err); R.spMe = R.spOp = null; }
   R.lightT = 2.2 + Math.random() * 0.8;
   $('#raceScreen').hidden = false;
   const gb = GEARBOXES[bc.gearbox];
@@ -949,8 +1035,13 @@ function drawRace(dt) {
   // машины
   const opCar = { body: R.rival.hp > 2000 ? 'dragster' : R.rival.hp > 900 ? 'super' : R.rival.hp > 400 ? 'coupe' : 'sedan', color: R.rival.color, rim: 17, tireWidth: 235, profile: 45, rimStyle: 'alloy', tire: 'sport', spoiler: R.rival.hp > 300 ? 'wing' : 'none', rideHeight: -20 };
   const opB = BODY_SHAPE[opCar.body], meB = BODY_SHAPE[R.c.body];
-  drawCar(ctx, opCar, W, H, { scale: ppm, x: sx(op.x - opB.L), ground: laneOp, flip: true, stats: { rWheel: 0.31 }, wheelRot: op.x / 0.31 });
-  drawCar(ctx, R.c, W, H, { scale: ppm, x: sx(me.x - meB.L), ground: laneMe, flip: true, stats: me.st, wheelRot: me.x / me.st.rWheel });
+  if (R.spOp && R.spMe) {
+    drawSprite(ctx, R.spOp, sx(op.x), laneOp, ppm, op.x);
+    drawSprite(ctx, R.spMe, sx(me.x), laneMe, ppm, me.x);
+  } else {
+    drawCar(ctx, opCar, W, H, { scale: ppm, x: sx(op.x - opB.L), ground: laneOp, flip: true, stats: { rWheel: 0.31 }, wheelRot: op.x / 0.31 });
+    drawCar(ctx, R.c, W, H, { scale: ppm, x: sx(me.x - meB.L), ground: laneMe, flip: true, stats: me.st, wheelRot: me.x / me.st.rWheel });
+  }
   // дым от пробуксовки
   if (me.wheelspin > 0.05) for (let k = 0; k < 2; k++) R.parts.add({ x: sx(me.x - meB.L + meB.L - meB.wb[1] * 1) , y: laneMe - 4, vx: -60 - Math.random() * 60, vy: -20 - Math.random() * 30, r: 4, grow: 30, life: 1.2, max: 1.2, color: '#c9ccd2', alpha: 0.35 });
   if (me.launched && R.thr > 0.5 && me.rpm > me.lim.mech * 0.9 && Math.random() < 0.2) R.parts.add({ x: sx(me.x - meB.L), y: laneMe - 0.4 * ppm, vx: -120, vy: 0, r: 3, grow: 12, life: 0.15, max: 0.15, color: '#ff8a2a' });
@@ -1069,7 +1160,7 @@ function renderSettings() {
   st.append(tgl('Песочница', 'Бесконечные деньги и все соперники открыты', () => S.sandbox, (v) => { S.sandbox = v; renderRace(); }));
   st.append(tgl('Вибрация', 'Отдача при переключениях и поломках', () => S.settings.vibro, (v) => S.settings.vibro = v));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 1.0'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 2.0'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

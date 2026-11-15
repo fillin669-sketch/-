@@ -18,7 +18,7 @@ button { font: inherit; color: inherit; }
 .brand span { color: var(--amber); margin: 0 2px; }
 .money { font: 700 16px var(--f-num); color: var(--amber2); }
 #main { flex: 1; position: relative; overflow: hidden; }
-.tab { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.tab { overflow-anchor: none; position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .pad { padding: 12px max(14px, env(safe-area-inset-left, 0px)) 0 max(14px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 12px; }
 .spacer { height: 70px; flex: none; } .spacer.tall { height: 200px; }
 
@@ -185,3 +185,13 @@ select, input[type=text] { width: 100%; background: var(--panel2); border: 1px s
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 @media (min-width: 760px) { .viewer { height: 38vh; } .chips { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* 3D */
+.viewer, .dyno-view { background: radial-gradient(120% 90% at 50% 35%, #2a2e36 0%, #17191d 55%, #0f1013 100%); overflow: hidden; }
+canvas.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.viewer > *:not(canvas), .dyno-view > *:not(canvas) { z-index: 2; }
+.xray { position: absolute; right: 10px; bottom: 8px; }
+.xray.on { background: var(--blue); color: #08121f; }
+.hint3d { position: absolute; right: 12px; top: 30px; font: 600 10px var(--f-head); color: rgba(231,233,236,.45); letter-spacing: .04em; pointer-events: none; }
+.viewer.car { height: 32vh; min-height: 200px; }
+.view-btns .seg { padding: 6px 12px; }

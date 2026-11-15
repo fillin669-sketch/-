@@ -45,6 +45,8 @@ function defaultEngine() {
     ecu: 'stock', timing: 28, lambda: 0.88, boost: 0.8, limiter: 6800, idle: 850, knockSensor: true, launch: 4000,
     exhManifold: 'cast', exhDia: 50, cat: true, muffler: 'stock',
     radiator: 'stock', oilCooler: false, oilSystem: 'wet', oil: 'std',
+    lifters: 'hydraulic', headGasket: 'stock', headStuds: 'bolts', bearings: 'stock', oilPump: 'stock', damper: 'stock', plugs: 'stock',
+    waterMeth: false, turboAR: 0.82, exhWrap: false, fan: 'mech', thermostat: 'stock', exhLayout: 'single',
     coverColor: 'black', health: 100, blown: null, lastDyno: null, built: null,
   };
 }
@@ -138,6 +140,7 @@ function limits(e) {
   const rr = clamp(0.75 + (rodRatio - 1.4) * 0.6, 0.6, 1.1);
   let vpLim = Math.min(STRENGTH.crank[e.crank].vp, STRENGTH.rods[e.rods].vp, STRENGTH.pistons[e.pistons].vp) * rr;
   if (e.oilSystem === 'dry') vpLim *= 1.04;
+  vpLim *= (e.bearings === 'race' ? 1.04 : 1) * (e.damper === 'fluid' ? 1.04 : 1) * (e.oilPump === 'high' ? 1.02 : 1);
   let mech = isRotary(e) ? 9800 * ({ cast: 0.95, forged: 1.05, billet: 1.15 })[e.crank] : vpLim * 60 / (2 * strokeM);
   if (e.cycle === 2) mech *= 1.08;
   let valveFloat = Infinity;
@@ -145,7 +148,7 @@ function limits(e) {
     const base = { ohv: 6200, sohc: 7300, dohc: 8300 }[e.valvetrain];
     const sp = { stock: 1, sport: 1.12, race: 1.25, pneumatic: 1.9 }[e.springs];
     const vF = { 2: 0.96, 3: 1.0, 4: 1.06, 5: 1.09 }[e.valves];
-    valveFloat = base * sp * vF * (1 - (e.camLift - 10) * 0.022) * Math.pow(86 / Math.max(60, e.bore), 0.15);
+    valveFloat = base * sp * vF * ({ hydraulic: 1, solid: 1.05, roller: 1.08 })[e.lifters || 'hydraulic'] * (1 - (e.camLift - 10) * 0.022) * Math.pow(86 / Math.max(60, e.bore), 0.15);
   }
   // давление в цилиндре: самая слабая деталь
   const parts = [
@@ -154,6 +157,7 @@ function limits(e) {
     ['crank', STRENGTH.crank[e.crank].p, 'коленвал'],
     ['block', STRENGTH.block[e.block].p * (e.deck === 'closed' ? 1.25 : 1), 'блок цилиндров'],
   ];
+  if (!isRotary(e)) parts.push(['gasket', ({ stock: 30, mls: 48, copper: 75 })[e.headGasket || 'stock'] * (e.headStuds === 'arp' ? 1.25 : 1), 'прокладка и болты головки']);
   if (isRotary(e)) parts[0] = ['pistons', ({ cast: 28, hyper: 32, forged: 40, billet: 48 })[e.pistons], 'апекс-уплотнения'];
   parts.sort((a, b) => a[1] - b[1]);
   return { mech, valveFloat, vpLim, pLim: parts[0][1], weakest: parts[0][2], rodRatio };
@@ -169,7 +173,10 @@ function turboParams(e) {
   if (e.bearing === 'ball') onset *= 0.85;
   if (e.induction === 'eturbo') onset *= 0.4;
   if (e.antilag) onset *= 0.9;
-  const qMax = Math.max(1, nT) * 5.3 * d * d;
+  const ar = e.turboAR || 0.82;
+  onset *= ar < 0.7 ? 0.85 : ar > 1 ? 1.18 : 1;
+  if (e.exhWrap) onset *= 0.95;
+  const qMax = Math.max(1, nT) * 5.3 * d * d * (ar < 0.7 ? 0.9 : ar > 1 ? 1.12 : 1);
   const maxPR = 1 + d / 22;
   const tau = (0.25 + Math.pow(d / 50, 2) * 0.55) * (e.bearing === 'ball' ? 0.75 : 1) * (nT > 1 ? 0.85 : 1) * (e.induction === 'eturbo' ? 0.35 : 1);
   return { nT, onset, full: onset * 1.65, qMax, maxPR, tau };
@@ -262,7 +269,7 @@ function veAt(e, rpm, vp, out) {
   const thrN = e.manifold === 'itb' ? e.cyl : 1;
   const thrCap = thrN * Math.pow(e.throttle, 2) * 3.4;
   const exhCount = (BANKS[e.type] >= 2 && e.type !== 'vr') ? 2 : 1;
-  let exhCap = exhCount * Math.pow(e.exhDia, 2) * 5.0;
+  let exhCap = exhCount * Math.pow(e.exhDia, 2) * 5.0 * (e.exhLayout === 'dual' && exhCount === 1 ? 1.35 : 1);
   exhCap *= ({ stock: 0.72, sport: 0.9, straight: 1.0, none: 1.06 })[e.muffler] * (e.cat ? 0.88 : 1);
   const boostMul = isForced(e) ? 1.6 : 1;
   const rT = flowNeed * boostMul / thrCap, rE = flowNeed * (isForced(e) ? 1.25 : 1) / exhCap;
@@ -297,6 +304,7 @@ function engineAt(e, rpm, opt) {
   const tr = 1 + (Math.pow(b.pr, 0.286) - 1) / b.eta;
   const trAfter = 1 + (tr - 1) * (1 - (isForced(e) ? icEff : 0));
   let trA = trAfter;
+  if (e.waterMeth && b.pr > 1.05) trA = 1 + (trA - 1) * 0.8;
   if (F.flow > 1.3) trA = 1 + (trAfter - 1) * (F.flow > 2 ? 0.45 : 0.75) - (F.flow > 2 ? 0.03 : 0.012); // испарение спирта охлаждает заряд
   let density = b.pr / trA;
   const intakeC = 25 + 300 * (trA - 1);
@@ -305,7 +313,7 @@ function engineAt(e, rpm, opt) {
   let ve = veAt(e, rpm, vp, out);
   if (out.rT > 1.25) out.flags.push('throttle');
   if (out.rE > 1.25) out.flags.push('exhaust');
-  if (hasTurbo(e)) ve *= 1 - 0.035 * (b.pr - 1) * (50 / e.turboSize);
+  if (hasTurbo(e)) ve *= 1 - 0.035 * (b.pr - 1) * (50 / e.turboSize) * ((e.turboAR || 0.82) < 0.7 ? 1.3 : (e.turboAR || 0.82) > 1 ? 0.75 : 1);
   // зависание клапанов
   if (rpm > lim.valveFloat) { ve *= Math.max(0.35, 1 - (rpm - lim.valveFloat) / lim.valveFloat * 4); out.flags.push('float'); }
   // дизель: медленное сгорание на высоких оборотах
@@ -345,7 +353,7 @@ function engineAt(e, rpm, opt) {
     const coolT = opt.coolT == null ? 90 : opt.coolT;
     K = e.cr + 2.6 * (b.pr - 1) * (1 - 0.5 * (isForced(e) ? icEff : 0)) + (adv - mbt) * 0.12 + (lam - 0.88) * 4
       + (coolT - 90) * 0.03 + (e.bore - 86) * 0.015 + Math.max(0, (3000 - rpm) / 3000) * 0.6 * (b.pr > 1.2 ? 1.5 : 0.4)
-      - (e.fuelSystem === 'di' ? 0.8 : 0) - (isRotary(e) ? 0.8 : 0) + (opt.nitrous ? 1.2 : 0) + (intakeC - 40) * 0.006;
+      - (e.fuelSystem === 'di' ? 0.8 : 0) - (isRotary(e) ? 0.8 : 0) - (e.plugs === 'iridium' ? 0.3 : 0) - (e.waterMeth ? 1.2 * clamp((b.pr - 1) / 0.5, 0, 1) : 0) + (opt.nitrous ? 1.2 : 0) + (intakeC - 40) * 0.006;
     knock = Math.max(0, K - F.kLim);
     if (knock > 0 && e.knockSensor) {
       const pull = Math.min(14, knock / 0.12 + 1);
@@ -359,7 +367,7 @@ function engineAt(e, rpm, opt) {
   let imep = 15.0 * ve * density * thermal * lf * tf * F.pow * (1 - knock * 0.04);
   if (e.fuelSystem === 'di') imep *= 1.03;
   if (e.fuelSystem === 'tbi') imep *= 0.97;
-  if (e.coils === 'stock' && b.pr > 2.4 && !diesel) { imep *= 0.9; out.flags.push('misfire'); }
+  if (e.coils === 'stock' && b.pr > (e.plugs === 'iridium' ? 2.7 : 2.4) && !diesel) { imep *= 0.9; out.flags.push('misfire'); }
   if (diesel && e.cr < 14) { imep = 0; out.flags.push('nostart'); }
   if (!diesel && e.cr > 16) { knock += (e.cr - 16) * 1.5; out.knock = knock; }
 
@@ -369,6 +377,7 @@ function engineAt(e, rpm, opt) {
   fmep *= ({ ohv: 0.93, sohc: 0.97, dohc: 1.0 })[e.valvetrain] || 1;
   if (e.oilSystem === 'dry') fmep *= 0.9;
   if (e.oil === 'race') fmep *= 0.96;
+  if (e.lifters === 'roller') fmep *= 0.97;
   if (diesel) fmep += 0.4;
   if (e.balance) fmep += 0.08;
   fmep *= 1 + Math.max(0, 4 - e.cyl) * 0.0; // без поправки
@@ -452,6 +461,8 @@ function engineMass(e) {
   if (FUELS[e.fuel].diesel) m *= 1.25;
   if (e.nitrous) m += 12;
   if (e.balance) m += 5;
+  if (e.waterMeth) m += 6;
+  if (e.fan === 'dual') m += 3;
   return m;
 }
 function BANKS_HEADS(e) { return e.type === 'inline' ? 1 : e.type === 'radial' ? e.cyl * 0.25 : e.type === 'vr' ? 1 : e.type === 'w' ? 2 : 2; }
@@ -494,6 +505,7 @@ function defaultCar() {
     drive: 'fwd', gearbox: 'man5', finalDrive: 4.1, gearSpread: 1.0, clutch: 'stock', diff: 'open',
     rim: 15, tire: 'street', tireWidth: 195, profile: 55, rimStyle: 'steel',
     suspension: 'stock', rideHeight: 0, brakes: 'stock', spoiler: 'none', splitter: false, diffuser: false,
+    finish: 'metal', kit: 'stock', hood: 'stock', lights: 'stock', tint: 'light', caliper: 'black', tips: 'single', seats: 'stock', cage: false, roof: 'stock',
     engineId: null,
   };
 }
@@ -506,11 +518,13 @@ function carStats(c, e) {
   mass += ({ stock: 0, sport: 4, race: -6, ceramic: -18 })[c.brakes];
   mass += c.drive === 'awd' ? 70 : 0;
   mass += ({ none: 0, lip: 3, wing: 9, big: 16 })[c.spoiler] + (c.splitter ? 4 : 0) + (c.diffuser ? 5 : 0);
+  mass += ({ stock: 0, sport: 8, wide: 22 })[c.kit || 'stock'] + ({ stock: 0, scoop: 2, carbon: -9 })[c.hood || 'stock'] + (c.seats === 'bucket' ? -25 : 0) + (c.cage ? 35 : 0) + (c.roof === 'carbon' ? -6 : 0);
   mass += (c.rim - 15) * 3 * (c.rimStyle === 'forged' ? 0.5 : c.rimStyle === 'steel' ? 1.3 : 1) + (c.tireWidth - 195) * 0.06;
-  let cd = B.cd + ({ none: 0, lip: -0.005, wing: 0.02, big: 0.05 })[c.spoiler] + (c.splitter ? -0.005 : 0) + (c.diffuser ? -0.01 : 0) - c.rideHeight * 0.0004;
+  let cd = (c.kit === 'wide' ? 0.012 : c.kit === 'sport' ? -0.004 : 0) + (c.hood === 'scoop' ? 0.004 : 0) + B.cd + ({ none: 0, lip: -0.005, wing: 0.02, big: 0.05 })[c.spoiler] + (c.splitter ? -0.005 : 0) + (c.diffuser ? -0.01 : 0) - c.rideHeight * 0.0004;
   let down = ({ none: 0, lip: 0.05, wing: 0.25, big: 0.55 })[c.spoiler] + (c.splitter ? 0.12 : 0) + (c.diffuser ? 0.15 : 0); // Cl
   const rWheel = (c.rim * 25.4 / 2 + c.tireWidth * c.profile / 100) / 1000;
   let mu = TIRES[c.tire].mu * Math.pow(c.tireWidth / 205, 0.22) * ({ stock: 1, sport: 1.03, coilover: 1.05, drag: 1.1 })[c.suspension];
+  mu *= (c.kit === 'wide' ? 1.03 : 1) * (c.cage ? 1.02 : 1);
   const gb = GEARBOXES[c.gearbox];
   const gears = gb.g.map((g, i) => i === 0 ? g * c.gearSpread : g * Math.pow(c.gearSpread, (gb.g.length - 1 - i) / (gb.g.length - 1)));
   const clutchCap = ({ stock: 380, sport: 650, race: 1100, triple: 2200 })[c.clutch];

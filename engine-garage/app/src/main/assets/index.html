@@ -20,9 +20,12 @@
         <div class="viewer">
           <canvas id="cvEngine"></canvas>
           <div class="view-btns">
-            <button class="seg" data-view="front">Разрез спереди</button>
+            <button class="seg" data-view="3d">3D</button>
+            <button class="seg" data-view="front">Разрез</button>
             <button class="seg" data-view="side">Сбоку</button>
           </div>
+          <button class="seg small xray" id="btnXray">Рентген</button>
+          <div class="hint3d" id="hint3d">Крутите пальцем · щипок — масштаб</div>
           <div class="eng-name" id="engName"></div>
         </div>
         <div class="statsbar" id="engStats"></div>
@@ -158,6 +161,8 @@
 <script src="js/data.js"></script>
 <script src="js/render.js"></script>
 <script src="js/audio.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/three3d.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>
