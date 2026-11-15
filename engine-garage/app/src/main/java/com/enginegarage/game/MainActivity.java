@@ -15,6 +15,12 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.RenderProcessGoneDetail;
+import android.view.ViewGroup;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 /** Вся игра — HTML/JS в assets/index.html, здесь только окно WebView. */
 public class MainActivity extends Activity {
@@ -23,6 +29,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // при вылете сохраняем причину: игра покажет её при следующем запуске
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            try {
+                StringWriter sw = new StringWriter(); e.printStackTrace(new PrintWriter(sw));
+                String head = "Android " + Build.VERSION.RELEASE + ", " + Build.MODEL + "\n";
+                FileOutputStream fo = new FileOutputStream(new File(getFilesDir(), "crash.txt"));
+                fo.write((head + sw.toString()).substring(0, Math.min(4000, head.length() + sw.toString().length())).getBytes("UTF-8"));
+                fo.close();
+            } catch (Throwable ignored) { }
+            if (prev != null) prev.uncaughtException(t, e);
+        });
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
@@ -30,6 +48,10 @@ public class MainActivity extends Activity {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(lp);
         }
+        createWeb(savedInstanceState);
+    }
+
+    private void createWeb(Bundle savedInstanceState) {
         web = new WebView(this);
         web.setBackgroundColor(Color.rgb(21, 23, 27));
         WebSettings s = web.getSettings();
@@ -41,7 +63,18 @@ public class MainActivity extends Activity {
         s.setTextZoom(100);
         s.setSupportZoom(false);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // движок WebView упал (например, не хватило памяти): пересоздаём окно, а не закрываем игру
+                writeCrash("Перезапуск: движок отображения закрылся" + (Build.VERSION.SDK_INT >= 26 && detail.didCrash() ? " с ошибкой" : " (не хватило памяти)"));
+                ViewGroup parent = (ViewGroup) view.getParent();
+                if (parent != null) parent.removeView(view);
+                view.destroy();
+                createWeb(null);
+                return true;
+            }
+        });
         web.setWebChromeClient(new WebChromeClient());
         web.addJavascriptInterface(new Bridge(), "Android");
         setContentView(web);
@@ -55,6 +88,13 @@ public class MainActivity extends Activity {
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+    }
+
+    private void writeCrash(String text) {
+        try {
+            FileOutputStream fo = new FileOutputStream(new File(getFilesDir(), "crash.txt"));
+            fo.write(text.getBytes("UTF-8")); fo.close();
+        } catch (Throwable ignored) { }
     }
 
     @Override
@@ -92,6 +132,18 @@ public class MainActivity extends Activity {
     }
 
     class Bridge {
+        @JavascriptInterface
+        public String takeCrash() {
+            try {
+                File f = new File(getFilesDir(), "crash.txt");
+                if (!f.exists()) return null;
+                byte[] b = new byte[(int) f.length()];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n = in.read(b); in.close(); f.delete();
+                return new String(b, 0, Math.max(0, n), "UTF-8");
+            } catch (Throwable e) { return null; }
+        }
+
         @JavascriptInterface
         public void vibrate(int ms) {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);

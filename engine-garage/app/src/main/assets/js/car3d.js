@@ -455,15 +455,17 @@ class Race3D {
     // трибуна со зрителями у старта
     const stand = new THREE.Mesh(new THREE.BoxGeometry(60, 0.4, 8), archM); stand.position.set(-10, 0.2, -11); s.add(stand);
     for (let r = 0; r < 5; r++) { const step = new THREE.Mesh(new THREE.BoxGeometry(60, 0.5, 1.4), std(0x2a2d33, 0.2, 0.8)); step.position.set(-10, 0.5 + r * 0.5, -8.2 - r * 1.4); s.add(step); }
-    const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.75, 0.32), new THREE.MeshStandardMaterial({ roughness: 0.8 }), 300);
+    const nC = G3.quality === 'low' ? 80 : 300;
+    const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.75, 0.32), new THREE.MeshStandardMaterial({ roughness: 0.8 }), nC);
     const cc = new THREE.Color();
-    for (let i = 0; i < 300; i++) { const r = i % 5; mt.compose(V3(-38 + Math.random() * 56, 1.1 + r * 0.5, -8.2 - r * 1.4), new THREE.Quaternion(), V3(1, 0.9 + Math.random() * 0.3, 1)); crowd.setMatrixAt(i, mt); cc.setHSL(Math.random(), 0.5, 0.3 + Math.random() * 0.3); crowd.setColorAt(i, cc); }
+    for (let i = 0; i < nC; i++) { const r = i % 5; mt.compose(V3(-38 + Math.random() * 56, 1.1 + r * 0.5, -8.2 - r * 1.4), new THREE.Quaternion(), V3(1, 0.9 + Math.random() * 0.3, 1)); crowd.setMatrixAt(i, mt); cc.setHSL(Math.random(), 0.5, 0.3 + Math.random() * 0.3); crowd.setColorAt(i, cc); }
     s.add(crowd);
     // город на горизонте
     const win = canvasTex(64, 128, (g, w, h) => { g.fillStyle = '#0d1018'; g.fillRect(0, 0, w, h); for (let y = 4; y < h; y += 8) for (let x = 3; x < w; x += 8) if (Math.random() < 0.38) { g.fillStyle = Math.random() < 0.8 ? '#ffd27a' : '#9cc8ff'; g.fillRect(x, y, 4, 4); } });
     const bm = new THREE.MeshStandardMaterial({ color: 0x222633, emissive: 0xffffff, emissiveMap: win, emissiveIntensity: 0.9, map: win });
-    const bld = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bm, 160);
-    n = 0; for (let i = 0; i < 80; i++) [-1, 1].forEach(sd => { const h = 15 + Math.random() * 55, w = 8 + Math.random() * 14; mt.compose(V3(X0 + 20 - i * 9.5, h / 2, sd * (45 + Math.random() * 60)), new THREE.Quaternion(), V3(w, h, 8 + Math.random() * 10)); bld.setMatrixAt(n++, mt); }); s.add(bld);
+    const nB = G3.quality === 'low' ? 30 : G3.quality === 'mid' ? 55 : 80;
+    const bld = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bm, nB * 2);
+    n = 0; for (let i = 0; i < nB; i++) [-1, 1].forEach(sd => { const h = 15 + Math.random() * 55, w = 8 + Math.random() * 14; mt.compose(V3(X0 + 20 - i * 9.5, h / 2, sd * (45 + Math.random() * 60)), new THREE.Quaternion(), V3(w, h, 8 + Math.random() * 10)); bld.setMatrixAt(n++, mt); }); s.add(bld);
     // «ёлка» стартового светофора
     const tree = new THREE.Group(); tree.position.set(1.2, 0, 0); s.add(tree);
     const tp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.2), archM); tp.position.y = 1.3; tree.add(tp);

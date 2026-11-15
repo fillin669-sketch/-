@@ -9,7 +9,7 @@ function h(tag, attrs, ...kids) {
     if (k === 'class') n.className = v; else if (k === 'html') n.innerHTML = v;
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else if (v !== false && v != null) n.setAttribute(k, v);
   }
-  for (const c of kids.flat()) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  for (const c of [].concat.apply([], kids)) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
   return n;
 }
 function money(n) { n = Math.round(n); const s = Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); return (n < 0 ? '−' : '') + '₽ ' + s; }
@@ -32,11 +32,13 @@ function freshState() {
   const e = makePreset(0); e.id = newId();
   e.built = hwSnapshot(e);
   const c = defaultCar(); c.id = newId(); c.engineId = e.id; c.built = carHw(c);
-  return { money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true }, view: '3d', xray: true, openSec: 'layout', openCarSec: 'body' };
+  return { money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true, gfx: 'auto', autoShift: true }, view: '3d', xray: true, openSec: 'layout', openCarSec: 'body' };
 }
+let loadProblem = null;
 function load() {
+  let raw = null;
+  try { raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem(SAVE_KEY + '.bak'); } catch (_) { }
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
       if (d && d.engines && d.engines.length) {
@@ -44,14 +46,29 @@ function load() {
         d.engines = d.engines.map(e => Object.assign(defaultEngine(), e));
         d.cars = (d.cars || []).map(c => Object.assign(defaultCar(), c));
         S = Object.assign(freshState(), d);
+        S.settings = Object.assign(freshState().settings, d.settings || {});
         return;
       }
     }
-  } catch (_) { }
+  } catch (err) {
+    // повреждённое сохранение не стираем: откладываем копию и сообщаем
+    try { localStorage.setItem(SAVE_KEY + '.broken', raw || ''); } catch (_) { }
+    loadProblem = 'Сохранение не прочиталось (' + (err && err.message) + '). Копия отложена, игра начата заново.';
+  }
   S = freshState();
 }
 let saveT = 0;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (_) { } }, 300); }
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    try {
+      const js = JSON.stringify(S);
+      const old = localStorage.getItem(SAVE_KEY);
+      if (old) localStorage.setItem(SAVE_KEY + '.bak', old);
+      localStorage.setItem(SAVE_KEY, js);
+    } catch (err) { if (!save.warned) { save.warned = true; toast('Не удалось сохранить игру: ' + (err && err.message)); } }
+  }, 300);
+}
 
 // ---------- «Железо» и сборка ----------
 const ENGINE_META = ['id', 'health', 'blown', 'lastDyno', 'prevDyno', 'built'];
@@ -154,7 +171,7 @@ function renderSpec(root, spec, obj, cfg) {
   stable(root.closest('.tab'), () => {
     const frag = document.createDocumentFragment();
     renderSpecInto(frag, root, spec, obj, cfg);
-    root.replaceChildren(frag);
+    root.innerHTML = ''; root.appendChild(frag);
   });
 }
 function renderSpecInto(rootFrag, root, spec, obj, cfg) {
@@ -837,6 +854,7 @@ function tickCarView(dt) {
     render3D(car3d, dt);
     return;
   }
+  hide3D(host); $('#cvCar').style.visibility = '';
   const { ctx, W, H } = fit($('#cvCar'));
   ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
   const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1a1d22'); g.addColorStop(1, '#101114');
@@ -1240,8 +1258,15 @@ function renderSettings() {
   const tgl = (label, hint, get, setv) => { const b = h('button', { class: 'tg' + (get() ? ' on' : ''), onclick: () => { setv(!get()); save(); renderSettings(); updateMoney(); } }); return h('div', { class: 'switch' }, h('div', null, h('label', null, label), h('small', null, hint)), b); };
   st.append(tgl('Песочница', 'Бесконечные деньги и все соперники открыты', () => S.sandbox, (v) => { S.sandbox = v; renderRace(); }));
   st.append(tgl('Вибрация', 'Отдача при переключениях и поломках', () => S.settings.vibro, (v) => S.settings.vibro = v));
+  const gq = h('div', { class: 'chips' });
+  [['auto', 'Авто', 'Снижается сама'], ['high', 'Высокая', ''], ['mid', 'Средняя', ''], ['low', 'Низкая', 'Для слабых телефонов'], ['2d', 'Без 3D', 'Только 2D']].forEach(([v, n, d]) => gq.append(h('button', { class: 'chip' + ((S.settings.gfx || 'auto') === v ? ' on' : ''), onclick: () => { S.settings.gfx = v; save(); applyGfx(); renderSettings(); } }, h('b', null, n), d ? h('small', null, d) : null)));
+  st.append(h('div', { class: 'field', 'data-k': 'gfx' }, h('div', { class: 'f-h' }, h('label', null, 'Качество графики')), gq));
+  st.append(h('div', { class: 'row btnrow' },
+    h('button', { class: 'btn', onclick: exportSave }, 'Код сохранения'),
+    h('button', { class: 'btn', onclick: importSave }, 'Загрузить код')));
+  if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.1'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.2'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================
@@ -1273,17 +1298,94 @@ let lastT = 0;
 function loop(t) {
   const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0.016); lastT = t;
   try {
+    if (G3.ok && G3.canvas && G3.canvas.isConnected && G3.canvas.style.display !== 'none') watchFps(dt);
     if (R.on) tickRace(dt);
     else if (tab === 'engine') tickEngineView(dt);
     else if (tab === 'dyno') tickDyno(dt);
     else if (tab === 'car') tickCarView(dt);
-  } catch (err) { console.error(err); }
+  } catch (err) { reportError(err, 'кадр'); }
   requestAnimationFrame(loop);
 }
 window.addEventListener('resize', () => { if (tab === 'engine') updateEngineStats(); if (tab === 'dyno') drawDynoGraph(); });
 
 load();
+applyGfx();
 snd.volume = S.settings.vol;
 updateMoney();
 switchTab('engine');
 requestAnimationFrame(loop);
+setTimeout(() => { const sp = $('#splash'); if (sp) { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); } }, 150);
+setTimeout(() => {
+  if (loadProblem) modal((box, close) => { box.append(h('h3', null, 'Проблема с сохранением'), h('p', null, loadProblem), h('button', { class: 'btn accent', onclick: close }, 'Понятно')); });
+  const crash = getNativeCrash() || (function () { try { const t = localStorage.getItem('motorGarage.crash'); localStorage.removeItem('motorGarage.crash'); return t; } catch (_) { return null; } })();
+  if (crash) modal((box, close) => { box.append(h('h3', null, 'В прошлый раз игра закрылась с ошибкой'), h('p', { class: 'hint' }, 'Прогресс сохранён. Если ошибка повторяется, пришлите этот текст:'), h('textarea', { class: 'code', readonly: 'readonly' }, crash), h('button', { class: 'btn accent', onclick: close }, 'Продолжить')); });
+}, 600);
+
+
+// ================= НАДЁЖНОСТЬ =================
+var errShown = 0;
+function reportError(err, where) {
+  const text = (where ? '[' + where + '] ' : '') + (err && (err.stack || err.message) || String(err));
+  try { localStorage.setItem('motorGarage.lastError', new Date().toISOString() + '\n' + text.slice(0, 1500)); } catch (_) { }
+  console.error(text);
+  const now = Date.now();
+  if (now - errShown > 8000) { errShown = now; toast('Ошибка исправлена на лету, игра продолжает работу'); }
+}
+function lastErrorText() { try { return localStorage.getItem('motorGarage.lastError'); } catch (_) { return null; } }
+function showLastError() { modal((box, close) => { box.append(h('h3', null, 'Последняя ошибка'), h('textarea', { class: 'code', readonly: 'readonly' }, lastErrorText() || ''), h('button', { class: 'btn', onclick: () => { try { localStorage.removeItem('motorGarage.lastError'); } catch (_) { } close(); renderSettings(); } }, 'Очистить'), h('button', { class: 'btn accent', onclick: close }, 'Закрыть')); }); }
+window.addEventListener('error', (ev) => reportError(ev.error || ev.message, 'скрипт'));
+window.addEventListener('unhandledrejection', (ev) => reportError(ev.reason, 'промис'));
+function getNativeCrash() { try { return window.Android && Android.takeCrash ? Android.takeCrash() : null; } catch (_) { return null; } }
+
+// код сохранения: перенос на другой телефон
+function exportSave() {
+  let code = '';
+  try { code = btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (err) { toast('Не удалось создать код'); return; }
+  modal((box, close) => {
+    const ta = h('textarea', { class: 'code', readonly: 'readonly' }, code);
+    box.append(h('h3', null, 'Код сохранения'), h('p', { class: 'hint' }, 'Скопируйте код и вставьте его на другом телефоне в «Загрузить код».'), ta);
+    box.append(h('button', { class: 'btn accent', onclick: () => {
+      const ok = () => toast('Код скопирован');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(ok).catch(() => { ta.select(); document.execCommand('copy'); ok(); });
+      else { ta.select(); document.execCommand('copy'); ok(); }
+    } }, 'Скопировать'), h('button', { class: 'btn', onclick: close }, 'Закрыть'));
+  });
+}
+function importSave() {
+  modal((box, close) => {
+    const ta = h('textarea', { class: 'code', placeholder: 'Вставьте код сохранения' });
+    box.append(h('h3', null, 'Загрузить сохранение'), h('p', { class: 'hint' }, 'Текущий прогресс будет заменён.'), ta);
+    box.append(h('button', { class: 'btn accent', onclick: () => {
+      try {
+        const d = JSON.parse(decodeURIComponent(escape(atob(ta.value.trim()))));
+        if (!d || !d.engines || !d.engines.length) throw new Error('в коде нет двигателей');
+        localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+        location.reload();
+      } catch (err) { toast('Код не подошёл: ' + err.message); }
+    } }, 'Загрузить'), h('button', { class: 'btn', onclick: close }, 'Отмена'));
+  });
+}
+
+// качество графики и автоснижение на слабых телефонах
+var GFX_PR = { high: 1.75, mid: 1.25, low: 0.9 };
+var gfxLevel = 'high';
+function applyGfx() {
+  const g = S.settings.gfx || 'auto';
+  if (g === '2d') { G3.disabled = true; return; }
+  G3.disabled = false;
+  gfxLevel = g === 'auto' ? (S.settings.gfxAuto || 'high') : g;
+  G3.quality = gfxLevel;
+  if (G3.r) { G3.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, GFX_PR[gfxLevel])); G3.w = 0; }
+}
+var fpsMon = { t: 0, n: 0 };
+function watchFps(dt) {
+  if ((S.settings.gfx || 'auto') !== 'auto' || !G3.ok || G3.disabled) return;
+  fpsMon.t += dt; fpsMon.n++;
+  if (fpsMon.t < 4) return;
+  const fps = fpsMon.n / fpsMon.t; fpsMon.t = 0; fpsMon.n = 0;
+  const cur = S.settings.gfxAuto || 'high';
+  if (fps < 28 && cur !== 'low') {
+    S.settings.gfxAuto = cur === 'high' ? 'mid' : 'low'; save(); applyGfx();
+    toast('Графика снижена для плавности (' + Math.round(fps) + ' кадров/с)');
+  }
+}

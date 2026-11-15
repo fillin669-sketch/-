@@ -6,12 +6,13 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 function rotX(v, a) { const c = Math.cos(a), s = Math.sin(a); return V3(v.x, v.y * c - v.z * s, v.y * s + v.z * c); }
 
 function init3D() {
+  if (G3.disabled || G3.lost) return false;
   if (G3.tried) return G3.ok;
   G3.tried = true;
   try {
     if (typeof THREE === 'undefined') return false;
     const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, ({ high: 1.75, mid: 1.25, low: 0.9 })[G3.quality || 'high']));
     r.outputEncoding = THREE.sRGBEncoding;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 0.78;
@@ -23,6 +24,11 @@ function init3D() {
     G3.env = makeStudioEnv();
     G3.shadowTex = makeShadowTex();
     bindOrbitEvents(G3.canvas);
+    G3.canvas.addEventListener('webglcontextlost', (ev) => {
+      ev.preventDefault(); G3.lost = true; G3.ok = false;
+      if (G3.canvas.parentNode) G3.canvas.style.display = 'none';
+      if (typeof toast === 'function') toast('3D-графика недоступна, включён 2D-режим');
+    });
     G3.ok = true;
   } catch (err) { console.warn('3D недоступно', err); G3.ok = false; }
   return G3.ok;
@@ -99,7 +105,7 @@ function bindOrbitEvents(cv) {
 
 // показать 3D-сцену в контейнере
 function show3D(host, view) {
-  if (!init3D()) return false;
+  if (!init3D()) { if (G3.canvas) G3.canvas.style.display = 'none'; return false; }
   if (G3.canvas.parentNode !== host) host.prepend(G3.canvas);
   G3.active = view;
   return true;
@@ -960,7 +966,7 @@ class Car3D {
     const cal = new THREE.Mesh(new THREE.BoxGeometry(0.1, ri * 0.55, 0.06), std(CALIPER[c.caliper || 'black'] || 0x1a1b1e, 0.3, 0.35)); cal.position.set(-ri * 0.62, ri * 0.25, side * w * 0.2); cal.rotation.z = 0.5; this.calipers = (this.calipers || []).concat(cal);
     const spokes = new THREE.Group(); face.add(spokes);
     const style = wire ? 'wire' : c.rimStyle;
-    const nSp = { steel: 0, alloy: 5, mesh: 14, forged: 10, black: 6, gold: 8, wire: 24 }[style] ?? 5;
+    let nSp = { steel: 0, alloy: 5, mesh: 14, forged: 10, black: 6, gold: 8, wire: 24 }[style]; if (nSp === undefined) nSp = 5;
     if (nSp === 0) {
       const d = new THREE.Mesh(new THREE.CylinderGeometry(ri * 0.96, ri * 0.96, 0.02, 32), rimM); d.rotation.x = Math.PI / 2; spokes.add(d);
       for (let k = 0; k < 6; k++) { const h = new THREE.Mesh(new THREE.CylinderGeometry(ri * 0.13, ri * 0.13, 0.022, 12), std(0x0b0b0c, 0, 0.9)); h.rotation.x = Math.PI / 2; h.position.set(Math.cos(k / 6 * Math.PI * 2) * ri * 0.6, Math.sin(k / 6 * Math.PI * 2) * ri * 0.6, side * 0.002); spokes.add(h); }
