@@ -107,7 +107,7 @@
     <section class="tab" id="tab-race" hidden>
       <div class="pad">
         <h2 class="h">Заезды на 402 метра</h2>
-        <p class="lead">Держите газ на старте, отпустите обороты до зелёного, переключайтесь на отсечке. Победа приносит деньги, а следующий соперник открывается после победы над предыдущим.</p>
+        <p class="lead">Перед стартом выберите автомат или ручную коробку. Держите педаль до зелёного — обороты сами встанут на лучшие для старта. Победа приносит деньги, а следующий соперник открывается после победы над предыдущим.</p>
         <div id="raceCar"></div>
         <div id="rivals"></div>
         <div class="spacer"></div>
@@ -148,8 +148,9 @@
     <canvas id="cvRaceHud"></canvas>
     <button class="btn shift" id="btnShift">ПЕРЕДАЧА +</button>
     <button class="btn nos racenos" id="btnRaceNos" hidden>ЗАКИСЬ</button>
-    <button class="btn ghost raceexit" id="btnRaceExit">Выйти</button>
-    <label class="autoshift"><input type="checkbox" id="chkAuto"> Автопереключение</label>
+    <div class="race-top"><span class="race-mode" id="raceMode">Ручная</span><button class="btn ghost" id="btnRaceExit" style="min-height:36px;padding:6px 12px">Выйти</button></div>
+    <div class="race-hint" id="raceHint" hidden></div>
+    <div class="race-flash" id="raceFlash"></div>
     <div class="pedal-wrap race" id="racePedalWrap">
       <div class="pedal" id="racePedal"><div class="pedal-plate"><i></i><i></i><i></i><i></i><i></i></div></div>
     </div>

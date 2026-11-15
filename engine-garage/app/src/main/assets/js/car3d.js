@@ -105,11 +105,17 @@ function buildBodyGeometry(P, c, F, paintRGB) {
       // классификация
       let k = 0;
       const az = Math.abs(z);
-      if (F.cabin(x) && y > top + 0.012 && y < roof - 0.032) {
+      const front = x < F.roofF - 0.02, back = x > F.roofR + 0.02;
+      if (F.cabin(x) && y > top + 0.012 && (front || back || y < roof - 0.032)) {
         let glass = true;
-        if (x < F.roofF - 0.02) glass = az < gw * 0.8;                       // лобовое: стойки по краям
-        else if (x > F.roofR + 0.02) glass = az < gw * (c.body === 'hatch' || c.body === 'wagon' ? 0.7 : 0.5);   // заднее стекло
-        else { const bx = (F.roofF + F.roofR) / 2 + 0.04; if (Math.abs(x - bx) < 0.035) k = 2; if (x > F.roofR - (c.body === 'hatch' ? 0.06 : 0.16) && az > gw * 0.7) glass = false; }
+        if (front) { glass = az < gw * 0.74; if (!glass && az < gw * 0.84) k = 2; }          // лобовое стекло, по краям — стойки
+        else if (back) { const lim = gw * (c.body === 'hatch' || c.body === 'wagon' ? 0.66 : 0.52); glass = az < lim; if (!glass && az < lim + gw * 0.08) k = 2; }
+        else {
+          const bx = (F.roofF + F.roofR) / 2 + 0.04;
+          if (Math.abs(x - bx) < 0.035) k = 2;                                              // средняя стойка
+          if (y > roof - 0.058 || y < top + 0.03) k = 2;                                     // уплотнители окон
+          if (x > F.roofR - (c.body === 'hatch' ? 0.06 : 0.16) && az > gw * 0.7) glass = false;
+        }
         if (glass && k === 0) k = 1;
       }
       if (y < F.bot(x) + 0.008 && az < F.halfW(x) * 0.84) k = 2; // днище
@@ -217,6 +223,11 @@ Car3D.prototype.build = function (c, stats, eng) {
     add(new THREE.BoxGeometry(0.01, 0.11, 0.5), std(0xeeeeee, 0, 0.5), V3(X(L) + 0.006, F.sill + 0.25, 0));
     add(new THREE.BoxGeometry(0.012, 0.1, 0.5), std(0xeeeeee, 0, 0.5), V3(X(0) - 0.01, F.sill + 0.16, 0));
   }
+  // ---- дворники ----
+  if (!P.dragster && !P.open) {
+    const wx = F.cab0 + 0.07, wy = top(wx) + 0.03;
+    [-1, 1].forEach(s => { const m = add(new THREE.BoxGeometry(0.02, 0.012, W * 0.3), black, V3(X(wx), wy, s * W * 0.14), [0, s * 0.25, 0.5]); });
+  }
   // ---- гоночные полосы ----
   if (c.stripe) decal((x, y, z, nx, ny) => ny > 0.2 && Math.abs(Math.abs(z) - 0.16) < 0.07 && y > F.sill + 0.25, new THREE.MeshPhysicalMaterial({ color: 0xf2f3f5, roughness: 0.3, clearcoat: 1 }), 0.002);
   // ---- карбон: капот, крыша, багажник (облегчение) ----
@@ -249,7 +260,7 @@ Car3D.prototype.build = function (c, stats, eng) {
   if (!P.dragster && P.wb[0] < hoodEnd) {
     const hy = top(hx);
     const slope = Math.atan2(top(hoodEnd) - top(0.4), hoodEnd - 0.4);
-    if (bigEngine && !roots) { const b = add(new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), carbonHood ? carbon : paintSolid, V3(X(hx), hy - 0.005, 0), [0, 0, slope]); b.scale.set((hoodEnd - 0.4) * 0.42, 0.06, hw(hx) * 0.32); }
+    if (bigEngine && !roots) { const b = add(new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), carbonHood ? carbon : paintSolid, V3(X(hx), hy - 0.005, 0), [0, 0, slope]); b.scale.set((hoodEnd - 0.4) * 0.42, 0.035, hw(hx) * 0.3); }
     if (c.hood === 'scoop' || (eng && hasTurbo(eng) && c.hood !== 'stock')) {
       const sc = add(new THREE.BoxGeometry(0.42, 0.07, W * 0.26), carbonHood ? carbon : paintSolid, V3(X(hx + 0.15), hy + 0.03, 0), [0, 0, slope]);
       add(new THREE.BoxGeometry(0.02, 0.05, W * 0.22), trim, V3(X(hx - 0.06), hy + 0.035, 0), [0, 0, slope]);

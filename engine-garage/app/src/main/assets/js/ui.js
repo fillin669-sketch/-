@@ -137,13 +137,25 @@ function fieldInfo(k, e) {
 
 // ---------- Универсальная отрисовка списка деталей ----------
 // spec: [{id,title,icon,fields}], obj — редактируемый объект
+// Экран не должен прыгать: после любой перерисовки возвращаем поле, которого касались, на то же место
+let anchorKey = null;
+document.addEventListener('pointerdown', (ev) => { const f = ev.target.closest && ev.target.closest('[data-k]'); anchorKey = f ? f.dataset.k : null; }, true);
+function stable(scroller, fn) {
+  if (!scroller) { fn(); return; }
+  const sel = anchorKey ? '[data-k="' + anchorKey + '"]' : '.sec.open';
+  const a = scroller.querySelector(sel);
+  const top0 = scroller.scrollTop, t0 = a ? a.getBoundingClientRect().top : null;
+  fn();
+  const b = scroller.querySelector(sel);
+  if (b && t0 != null) scroller.scrollTop = scroller.scrollTop + (b.getBoundingClientRect().top - t0);
+  else scroller.scrollTop = top0;
+}
 function renderSpec(root, spec, obj, cfg) {
-  const scroller = root.closest('.tab');
-  const keepTop = scroller ? scroller.scrollTop : 0;
-  const frag = document.createDocumentFragment();
-  renderSpecInto(frag, root, spec, obj, cfg);
-  root.replaceChildren(frag);
-  if (scroller) scroller.scrollTop = keepTop;
+  stable(root.closest('.tab'), () => {
+    const frag = document.createDocumentFragment();
+    renderSpecInto(frag, root, spec, obj, cfg);
+    root.replaceChildren(frag);
+  });
 }
 function renderSpecInto(rootFrag, root, spec, obj, cfg) {
   for (const sec of spec) {
@@ -187,7 +199,7 @@ function priceTxt(p) { return p > 0 ? money(p) : p < 0 ? '−' + money(-p).slice
 
 function renderField(f, o, cfg, rerender) {
   const label = val(f.label, o);
-  const wrap = h('div', { class: 'field' });
+  const wrap = h('div', { class: 'field', 'data-k': f.k });
   const isTune = f.tune || TUNE_KEYS.includes(f.k);
   const set = (v, structural) => {
     o[f.k] = v; cfg.onChange(f.k, structural);
@@ -251,7 +263,8 @@ function renderEngineTab() {
 }
 let statsRaf = 0;
 function scheduleStats() { if (statsRaf) return; statsRaf = requestAnimationFrame(() => { statsRaf = 0; updateEngineStats(); }); }
-function updateEngineStats() {
+function updateEngineStats() { stable($('#tab-engine'), updateEngineStatsRaw); }
+function updateEngineStatsRaw() {
   const e = curEngine();
   const c = engineCurve(e);
   const stats = $('#engStats');
@@ -352,7 +365,8 @@ function dynoPrepare() {
   snd.configure(be);
   return be;
 }
-function renderDynoTab() {
+function renderDynoTab() { stable($('#tab-dyno'), renderDynoTabRaw); }
+function renderDynoTabRaw() {
   const e = curEngine();
   const be = dynoPrepare();
   $('#btnNos').hidden = !(be && be.nitrous);
@@ -770,7 +784,8 @@ function renderCarTab() {
 }
 let carRaf = 0;
 function scheduleCar() { if (carRaf) return; carRaf = requestAnimationFrame(() => { carRaf = 0; updateCarStats(true); }); }
-function updateCarStats(fast) {
+function updateCarStats(fast) { stable($('#tab-car'), () => updateCarStatsRaw(fast)); }
+function updateCarStatsRaw(fast) {
   const c = curCar(), e = carEngineOf(c);
   const st = carStats(c, e);
   const curve = e ? engineCurve(e) : null;
@@ -782,8 +797,8 @@ function updateCarStats(fast) {
     h('div', null, h('b', null, money(carCost(c)).replace('₽ ', '')), h('span', null, '₽ детали')));
   carView.c = c; carView.st = st;
   clearTimeout(perfT);
-  perfT = setTimeout(() => {
-    const p = $('#carPerf'); p.innerHTML = '';
+  perfT = setTimeout(() => stable($('#tab-car'), () => {
+    const p = $('#carPerf'); p.style.minHeight = p.offsetHeight + 'px'; p.innerHTML = '';
     p.append(h('div', { class: 'card-h' }, h('span', null, 'Расчётный разгон')));
     if (!e) { p.append(h('div', { class: 'warn' }, 'Поставьте собранный двигатель')); return; }
     const r = carPerformance(builtCar(c) || c, e);
@@ -795,7 +810,8 @@ function updateCarStats(fast) {
     if (curEngineById(c.engineId).blown) w.push('Двигатель сломан: отремонтируйте его на стенде');
     if (carChanged(c)) w.push('Расчёт для собранной версии машины. Соберите изменения.');
     w.forEach(t => p.append(h('div', { class: 'warn' }, t)));
-  }, fast ? 250 : 30);
+    p.style.minHeight = '';
+  }), fast ? 250 : 30);
   renderCarBuildBar();
 }
 function curEngineById(id) { return S.engines.find(e => e.id === id) || {}; }
@@ -884,13 +900,51 @@ function stepRival(s, dt) {
   s.x += s.v * dt;
   if (s.rpm > r.peak * 1.12 && s.gear < s.gears.length - 1 && s.shiftT <= 0) { s.gear++; s.shiftT = 0.25; }
 }
+// подбор лучших оборотов старта (быстрее всего проезжает первые 18 м)
+function bestLaunch(c, e) {
+  const maxR = Math.min(e.limiter, limits(e).mech);
+  let best = null;
+  for (let r = 2500; r <= maxR - 200; r += 250) {
+    const s = newCarState(c, e); s.rpm = r; s.spool = 0.3; s.launched = true;
+    let t = 0; while (s.x < 18 && t < 6) { stepCar(s, 1 / 120, 1, {}); t += 1 / 120; }
+    if (!best || t < best.t - 0.005) best = { r, t };
+  }
+  return best ? best.r : 3000;
+}
 function startRace(i) {
   const c = curCar(), e = carEngineOf(c), engRec = curEngineById(c.engineId);
   if (!e) { toast('Поставьте собранный двигатель на вкладке «Машина»'); return; }
   if (engRec.blown) { toast('Двигатель сломан: отремонтируйте его на стенде'); return; }
   if (!c.built) { toast('Сначала соберите машину'); return; }
   const r = RIVALS[i];
-  if (!canPay(r.fee)) { toast('Не хватает денег на взнос'); return; }
+  const bc = builtCar(c);
+  const gbAuto = !!GEARBOXES[bc.gearbox].auto;
+  let auto = gbAuto || !!S.settings.autoShift;
+  const myHp = Math.round((engRec.lastDyno || engineCurve(e).peak).hp), myMass = Math.round(carStats(bc, e).mass);
+  modal((box, close) => {
+    box.append(h('h3', null, 'Заезд на 402 м'));
+    box.append(h('div', { class: 'vs' },
+      h('div', null, h('b', null, c.name), h('span', null, myHp + ' л.с. · ' + myMass + ' кг')),
+      h('div', { class: 'x' }, 'VS'),
+      h('div', null, h('b', null, r.name), h('span', null, '≈' + r.hp + ' л.с. · ' + r.mass + ' кг'))));
+    const modeRow = h('div', { class: 'chips' });
+    const drawMode = () => { modeRow.innerHTML = ''; [[true, 'Автомат', 'Передачи сами'], [false, 'Ручная', 'Кнопка «Передача +»']].forEach(([v, n, d]) => modeRow.append(h('button', { class: 'chip' + (auto === v ? ' on' : ''), disabled: gbAuto && !v ? 'disabled' : false, onclick: () => { auto = v; drawMode(); } }, h('b', null, n), h('small', null, d)))); };
+    drawMode();
+    box.append(h('div', { class: 'f-h' }, h('label', null, 'Переключение передач')), modeRow);
+    box.append(h('ol', { class: 'howto' },
+      h('li', null, 'До старта держите педаль: обороты сами встанут на лучшие для старта.'),
+      h('li', null, 'Машина рвёт с места на зелёный. Отпустили газ — потеряете время на реакции.'),
+      h('li', null, auto ? 'Передачи переключаются сами — просто держите газ.' : 'Переключайтесь, когда загорятся красные огни, или касайтесь экрана сверху.')));
+    box.append(h('button', { class: 'btn accent big', onclick: () => {
+      if (!canPay(r.fee)) { toast('Не хватает денег на взнос'); return; }
+      S.settings.autoShift = auto; save(); close(); beginRace(i, auto);
+    } }, 'Старт' + (r.fee ? ' · взнос ' + money(r.fee) : '')));
+    box.append(h('button', { class: 'btn', onclick: close }, 'Отмена'));
+  });
+}
+function beginRace(i, auto) {
+  const c = curCar(), e = carEngineOf(c);
+  const r = RIVALS[i];
   pay(r.fee);
   const bc = builtCar(c);
   Object.assign(R, { on: true, idx: i, rival: r, me: newCarState(bc, e), op: rivalCar(r), phase: 'stage', t: 0, green: null, rt: null, opRt: 0.12 + Math.random() * 0.25 * (1 - i / RIVALS.length), done: false, thr: 0, e, c: bc, parts: new Particles(), cam: 0, myTime: null, opTime: null, fault: false });
@@ -903,24 +957,38 @@ function startRace(i) {
       $('#cvRace').style.visibility = 'hidden';
     }
   } catch (err) { console.warn(err); R.r3d = null; $('#cvRace').style.visibility = ''; }
-  R.lightT = 2.2 + Math.random() * 0.8;
+  R.lightT = 1.6 + Math.random() * 0.8;
+  R.auto = auto; R.launchRpm = bestLaunch(bc, e);
+  const cv = engineCurve(e);
+  R.shiftAt = Math.min(cv.maxRpm * 0.98, Math.max(cv.peak.hpRpm * 1.08, cv.peak.hpRpm + 300));
+  R.msg = ''; R.msgT = 0; R.pressedAtGreen = false;
+  $('#raceMode').textContent = auto ? 'Автомат' : 'Ручная';
   $('#raceScreen').hidden = false;
-  const gb = GEARBOXES[bc.gearbox];
-  $('#chkAuto').checked = !!gb.auto; $('#chkAuto').disabled = !!gb.auto;
   $('#btnRaceNos').hidden = !e.nitrous;
   snd.init(); snd.resume(); snd.on = true; snd.configure(e); snd.volume = S.settings.vol;
   stopEngine();
 }
 function raceShift() {
-  if (!R.on || !R.me || R.phase !== 'run') return;
-  if (shiftUp(R.me)) { vibrate(20); if (hasTurbo(R.e) && R.e.bov && R.me.spool > 0.4) snd.bov(); }
+  if (!R.on || !R.me || R.phase !== 'run' || R.auto) return;
+  const me = R.me, rpm = me.rpm;
+  if (me.gear >= me.st.gears.length - 1 || me.shiftT > 0) return;
+  const k = rpm / R.shiftAt;
+  if (shiftUp(me)) {
+    vibrate(20); if (hasTurbo(R.e) && R.e.bov && me.spool > 0.4) snd.bov();
+    if (k > 0.94 && k < 1.05) { flash('ИДЕАЛЬНО!', '#3dff7a'); me.shiftT *= 0.6; }
+    else if (k <= 0.94) flash(k < 0.8 ? 'РАНО' : 'ЧУТЬ РАНО', '#ffb020');
+    else flash('ПОЗДНО', '#ff6a4d');
+  }
 }
+function flash(t, col) { R.msg = t; R.msgCol = col; R.msgT = 0.8; }
 $('#btnShift').addEventListener('pointerdown', (ev) => { ev.preventDefault(); raceShift(); });
+$('#raceView').addEventListener('pointerdown', () => raceShift());
+$('#cvRace').addEventListener('pointerdown', () => raceShift());
 $('#btnRaceExit').addEventListener('click', () => endRace(true));
 const rnBtn = $('#btnRaceNos');
 rnBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); if (R.me) R.me.nitrous = true; rnBtn.classList.add('on'); });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(x => rnBtn.addEventListener(x, () => { if (R.me) R.me.nitrous = false; rnBtn.classList.remove('on'); }));
-bindPedal($('#racePedal'), (v) => { R.thr = v; });
+bindPedal($('#racePedal'), (v) => { R.thr = v > 0 ? 1 : 0; });
 function endRace(abort) {
   if (R.r3d) { disposeTree(R.r3d.scene); R.r3d = null; if (G3.canvas && G3.canvas.parentNode === $('#raceView')) G3.canvas.remove(); }
   $('#cvRace').style.visibility = '';
@@ -935,13 +1003,14 @@ function tickRace(dt) {
   for (let i = 0; i < steps; i++) {
     let thr = R.thr;
     if (R.phase === 'stage' || R.phase === 'tree') {
-      // старт: лаунч-контроль держит обороты
-      if (e.ecu === 'standalone' && thr > 0.8 && me.rpm > e.launch) thr = 0.05;
+      // до старта педаль работает как лаунч-контроль: держит лучшие обороты
+      if (thr > 0.3) thr = me.rpm < R.launchRpm ? 1 : 0.04;
       stepCar(me, h2, thr, {});
     } else if (R.phase === 'run') {
-      stepCar(me, h2, thr, { autoShift: $('#chkAuto').checked });
+      if (R.rt == null) { if (R.thr > 0.3) R.rt = R.t - R.green; else thr = 0; }
+      stepCar(me, h2, thr, { autoShift: R.auto, shiftRpm: R.shiftAt });
       stepRival(op, h2);
-      if (R.myTime == null && me.x >= 402) { R.myTime = me.t + R.rt; R.trap = me.v * 3.6; }
+      if (R.myTime == null && me.x >= 402) { R.myTime = R.t - R.green; R.trap = me.v * 3.6; }
       if (R.opTime == null && op.x >= 402) { R.opTime = op.t + R.opRt; }
       if (R.myTime != null && R.opTime != null) { R.phase = 'done'; setTimeout(showRaceResult, 600); }
       if (me.t > 60 && R.myTime == null) { R.myTime = 99; R.trap = me.v * 3.6; }
@@ -955,11 +1024,22 @@ function tickRace(dt) {
     R.treeT += dt;
     if (R.treeT >= R.lightT && R.green == null) { R.green = R.t; }
     if (R.green != null) {
-      if (R.thr > 0.3) { R.rt = R.t - R.green; me.launched = true; R.phase = 'run'; vibrate(30); }
-      if (R.t - R.green > R.opRt) op.launched = true;
+      // зелёный: машина стартует сама; если газ уже нажат — реакция почти идеальная
+      me.launched = true; R.phase = 'run'; vibrate(30);
+      if (R.thr > 0.3) { R.rt = 0.03 + Math.random() * 0.04; R.green -= R.rt; flash('СТАРТ!', '#3dff7a'); }
+      else R.rt = null;
     }
   }
   if (R.phase === 'run' && !op.launched && R.t - R.green > R.opRt) op.launched = true;
+  if (R.phase === 'run' && R.rt == null && R.t - R.green > 1.5) { R.rt = R.t - R.green; }
+  // подсказки на экране
+  const hint = $('#raceHint');
+  let ht = '';
+  if (R.phase === 'stage' || R.phase === 'tree') ht = R.thr > 0.3 ? 'Обороты стоят на старте · ждите зелёный' : 'Нажмите и держите педаль газа';
+  else if (R.phase === 'run' && R.rt == null) ht = 'ГАЗ!';
+  hint.hidden = !ht; if (ht) hint.textContent = ht;
+  R.msgT -= dt;
+  const fl = $('#raceFlash'); fl.textContent = R.msgT > 0 ? R.msg : ''; fl.style.color = R.msgCol || '#fff';
   // звук
   snd.update({ rpm: me.rpm, throttle: R.phase === 'done' ? 0 : R.thr, load: me.launched ? 1 : 0, spool: me.spool, on: true, limiter: me.rpm >= Math.min(e.limiter, me.lim.mech) - 100 });
   drawRace(dt);
@@ -974,10 +1054,9 @@ function showRaceResult() {
   save();
   modal((box, close) => {
     box.append(h('h3', null, win ? 'Победа!' : 'Поражение'));
-    box.append(h('div', { class: 'big-num' }, num(R.myTime - R.rt, 3) + ' с'));
-    box.append(h('p', null, 'Реакция ' + num(R.rt, 3) + ' с · скорость на финише ' + Math.round(R.trap) + ' км/ч'));
-    box.append(h('p', null, r.name + ': ' + num(R.opTime - R.opRt, 3) + ' с (реакция ' + num(R.opRt, 3) + ')'));
-    box.append(h('p', null, 'Итог с реакцией: вы ' + num(R.myTime, 3) + ' · соперник ' + num(R.opTime, 3)));
+    box.append(h('div', { class: 'big-num' }, num(R.myTime, 2) + ' с'));
+    box.append(h('p', null, 'Реакция ' + num(R.rt || 0, 2) + ' с · скорость на финише ' + Math.round(R.trap) + ' км/ч'));
+    box.append(h('p', null, r.name + ': ' + num(R.opTime, 2) + ' с · ' + (win ? 'вы быстрее на ' : 'вы медленнее на ') + num(Math.abs(R.opTime - R.myTime), 2) + ' с'));
     if (win) box.append(h('p', null, 'Приз: ', h('b', null, money(r.prize))));
     box.append(h('button', { class: 'btn accent', onclick: () => { close(); endRace(); } }, 'В гараж'));
     box.append(h('button', { class: 'btn', onclick: () => { close(); endRace(); startRace(i); } }, 'Ещё раз' + (r.fee ? ' · ' + money(r.fee) : '')));
@@ -1058,10 +1137,10 @@ function drawRaceHud() {
   const maxR = Math.ceil(Math.max(e.limiter, me.lim.mech) * 1.1 / 1000) * 1000;
   const red = Math.min(e.limiter, me.lim.mech);
   const Rg = Math.min(H * 0.3, W * 0.22);
-  drawGauge(ctx, W / 2, Rg + 26, Rg, me.rpm / 1000, 0, maxR / 1000, { red: red / 1000, major: maxR > 12000 ? 2 : 1, minor: maxR > 12000 ? 1 : 0.5, label: '×1000 об/мин', digital: String(Math.round(me.rpm)) });
+  const zone = R.phase === 'run' || R.phase === 'done' ? [R.shiftAt * 0.95 / 1000, Math.min(red, R.shiftAt * 1.04) / 1000, 'rgba(61,255,122,0.85)'] : [(R.launchRpm - 300) / 1000, (R.launchRpm + 300) / 1000, 'rgba(61,255,122,0.85)'];
+  drawGauge(ctx, W / 2, Rg + 26, Rg, me.rpm / 1000, 0, maxR / 1000, { red: red / 1000, zones: [zone], major: maxR > 12000 ? 2 : 1, minor: maxR > 12000 ? 1 : 0.5, label: '×1000 об/мин', digital: String(Math.round(me.rpm)) });
   // светодиоды переключения
-  const leds = 10, opt = R.shiftAt || Math.min(red * 0.98, Math.max(engineCurve(e).peak.hpRpm * 1.08, 0));
-  R.shiftAt = opt;
+  const leds = 10, opt = R.shiftAt;
   const lw = Math.min(22, (W * 0.8) / leds);
   for (let i = 0; i < leds; i++) {
     const th = opt * (0.7 + 0.3 * i / (leds - 1));
@@ -1070,8 +1149,9 @@ function drawRaceHud() {
     ctx.fillStyle = on ? c : '#1e2024';
     ctx.beginPath(); ctx.arc(W / 2 - (leds - 1) / 2 * lw + i * lw, 12, lw * 0.32, 0, Math.PI * 2); ctx.fill();
   }
-  const flash = me.rpm >= opt && R.phase === 'run';
-  $('#btnShift').classList.toggle('flash', flash && Math.floor(R.t * 10) % 2 === 0);
+  const blink = me.rpm >= opt * 0.95 && R.phase === 'run' && !R.auto;
+  $('#btnShift').classList.toggle('flash', blink && Math.floor(R.t * 10) % 2 === 0);
+  $('#btnShift').hidden = !!R.auto;
   // скорость и передача
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillStyle = COL.text; ctx.font = '800 ' + Math.round(Rg * 0.5) + 'px ui-monospace, monospace';
@@ -1084,9 +1164,8 @@ function drawRaceHud() {
   // подсказка фазы
   ctx.textAlign = 'left'; ctx.font = '700 15px sans-serif';
   let msg = '';
-  if (R.phase === 'stage') msg = 'Приготовьтесь: держите газ';
-  else if (R.phase === 'tree') msg = R.green != null ? 'ЗЕЛЁНЫЙ! ГАЗ!' : 'Ждите зелёный…';
-  else if (R.phase === 'run') msg = me.wheelspin > 0.1 ? 'Пробуксовка!' : (me.x < 402 ? Math.round(402 - me.x) + ' м до финиша' : 'Финиш!');
+  if (R.phase === 'stage' || R.phase === 'tree') msg = 'Старт на ' + Math.round(R.launchRpm / 100) * 100 + ' об/мин';
+  else if (R.phase === 'run') msg = me.wheelspin > 0.1 ? 'Пробуксовка!' : (me.x < 402 ? Math.round(402 - me.x) + ' м · ' + num(R.t - R.green, 1) + ' с' : 'Финиш!');
   ctx.fillStyle = msg.startsWith('ЗЕЛ') ? '#3dff7a' : me.wheelspin > 0.1 ? COL.amber : COL.text;
   ctx.fillText(msg, 14, Rg * 2 + 36);
   // прогресс двух машин
@@ -1162,7 +1241,7 @@ function renderSettings() {
   st.append(tgl('Песочница', 'Бесконечные деньги и все соперники открыты', () => S.sandbox, (v) => { S.sandbox = v; renderRace(); }));
   st.append(tgl('Вибрация', 'Отдача при переключениях и поломках', () => S.settings.vibro, (v) => S.settings.vibro = v));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.0'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.1'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================
