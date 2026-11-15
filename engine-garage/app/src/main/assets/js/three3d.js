@@ -742,7 +742,7 @@ class Car3D {
     this.orbit.auto = 0.12;
     this.key = '';
     // подиум
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.7, 0.08, 64), std(0x0d0e10, 0.5, 0.32));
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.7, 0.08, 64), std(0x0b0c0e, 0.2, 0.6));
     disc.position.y = -0.04; this.scene.add(disc);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.62, 0.012, 6, 96), new THREE.MeshBasicMaterial({ color: 0xf2a93b }));
     ring.rotation.x = Math.PI / 2; ring.position.y = 0.001; this.scene.add(ring);

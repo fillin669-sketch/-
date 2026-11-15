@@ -1266,7 +1266,7 @@ function renderSettings() {
     h('button', { class: 'btn', onclick: importSave }, 'Загрузить код')));
   if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.2'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.3'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

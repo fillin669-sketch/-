@@ -118,7 +118,7 @@ function buildBodyGeometry(P, c, F, paintRGB) {
         }
         if (glass && k === 0) k = 1;
       }
-      if (y < F.bot(x) + 0.008 && az < F.halfW(x) * 0.84) k = 2; // днище
+      if (y < F.bot(x) + 0.008 && az < F.halfW(x) * 0.84 && Math.min(x, F.L - x) > 0.4) k = 2; // днище
       cls.push(k);
       // цвет краски с лёгкой тенью у порогов и швами дверей
       let sh = 1;
@@ -132,15 +132,16 @@ function buildBodyGeometry(P, c, F, paintRGB) {
   });
   const idx = [[], [], []];
   const R = ringN;
-  for (let i = 0; i < N; i++) for (let j = 0; j < R - 1; j++) {
-    const a = i * R + j, b = a + 1, cc = a + R, dd = cc + 1;
+  for (let i = 0; i < N; i++) for (let j = 0; j < R; j++) {
+    const jn = (j + 1) % R;
+    const a = i * R + j, b = i * R + jn, cc = a + R, dd = (i + 1) * R + jn;
     const tri = (p, q, r) => { const ks = [cls[p], cls[q], cls[r]]; const g = ks.includes(2) ? 2 : (ks[0] === 1 && ks[1] === 1 && ks[2] === 1) ? 1 : 0; idx[g].push(p, q, r); };
     tri(a, cc, b); tri(b, cc, dd);
   }
   // торцы
   const capStart = pos.length / 3; pos.push(-F.L / 2, (F.bot(0) + F.top(0)) / 2, 0); col.push(...paintRGB); cls.push(0);
   const capEnd = pos.length / 3; pos.push(F.L / 2, (F.bot(F.L) + F.top(F.L)) / 2, 0); col.push(...paintRGB); cls.push(0);
-  for (let j = 0; j < R - 1; j++) { idx[0].push(capStart, j + 1, j); const o = N * R; idx[0].push(capEnd, o + j, o + j + 1); }
+  for (let j = 0; j < R; j++) { const jn = (j + 1) % R; idx[0].push(capStart, jn, j); const o = N * R; idx[0].push(capEnd, o + j, o + jn); }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -186,7 +187,7 @@ Car3D.prototype.build = function (c, stats, eng) {
   const fin = PAINT_FIN[c.finish || 'gloss'] || PAINT_FIN.gloss;
   const paint = new THREE.MeshPhysicalMaterial({ color: 0xffffff, vertexColors: true, metalness: fin[0], roughness: fin[1], clearcoat: fin[2], clearcoatRoughness: 0.04, envMapIntensity: 1.25 });
   if (c.finish === 'pearl') { paint.sheen = 1; paint.sheenColor = new THREE.Color(0xffffff); paint.sheenRoughness = 0.35; }
-  const paintSolid = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(c.color || '#c8312b'), metalness: fin[0], roughness: fin[1], clearcoat: fin[2], clearcoatRoughness: 0.04 });
+  const paintSolid = new THREE.MeshPhysicalMaterial({ color: col.clone(), metalness: fin[0], roughness: fin[1], clearcoat: fin[2], clearcoatRoughness: 0.04 });
   const tint = { none: 0.5, light: 0.75, dark: 0.9, limo: 0.97 }[c.tint || 'light'];
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x04070b, metalness: 0.5, roughness: 0.02, clearcoat: 1, transparent: true, opacity: tint, envMapIntensity: 1.5, side: THREE.DoubleSide });
   const trim = std(0x0d0e10, 0.3, 0.55);
@@ -217,7 +218,8 @@ Car3D.prototype.build = function (c, stats, eng) {
     decal((x, y, z, nx) => x < 0.2 && nx < -0.3 && Math.abs(y - (ly - 0.02)) < 0.05 && Math.abs(z) < hw(x) * 0.4, grilleM, 0.004);
     decal((x, y, z, nx) => x < 0.22 && nx < -0.25 && y > F.sill + 0.06 && y < F.sill + 0.17 && Math.abs(z) < hw(x) * 0.7, std(0x050506, 0.4, 0.5), 0.004);
     // задние фонари
-    decal((x, y, z, nx) => x > L - 0.32 && Math.abs(y - lyT) < 0.045 && Math.abs(z) > hw(x) * 0.48 && Math.abs(z) < hw(x) * 0.95 && nx > 0.2, tailM, 0.004);
+    decal((x, y, z, nx) => x > L - 0.4 && Math.abs(y - lyT) < 0.075 && Math.abs(z) > hw(x) * 0.38 && Math.abs(z) < hw(x) * 0.97 && nx > 0.05, tailM, 0.004);
+    decal((x, y, z, nx) => x > L - 0.4 && Math.abs(y - lyT + 0.045) < 0.016 && Math.abs(z) > hw(x) * 0.5 && Math.abs(z) < hw(x) * 0.9 && nx > 0.05, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.6, roughness: 0.2 }), 0.005);
     if (led || c.body === 'coupe' || c.body === 'super') decal((x, y, z, nx) => x > L - 0.2 && Math.abs(y - lyT - 0.035) < 0.01 && nx > 0.5, tailM, 0.004);
     // номерной знак
     add(new THREE.BoxGeometry(0.01, 0.11, 0.5), std(0xeeeeee, 0, 0.5), V3(X(L) + 0.006, F.sill + 0.25, 0));
@@ -285,7 +287,7 @@ Car3D.prototype.build = function (c, stats, eng) {
     if (P.dragster && s < 0) return;
     const sz = P.dragster ? 0 : s * W * 0.21, sx = seatX + dx;
     const bucket = c.seats === 'bucket' && ri === 0;
-    const sm = bucket ? std(0x1b1c20, 0.1, 0.85) : std(0x2b2c31, 0.05, 0.9);
+    const sm = bucket ? std(0x121316, 0.1, 0.85) : std(0x16171a, 0.05, 0.95);
     const cy = belt - 0.4, roofHere = (P.open || P.dragster) ? belt + 0.5 : F.roof(sx + 0.3);
     const bh = Math.max(0.3, roofHere - 0.13 - cy);
     add(new THREE.BoxGeometry(0.48, 0.1, 0.46), sm, V3(X(sx), cy, sz));
