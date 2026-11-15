@@ -30,6 +30,8 @@ class Menus(private val g: SeaGame) {
     private var portTab = 0
     private var portScroll = 0f
     private var scrollRef: ScrollPane? = null
+    /** Прокрутка последнего списка из fitPanel (для тестов). */
+    var fitScroll: ScrollPane? = null
     /** Какой экран сейчас открыт — чтобы при перестройке того же экрана не сбрасывать прокрутку. */
     private var screenKey = ""
     private var resetArmed = false
@@ -581,8 +583,8 @@ class Menus(private val g: SeaGame) {
         val list = Table()
         for (bt in listOf(hand, quality)) list.add(bt).growX().height(44f).padTop(6f).row()
         list.add(gfxHint).growX().padTop(2f).row()
-        for (bt in listOf(auto, vib, saveBtn, tut, back)) list.add(bt).growX().height(44f).padTop(6f).row()
-        fitPanel(root, panel, list, 420f)
+        for (bt in listOf(auto, vib, saveBtn, tut)) list.add(bt).growX().height(44f).padTop(6f).row()
+        fitPanel(root, panel, list, 420f, listOf(back))
         // версия приложения — в правом нижнем углу экрана
         val ver = ui.label("Версия " + g.appVersion.ifEmpty { "для ПК" }, ui.small, rgb(0x90a4ae))
         ver.pack()
@@ -592,16 +594,18 @@ class Menus(private val g: SeaGame) {
     }
 
     /** Кладёт список кнопок в панель; если по высоте не помещается (альбомная ориентация) — с прокруткой. */
-    private fun fitPanel(root: Table, panel: Table, list: Table, maxW: Float) {
-        val landscape = g.wDp > g.hDp
-        if (landscape) {
-            val scroll = ScrollPane(list, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true) }
-            panel.add(scroll).grow().row()
-            root.add(panel).width(min(g.wDp - 32, maxW)).height(g.hDp - g.safeTop - g.safeBottom - 16)
-        } else {
-            panel.add(list).growX().row()
-            root.add(panel).width(min(g.wDp - 32, maxW))
-        }
+    /**
+     * Список — с прокруткой, кнопки [footer] — под ним и всегда на экране.
+     * Короткий список панель не растягивает, длинный листается.
+     */
+    private fun fitPanel(root: Table, panel: Table, list: Table, maxW: Float, footer: List<Actor> = emptyList()) {
+        val w = min(g.wDp - 32, maxW)
+        fitList(list, w)
+        val scroll = ScrollPane(list, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true); it.setFadeScrollBars(false) }
+        fitScroll = scroll
+        panel.add(scroll).grow().row()
+        for (f in footer) panel.add(f).growX().height(46f).padTop(6f).row()
+        root.add(panel).width(w).maxHeight(g.hDp - g.safeTop - g.safeBottom - 24)
     }
 
     // ===================== Гибель =====================
@@ -1956,9 +1960,8 @@ class Menus(private val g: SeaGame) {
             list.add(c).growX().padBottom(8f).row()
         }
         val toggle = ui.blue(if (sy.shantiesOn) "Пение команды: вкл" else "Пение команды: выкл").also { it.onClick { sy.shantiesOn = !sy.shantiesOn; g.save(); buildSongs() } }
-        list.add(toggle).growX().height(46f).padTop(4f).row()
-        list.add(ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }).growX().height(46f).padTop(6f).row()
-        fitPanel(root, panel, list, 440f)
+        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
+        fitPanel(root, panel, list, 440f, listOf(toggle, back))
     }
 
     private fun buildHelp() {

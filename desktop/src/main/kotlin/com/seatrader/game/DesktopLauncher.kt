@@ -352,6 +352,22 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        if (System.getenv("SEA_SONGS") != null) {
+            when (f) {
+                108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; for (i in SHANTIES.indices) g.systems.shanties += i }
+                110 -> { g.menus.close(); g.menus.showPause(); press("Песни") }
+                130 -> shot("s1_songs_top")
+                131 -> g.menus.fitScroll?.let { it.scrollY = it.maxY; it.updateVisualScroll() }
+                145 -> shot("s2_songs_bottom")
+                146 -> { press("Назад"); log.append("после «Назад»: state=${g.state}\n") }
+                155 -> shot("s3_pause")
+                156 -> press("Настройки")
+                170 -> shot("s4_settings")
+                171 -> { press("Готово"); log.append("после «Готово»: state=${g.state}\n") }
+                180 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_AC4") != null) {
             val p = g.player
             fun foes() = g.ships.filter { it.faction == Faction.PIRATE && !it.sinking }
