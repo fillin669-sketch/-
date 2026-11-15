@@ -195,3 +195,6 @@ canvas.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .hint3d { position: absolute; right: 12px; top: 30px; font: 600 10px var(--f-head); color: rgba(231,233,236,.45); letter-spacing: .04em; pointer-events: none; }
 .viewer.car { height: 32vh; min-height: 200px; }
 .view-btns .seg { padding: 6px 12px; }
+
+#raceView { position: absolute; left: 0; top: 0; width: 100%; height: 52%; }
+#raceView:empty { display: none; }

@@ -817,7 +817,7 @@ function tickCarView(dt) {
   if (carView.c && init3D()) {
     if (!car3d) car3d = new Car3D();
     show3D(host, car3d); G3.canvas.style.display = ''; $('#cvCar').style.visibility = 'hidden';
-    car3d.setCar(carView.c, carView.st);
+    car3d.setCar(carView.c, carView.st, carEngineOf(carView.c));
     render3D(car3d, dt);
     return;
   }
@@ -895,15 +895,14 @@ function startRace(i) {
   const bc = builtCar(c);
   Object.assign(R, { on: true, idx: i, rival: r, me: newCarState(bc, e), op: rivalCar(r), phase: 'stage', t: 0, green: null, rt: null, opRt: 0.12 + Math.random() * 0.25 * (1 - i / RIVALS.length), done: false, thr: 0, e, c: bc, parts: new Particles(), cam: 0, myTime: null, opTime: null, fault: false });
   R.me.rpm = e.idle;
-  R.spMe = R.spOp = null;
+  R.spMe = R.spOp = null; R.r3d = null;
   try {
     if (init3D()) {
-      if (!car3d) car3d = new Car3D();
-      R.spMe = car3d.sprite(bc, R.me.st);
-      R.spOp = car3d.sprite(rivalLook(r), { rWheel: 0.31 });
-      car3d.key = '';
+      R.r3d = new Race3D({ c: bc, st: R.me.st, e }, { c: rivalLook(r), st: { rWheel: 0.31 } });
+      show3D($('#raceView'), R.r3d); G3.canvas.style.display = '';
+      $('#cvRace').style.visibility = 'hidden';
     }
-  } catch (err) { console.warn(err); R.spMe = R.spOp = null; }
+  } catch (err) { console.warn(err); R.r3d = null; $('#cvRace').style.visibility = ''; }
   R.lightT = 2.2 + Math.random() * 0.8;
   $('#raceScreen').hidden = false;
   const gb = GEARBOXES[bc.gearbox];
@@ -923,6 +922,8 @@ rnBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); if (R.me) R
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(x => rnBtn.addEventListener(x, () => { if (R.me) R.me.nitrous = false; rnBtn.classList.remove('on'); }));
 bindPedal($('#racePedal'), (v) => { R.thr = v; });
 function endRace(abort) {
+  if (R.r3d) { disposeTree(R.r3d.scene); R.r3d = null; if (G3.canvas && G3.canvas.parentNode === $('#raceView')) G3.canvas.remove(); }
+  $('#cvRace').style.visibility = '';
   R.on = false; $('#raceScreen').hidden = true; snd.silence();
   if (abort) toast('Заезд прерван');
   renderRace();
@@ -985,6 +986,7 @@ function showRaceResult() {
 // фон города (детерминированный)
 const city = (() => { const a = []; let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280; for (let i = 0; i < 60; i++) a.push({ w: 20 + rnd() * 50, h: 40 + rnd() * 120, win: rnd() }); return a; })();
 function drawRace(dt) {
+  if (R.r3d) { R.r3d.update(R, dt); render3D(R.r3d, dt); drawRaceHud(); return; }
   const { ctx, W, H } = fit($('#cvRace'));
   const me = R.me, op = R.op;
   const ppm = Math.min(W / 16, H / 6);
@@ -1160,7 +1162,7 @@ function renderSettings() {
   st.append(tgl('Песочница', 'Бесконечные деньги и все соперники открыты', () => S.sandbox, (v) => { S.sandbox = v; renderRace(); }));
   st.append(tgl('Вибрация', 'Отдача при переключениях и поломках', () => S.settings.vibro, (v) => S.settings.vibro = v));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 2.0'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.0'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

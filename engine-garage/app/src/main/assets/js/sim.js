@@ -563,9 +563,9 @@ function stepCar(s, dt, throttle, opt) {
   const downF = 0.5 * 1.2 * st.down * st.area * s.v * s.v;
   // нагрузка на ведущие колёса с переносом веса
   const accEst = Math.max(0, s.acc || 0);
-  const transfer = accEst / g * 0.12;
+  const transfer = accEst / g * 0.3;
   let driveFrac = s.c.drive === 'awd' ? 1 : s.c.drive === 'fwd' ? clamp(st.front - transfer, 0.2, 1) : clamp(1 - st.front + transfer, 0.2, 1);
-  const diffF = s.c.drive === 'awd' ? 1 : ({ open: 0.88, lsd: 0.97, locked: 1.0 })[s.c.diff];
+  const diffF = s.c.drive === 'awd' ? 1 : ({ open: 0.92, lsd: 0.98, locked: 1.0 })[s.c.diff];
   const gripF = (st.mu * (st.mass * g * driveFrac + downF * 0.5)) * diffF;
 
   let F = 0;
@@ -582,12 +582,15 @@ function stepCar(s, dt, throttle, opt) {
     if (s.rpm < e.idle) s.rpm += (e.idle - s.rpm) * Math.min(1, dt * 5);
   } else {
     // сцепление: пока обороты колёс ниже, сцепление проскальзывает
+    if (s.launchRpm == null) s.launchRpm = s.rpm;
     if (coupledRpm < s.rpm - 50 && s.clutch < 1) {
-      s.clutch = Math.min(1, s.clutch + dt / 0.35);
-      const tClutch = Math.min(st.clutchCap * (0.4 + 0.6 * s.clutch), Math.max(0, engT + (s.rpm - coupledRpm) * 0.15));
+      // пробуксовка сцепления на старте: мотор держит обороты, пока колёса не догонят
+      s.clutch = Math.min(1, s.clutch + dt / 1.2);
+      const floor = Math.max(e.idle * 1.8, 0.6 * s.launchRpm);
+      s.rpm = Math.max(coupledRpm, s.rpm - (s.rpm - floor) * Math.min(1, dt * 3));
+      const tClutch = Math.min(st.clutchCap, Math.max(0, engT) * 1.15 + 40);
       F = tClutch * ratio * 0.9 / st.rWheel;
-      s.rpm += (engT - tClutch) / I * dt * 9.55;
-      if (s.rpm < coupledRpm) s.rpm = coupledRpm;
+      if (s.clutch >= 1) s.rpm = Math.max(coupledRpm, s.rpm);
     } else {
       s.clutch = 1;
       let tq = engT;
@@ -597,9 +600,9 @@ function stepCar(s, dt, throttle, opt) {
     }
     if (F > gripF) {
       s.wheelspin = (F - gripF) / gripF;
-      F = gripF * 0.82;
+      F = gripF * 0.9;
       // пробуксовка: двигатель раскручивается выше скорости колёс
-      s.rpm = Math.max(s.rpm, coupledRpm + Math.min(2500, s.wheelspin * 1500));
+      s.rpm = Math.max(coupledRpm, Math.min(maxR - 150, Math.max(s.rpm, coupledRpm + Math.min(2500, s.wheelspin * 1500))));
     }
     if (s.rpm > maxR) s.rpm = maxR;
   }
