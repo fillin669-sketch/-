@@ -542,6 +542,15 @@ function newCarState(c, e) {
   return { c, e, st, v: 0, x: 0, gear: 0, rpm: e ? e.idle : 900, spool: 0, shiftT: 0, t: 0, launched: false, wheelspin: 0, clutch: 0, finished: false, lim: e ? limits(e) : null, vp: e ? veParams(e) : null, nitrous: false, brokeShift: 0, maxV: 0 };
 }
 
+// Насосные потери при закрытой заслонке: без нагрузки обороты падают на 2–5 тыс./с, как у настоящего мотора.
+// У холостых торможение плавно пропадает, чтобы двигатель не глох.
+function freeRevDrag(e, rpm, thr) {
+  const closed = Math.pow(clamp(1 - thr, 0, 1), 2);
+  const nearIdle = smooth(e.idle * 1.05, e.idle * 1.7, rpm);
+  const heavy = (e.flywheel === 'light' ? 1.35 : e.flywheel === 'ultra' ? 1.6 : 1) * (isRotary(e) ? 1.2 : 1);
+  return closed * nearIdle * (1400 + rpm * 0.42) * heavy;
+}
+
 function stepCar(s, dt, throttle, opt) {
   opt = opt || {};
   const { st, e } = s;
@@ -583,6 +592,7 @@ function stepCar(s, dt, throttle, opt) {
   } else if (!s.launched) {
     // стоим: свободная раскрутка на нейтрали / до старта
     s.rpm += engT / I * dt * 9.55;
+    s.rpm -= freeRevDrag(e, s.rpm, throttle) * dt;
     if (s.rpm < e.idle) s.rpm += (e.idle - s.rpm) * Math.min(1, dt * 5);
   } else {
     // сцепление: пока обороты колёс ниже, сцепление проскальзывает

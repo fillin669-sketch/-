@@ -38,7 +38,7 @@ class EngineSynth {
       amp *= 1 + (this.rnd() - 0.5) * (idleish ? c.jitterIdle : c.jitter);
       if (this.limiter && this.rnd() < 0.55) { amp = 0.04; }    // отсечка топлива
       if (thr < 0.06 && this.rpm > c.idle * 1.7) {               // торможение двигателем
-        amp = 0.12;
+        amp = 0.3 + 0.1 * this.rnd();
         if (c.crackle > 0 && this.rnd() < c.crackle) amp = 1.3 + this.rnd();   // хлопки в выпуске
       }
       if (this.catchT > 0 && this.rnd() < 0.3) amp *= 0.15;     // первые вспышки «схватывает» неровно
@@ -347,5 +347,6 @@ registerProcessor('engine-proc', EngineProc);`;
     this.send({ p: { crank: dur, rpm: 200, throttle: 0, on: true, vol: this.volume * 0.9 } });
     this.master.gain.setTargetAtTime(1, this.ctx.currentTime, 0.02);
   }
+  fadeOut(sec) { if (this.ctx) { this.master.gain.setTargetAtTime(0, this.ctx.currentTime, sec / 3); setTimeout(() => this.send({ p: { rpm: 0, throttle: 0, on: false, vol: 0 } }), sec * 1000); } }
   silence() { if (this.ctx) { this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08); this.send({ p: { rpm: 0, throttle: 0, on: false, vol: 0 } }); } }
 }

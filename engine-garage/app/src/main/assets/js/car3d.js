@@ -12,8 +12,8 @@ class Race3D {
     s.background = new THREE.Color(0x070a14);
     s.fog = new THREE.Fog(0x0b1020, 35, 230);
     s.environment = G3.env;
-    s.add(new THREE.HemisphereLight(0x8fa6d8, 0x1a1712, 0.45));
-    const moon = new THREE.DirectionalLight(0xbfd0ff, 0.6); moon.position.set(-20, 40, 15); s.add(moon);
+    s.add(new THREE.HemisphereLight(0x9fb4e0, 0x2a2620, 0.75));
+    const moon = new THREE.DirectionalLight(0xbfd0ff, 0.95); moon.position.set(-20, 40, 15); s.add(moon);
     this.cam = new THREE.PerspectiveCamera(52, 1, 0.1, 400);
     this.orbit = { tick() { }, apply() { } };
     const LEN = 700, X0 = 40;
@@ -52,7 +52,7 @@ class Race3D {
     // фонари
     const poleG = new THREE.CylinderGeometry(0.08, 0.1, 8, 8); const poles = new THREE.InstancedMesh(poleG, archM, 60);
     const headG = new THREE.BoxGeometry(1.4, 0.15, 0.4); const heads = new THREE.InstancedMesh(headG, new THREE.MeshBasicMaterial({ color: 0xffe2a8 }), 60);
-    n = 0; for (let i = 0; i < 30; i++) [-6, 6].forEach(z => { mt.compose(V3(X0 - i * 24, 4, z), new THREE.Quaternion(), V3(1, 1, 1)); poles.setMatrixAt(n, mt); mt.compose(V3(X0 - i * 24, 8, z * 0.86), new THREE.Quaternion(), V3(1, 1, 1)); heads.setMatrixAt(n, mt); n++; });
+    n = 0; for (let i = 0; i < 30; i++) [-8.5, 8.5].forEach(z => { mt.compose(V3(X0 - i * 24, 4, z), new THREE.Quaternion(), V3(1, 1, 1)); poles.setMatrixAt(n, mt); mt.compose(V3(X0 - i * 24, 8, z * 0.9), new THREE.Quaternion(), V3(1, 1, 1)); heads.setMatrixAt(n, mt); n++; });
     s.add(poles); s.add(heads);
     // световые пятна под фонарями
     const pool = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(64, 64, 2, 64, 64, 64); gr.addColorStop(0, 'rgba(255,214,150,0.38)'); gr.addColorStop(1, 'rgba(255,214,150,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
@@ -137,10 +137,22 @@ class Race3D {
       pos = V3(cx - 9 + a * 19, 1.5 + a * 1.1, this.laneMe + 8.5 - a * 3.5);
       look = V3(cx - 1, 0.7, (this.laneMe + this.laneOp) / 2 + 0.6);
     } else {
-      pos = V3(cx + 10, 2.6, this.laneMe + 4.6);
-      look = V3(cx - 9, 0.5, -0.4);
+      const mode = R.camMode || 0, k = clamp(v / 70, 0, 1);
+      if (mode === 0) {          // погоня: близко сзади, чуть сбоку; на скорости камера ниже и ближе к земле
+        pos = V3(cx + 6.6 - k * 0.8, 1.8 - k * 0.3, this.laneMe + 0.15);
+        look = V3(cx - 5, 0.8, this.laneMe - 0.6);
+      } else if (mode === 1) {   // «телевизионная»: сбоку, проезд мимо
+        pos = V3(cx + 2.5, 1.2, this.laneMe + 7.6);
+        look = V3(cx - 1.5, 0.7, (this.laneMe + this.laneOp) / 2);
+      } else {                   // с капота
+        pos = V3(cx - this.meL * 0.15, 1.25, this.laneMe);
+        look = V3(cx - 30, 0.9, this.laneMe * 0.8);
+      }
     }
-    this.camPos = this.camPos ? this.camPos.lerp(pos, Math.min(1, dt * 4)) : pos;
+    if (!this.camPos) this.camPos = pos.clone();
+    // по ходу движения камера держится жёстко (без отставания), по высоте и сбоку — плавно
+    this.camPos.x = R.phase === 'run' || R.phase === 'done' ? pos.x : this.camPos.x + (pos.x - this.camPos.x) * Math.min(1, dt * 4);
+    this.camPos.y += (pos.y - this.camPos.y) * Math.min(1, dt * 4); this.camPos.z += (pos.z - this.camPos.z) * Math.min(1, dt * 4);
     const sh = clamp(v / 60, 0, 1) * 0.04 + (me.wheelspin > 0.1 ? 0.03 : 0);
     this.cam.position.copy(this.camPos).add(V3((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh, 0));
     this.cam.lookAt(look);

@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '3.8';
+var APP_VERSION = '3.9';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -602,6 +602,7 @@ function dynoStep(be, e, dt) {
   } else {
     const acc = (tq - brake) / D.I; // рад/с²
     D.rpm += acc * 60 / (2 * Math.PI) * dt;
+    D.rpm -= freeRevDrag(be, D.rpm, D.thrEff) * dt;
   }
   // температуры
   const heat = Math.max(0, o.power) * 0.7355;
@@ -984,6 +985,7 @@ function beginRace(i, auto) {
   R.spMe = R.spOp = null; R.r3d = null;
   try {
     if (init3D()) {
+      R.camMode = S.settings.raceCam || 0;
       R.r3d = new Race3D({ c: bc, st: R.me.st, e }, { c: rivalLook(r), st: { rWheel: 0.31 } });
       show3D($('#raceView'), R.r3d); G3.canvas.style.display = '';
       $('#cvRace').style.visibility = 'hidden';
@@ -1017,6 +1019,8 @@ $('#btnShift').addEventListener('pointerdown', (ev) => { ev.preventDefault(); ra
 $('#raceView').addEventListener('pointerdown', () => raceShift());
 $('#cvRace').addEventListener('pointerdown', () => raceShift());
 $('#btnRaceExit').addEventListener('click', () => endRace(true));
+$('#btnRaceCam').addEventListener('click', (ev) => { ev.stopPropagation(); R.camMode = ((R.camMode || 0) + 1) % 3; S.settings.raceCam = R.camMode; save(); toast(['Камера: сзади', 'Камера: сбоку', 'Камера: с капота'][R.camMode]); });
+['pointerdown', 'touchstart'].forEach(x => $('#btnRaceCam').addEventListener(x, (ev) => ev.stopPropagation()));
 const rnBtn = $('#btnRaceNos');
 rnBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); if (R.me) R.me.nitrous = true; rnBtn.classList.add('on'); });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(x => rnBtn.addEventListener(x, () => { if (R.me) R.me.nitrous = false; rnBtn.classList.remove('on'); }));
@@ -1024,7 +1028,7 @@ bindPedal($('#racePedal'), (v) => { R.thr = v > 0 ? 1 : 0; });
 function endRace(abort) {
   if (R.r3d) { disposeTree(R.r3d.scene); R.r3d = null; if (G3.canvas && G3.canvas.parentNode === $('#raceView')) G3.canvas.remove(); }
   $('#cvRace').style.visibility = '';
-  R.on = false; $('#raceScreen').hidden = true; snd.silence();
+  R.on = false; $('#raceScreen').hidden = true; snd.fadeOut(0.6);
   if (abort) toast('Заезд прерван');
   renderRace();
 }
@@ -1047,7 +1051,10 @@ function tickRace(dt) {
       if (R.myTime != null && R.opTime != null) { R.phase = 'done'; setTimeout(showRaceResult, 600); }
       if (me.t > 60 && R.myTime == null) { R.myTime = 99; R.trap = me.v * 3.6; }
     } else {
+      // после финиша: сбросили газ и тормозим — мотор звучит на сбросе, потом на холостых
       stepCar(me, h2, 0, {}); stepRival(op, h2);
+      me.v = Math.max(0, me.v - 6 * h2);
+      if (me.v < 3) { me.rpm += (e.idle - me.rpm) * Math.min(1, h2 * 3); }
     }
   }
   // фазы старта
