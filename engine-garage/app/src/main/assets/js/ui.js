@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '4.1';
+var APP_VERSION = '4.2';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -453,7 +453,7 @@ function startEngine() {
   const e = curEngine(), be = dynoPrepare();
   if (!be) { toast('Сначала соберите двигатель'); return; }
   if (e.blown) { showBlown(e); return; }
-  snd.init(); snd.resume(); snd.on = true; snd.configure(be); snd.volume = S.settings.vol;
+  snd.init(); snd.resume(); snd.on = true; snd.setRoom('garage'); snd.configure(be); snd.volume = S.settings.vol;
   const test = engineAt(be, 1000, { throttle: 0.3 });
   if (test.flags.includes('nostart')) { toast('Не заводится: дизелю нужна степень сжатия от 14'); return; }
   const crankDur = FUELS[be.fuel].diesel ? 1.5 : displacement(be) > 4.5 ? 1.25 : 1.05;
@@ -1019,7 +1019,7 @@ function beginRace(i, auto) {
   $('#raceMode').textContent = auto ? 'Автомат' : 'Ручная';
   $('#raceScreen').hidden = false;
   $('#btnRaceNos').hidden = !e.nitrous;
-  snd.init(); snd.resume(); snd.on = true; snd.configure(e); snd.volume = S.settings.vol;
+  snd.init(); snd.resume(); snd.on = true; snd.setRoom('outdoor'); snd.configure(e); snd.volume = S.settings.vol;
   stopEngine();
 }
 function raceShift() {

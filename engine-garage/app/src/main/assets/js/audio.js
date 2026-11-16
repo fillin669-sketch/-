@@ -12,43 +12,49 @@ const SYNTH_SRC = `
 class EngineSynth {
   constructor(sr) {
     this.sr = sr; this.theta = 0; this.rpm = 0; this.rpmT = 0; this.thr = 0; this.thrS = 0; this.load = 0;
-    this.on = false; this.limiter = false; this.vol = 0;  this.volS = 0;
-    this.crank = 0; this.catchT = 0; this.voices = [];
-    this.cfg = null; this.seed = 12345;
-    this.dl = [new Float32Array(8192), new Float32Array(8192)]; this.dw = 0;
-    this.lpz = [0, 0]; this.m1 = 0; this.m2 = 0; this.m3 = 0; this.hp = 0; this.hpx = 0;
+    this.on = false; this.limiter = false; this.vol = 0; this.volS = 0;
+    this.crank = 0; this.catchT = 0; this.catchAge = 9; this.voices = [];
+    this.cfg = null; this.seed = 12345; this.w = 0;
+    this.hdrF = []; this.hdrB = []; this.hdrLp = [];
+    this.pF = [new Float32Array(8192), new Float32Array(8192)]; this.pB = [new Float32Array(8192), new Float32Array(8192)];
+    this.pLp = [0, 0]; this.prevTail = [0, 0];
+    this.m1 = 0; this.m2 = 0; this.hp = 0; this.hpx = 0; this.body = 0; this.body2 = 0;
     this.inEnv = 0; this.ib1 = 0; this.ib2 = 0; this.clEnv = 0; this.cb1 = 0; this.cb2 = 0;
-    this.stPh = 0; this.stPh2 = 0; this.mech = 0; this.tick = 0;
-    this.stT = 0; this.relT = 0; this.armRel = 0; this.strain = 0; this.clickEnv = 0; this.clickT = 0; this.sb1 = 0; this.sb2 = 0; this.kb1 = 0; this.kb2 = 0;
+    this.stPh = 0; this.stT = 0; this.relT = 0; this.armRel = 0; this.strain = 0; this.clickEnv = 0; this.clickT = 0;
+    this.gn = 0; this.lk = 0; this.air1 = 0; this.air2 = 0;
+    this.sb1 = 0; this.sb2 = 0; this.kb1 = 0; this.kb2 = 0; this.tick = 0; this.tickEnv = 0; this.tb1 = 0; this.tb2 = 0;
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
-  setConfig(c) { this.cfg = c; }
+  setConfig(c) {
+    this.cfg = c;
+    const N = c.phases.length;
+    this.hdrF = []; this.hdrB = []; this.hdrLp = new Float32Array(N); this.exc = new Float32Array(N);
+    for (let i = 0; i < N; i++) { this.hdrF.push(new Float32Array(1024)); this.hdrB.push(new Float32Array(1024)); }
+  }
   setParams(p) {
     this.rpmT = p.rpm; this.thr = p.throttle; this.load = p.load || 0; this.on = !!p.on; this.limiter = !!p.limiter; this.vol = p.vol;
-    if (p.crank) { this.crank = p.crank; this.stT = 0; this.relT = 0; }
+    if (p.crank) { this.crank = p.crank; this.stT = 0; this.relT = 0; this.catchAge = 9; }
   }
   trigger(i, combust) {
     const c = this.cfg; if (!c) return;
     let amp;
     const thr = this.thrS, idleish = this.rpm < c.idle * 1.4;
-    if (!combust) amp = this.crank > 0 ? 0.13 * c.compDip / 0.3 : 0.07;                                    // только сжатие (прокрутка стартером, глушение)
+    if (!combust) amp = this.crank > 0 ? 0.16 * c.compDip / 0.3 : 0.08;     // только сжатие: «пых» воздуха (прокрутка, глушение)
     else {
-      amp = (0.4 + 0.6 * Math.max(thr, this.load * 0.8)) * c.amp[i];
-      // нестабильность: у ротора и большого перекрытия на холостых — «брап»
-      amp *= 1 + (this.rnd() - 0.5) * (idleish ? c.jitterIdle : c.jitter);
-      if (this.limiter && this.rnd() < 0.55) { amp = 0.04; }    // отсечка топлива
-      if (thr < 0.06 && this.rpm > c.idle * 1.7) {               // торможение двигателем
-        amp = 0.3 + 0.1 * this.rnd();
-        if (c.crackle > 0 && this.rnd() < c.crackle) amp = 1.3 + this.rnd();   // хлопки в выпуске
+      amp = (0.5 + 0.5 * Math.max(thr, this.load * 0.8)) * c.amp[i];
+      amp *= 1 + (this.rnd() - 0.5) * (idleish ? c.jitterIdle : c.jitter);   // неровность сгорания
+      if (this.limiter && this.rnd() < 0.55) amp = 0.04;                  // отсечка топлива
+      if (thr < 0.06 && this.rpm > c.idle * 1.7 && this.catchAge > 2.5) {   // торможение двигателем
+        amp = 0.28 + 0.12 * this.rnd();
+        if (c.crackle > 0 && this.rnd() < c.crackle) amp = 1.3 + this.rnd();
       }
-      if (this.catchT > 0 && this.rnd() < 0.3) amp *= 0.15;     // первые вспышки «схватывает» неровно
+      if (this.catchAge < 2.5) amp = Math.max(amp, 0.75 * c.amp[i]);
+      if (this.catchAge < 0.35) { if (this.rnd() < 0.35) amp *= 0.1; else amp *= 1.3; }   // первые вспышки — рвано и громко
     }
-    if (this.voices.length > 40) this.voices.shift();
-    // импульс не длиннее промежутка между вспышками: на высоких оборотах звук «поёт» на частоте вспышек
+    if (this.voices.length > 48) this.voices.shift();
     const gapS = (c.cycle / c.phases.length) / Math.max(60, this.rpm * 6);
-    const tau = Math.min(c.tau, gapS * 0.55);
-    const fr = Math.max(c.fr, 1.3 / gapS);
-    this.voices.push({ t: -c.delay[i], a: amp * (0.6 + 0.4 * Math.sqrt(c.tau / tau)), b: c.bank[i], comb: combust, tau, fr });
+    const tau = Math.min(c.tau, gapS * 0.6);
+    this.voices.push({ t: -c.delay[i], a: amp * (0.65 + 0.35 * Math.sqrt(c.tau / tau)), i, comb: combust, tau });
     if (combust && c.diesel) this.clEnv = Math.min(1.5, this.clEnv + 0.6 + 0.6 * (1 - this.thrS));
     this.inEnv = Math.min(1.5, this.inEnv + 0.5);
   }
@@ -57,33 +63,41 @@ class EngineSynth {
     if (!c) { for (let k = 0; k < n; k++) out[k] = 0; return; }
     const cyc = c.cycle, ph = c.phases, N = ph.length;
     const two = 2 * Math.PI;
-    const fc = c.mufFc, a1 = 1 - Math.exp(-two * fc / sr), a2 = 1 - Math.exp(-two * fc * 1.6 / sr);
-    const lpLoop = 1 - Math.exp(-two * c.loopFc / sr);
+    const a1 = 1 - Math.exp(-two * c.mufFc / sr), a2 = 1 - Math.exp(-two * c.mufFc * 1.6 / sr);
+    const hLp = 1 - Math.exp(-two * 2600 / sr), pLpK = 1 - Math.exp(-two * c.tailFc / sr);
+    const bodyK = 1 - Math.exp(-two * 140 / sr), gnK = 1 - Math.exp(-two * 1800 / sr);
+    const airK = 1 - Math.exp(-two * c.airFc / sr), leakK = 1 - Math.exp(-two * c.mufFc * 3.5 / sr);
+    const exc = this.exc;
     for (let k = 0; k < n; k++) {
-      // --- обороты: обычные, прокрутка стартером, глушение ---
-      let target = this.rpmT;
-      let dip = 0;
+      // ---------- обороты ----------
+      let target = this.rpmT, dip = 0;
       if (this.crank > 0) {
-        // прокрутка: втягивающее реле щёлкает, стартер раскручивает вал; на каждом такте сжатия
-        // вал «упирается» — обороты проседают, стартер натужно гудит ниже и громче
         if (this.stT === 0) { this.clickEnv = 1; this.clickT = 0; }
         this.stT += dt; this.crank -= dt;
-        const spin = Math.min(1, this.stT / 0.14);
-        const ph = (this.theta / cyc * N) % 1;
-        const d = Math.cos(two * (ph - 0.08));
-        dip = d > 0 ? d * d * d : 0;
-        target = c.crankRpm * (0.25 + 0.75 * spin) * (1 - c.compDip * dip);
+        const spin = Math.min(1, this.stT / 0.18);
+        // на такте сжатия вал «упирается»: обороты проседают, после ВМТ воздух толкает поршень обратно
+        const p1 = (this.theta / cyc * N) % 1;
+        const d = Math.cos(two * (p1 - 0.06));
+        dip = d > 0 ? d * d * d : -0.25 * d * d;
+        target = c.crankRpm * (0.2 + 0.8 * spin) * (1 - c.compDip * dip);
         this.rpm = target;
-        if (this.crank <= 0) { this.catchT = 0.35; this.relT = 0.2; this.armRel = target * 13 / 60; this.stT = 0; this.clickEnv = 0.55; this.clickT = 0; }
+        if (this.crank <= 0) { this.catchAge = 0; this.relT = 0.25; this.armRel = target * 13 / 60; this.stT = 0; this.clickEnv = 0.5; this.clickT = 0; }
       }
-      this.strain += (dip - this.strain) * 0.01;
-      if (this.catchT > 0) this.catchT -= dt;
-      const kR = target > this.rpm ? 0.0016 : 0.0009;
-      this.rpm += (target - this.rpm) * (this.crank > 0 ? 0.02 : kR);
+      this.strain += (Math.max(0, dip) - this.strain) * 0.01;
+      // «схватил»: обороты взлетают выше холостых и за 1–2 с опускаются
+      if (this.catchAge < 2.5) {
+        this.catchAge += dt;
+        const a = this.catchAge, sh = a < 0.28 ? a / 0.28 : Math.exp(-(a - 0.28) / 0.6);
+        target = this.rpmT + c.idle * c.flare * sh;
+      }
+      if (this.crank <= 0) {
+        const kR = this.catchAge < 0.6 ? 0.0005 : (target > this.rpm ? 0.0016 : 0.0009);
+        this.rpm += (target - this.rpm) * kR;
+      }
       if (!this.on && this.crank <= 0) this.rpm += (0 - this.rpm) * 0.00025;
       this.thrS += (this.thr - this.thrS) * 0.003;
       this.volS += (this.vol - this.volS) * 0.002;
-      // --- угол коленвала и вспышки ---
+      // ---------- угол коленвала и вспышки ----------
       const prev = this.theta;
       this.theta += this.rpm / 60 * 360 * dt;
       const wrap = this.theta >= cyc;
@@ -91,42 +105,64 @@ class EngineSynth {
       const combust = this.on && this.crank <= 0 && this.rpm > 120;
       if (this.rpm > 30) for (let i = 0; i < N; i++) {
         const p = ph[i];
-        const hit = wrap ? (p >= prev || p < this.theta) : (p >= prev && p < this.theta);
-        if (hit) this.trigger(i, combust);
+        if (wrap ? (p >= prev || p < this.theta) : (p >= prev && p < this.theta)) this.trigger(i, combust);
       }
-      // --- импульсы в выпуске ---
-      let b0 = 0, b1 = 0;
+      // ---------- импульсы давления у выпускных клапанов ----------
+      for (let i = 0; i < N; i++) exc[i] = 0;
+      this.gn += ((this.rnd() * 2 - 1) - this.gn) * gnK;   // шум газа — только до ~1.8 кГц
+      let blowSum = 0;
       for (let v = this.voices.length - 1; v >= 0; v--) {
         const o = this.voices[v];
         o.t += dt;
         if (o.t < 0) continue;
         const env = Math.exp(-o.t / o.tau);
         if (env < 0.002) { this.voices.splice(v, 1); continue; }
-        const att = 1 - Math.exp(-o.t / 0.00035);
+        const att = 1 - Math.exp(-o.t / 0.00025);
         const blow = o.a * env * att;
-        const s = blow * (0.55 + 0.75 * Math.sin(two * o.fr * o.t) + c.rasp * (this.rnd() * 2 - 1) * (o.comb ? 1 : 0.3));
-        if (o.b) b1 += s; else b0 += s;
+        exc[o.i] += blow * (1 + c.rasp * this.gn * 2.2 * (o.comb ? 1 : 0.35));
+        blowSum += blow;
       }
-      // --- труба: отражения (гребенчатый резонатор с затуханием в петле) ---
-      const w = this.dw;
-      let y0, y1;
-      const d0 = c.pipe[0], d1 = c.pipe[1];
-      const r0 = this.dl[0][(w - d0 + 8192) & 8191], r1 = this.dl[1][(w - d1 + 8192) & 8191];
-      this.lpz[0] += (r0 - this.lpz[0]) * lpLoop; this.lpz[1] += (r1 - this.lpz[1]) * lpLoop;
-      if (c.dual) { y0 = b0 + c.fb * this.lpz[0]; y1 = b1 + c.fb * this.lpz[1]; }
-      else { y0 = b0 + b1 + c.fb * this.lpz[0]; y1 = 0; }
-      this.dl[0][w] = y0; this.dl[1][w] = y1; this.dw = (w + 1) & 8191;
-      let x = y0 + y1;
-      // --- катализатор и глушитель ---
-      this.m1 += (x - this.m1) * a1; this.m2 += (this.m1 - this.m2) * a2;
-      let ex = this.m2 * c.mufGain + (x - this.m2) * c.leak;
-      // --- впуск: шипение на тактах впуска ---
+      // ---------- выпускной коллектор: у каждого цилиндра свой патрубок (волновод) ----------
+      const w = this.w;
+      let col0 = 0, col1 = 0;
+      for (let i = 0; i < N; i++) {
+        const d = c.hdr[i], F = this.hdrF[i], B = this.hdrB[i];
+        const fo = F[(w - d) & 1023], bo = B[(w - d) & 1023];
+        F[w & 1023] = exc[i] + c.rValve * bo;                     // у клапана волна отражается обратно
+        this.hdrLp[i] += (fo - this.hdrLp[i]) * hLp;
+        B[w & 1023] = c.rCol * this.hdrLp[i];                     // у коллектора — с переворотом (расширение)
+        const tr = fo * (1 + c.rCol);
+        if (c.bank[i]) col1 += tr; else col0 += tr;
+      }
+      // ---------- труба: волна туда и обратно, отражение у открытого среза ----------
+      let tail = 0;
+      const banks = c.dual ? 2 : 1;
+      if (!c.dual) { col0 += col1; col1 = 0; }
+      for (let b = 0; b < banks; b++) {
+        const d = c.pipe[b], F = this.pF[b], B = this.pB[b];
+        const fo = F[(w - d) & 8191], bo = B[(w - d) & 8191];
+        F[w & 8191] = (b ? col1 : col0) + c.rJoin * bo;
+        this.pLp[b] += (fo - this.pLp[b]) * pLpK;
+        B[w & 8191] = -c.rTail * this.pLp[b];
+        // излучение из среза трубы ~ производная потока
+        const rad = fo - 0.82 * this.prevTail[b]; this.prevTail[b] = fo;
+        tail += rad * 0.4 + fo * 0.6;
+      }
+      this.w = (w + 1) & 8191;
+      // ---------- катализатор и глушитель ----------
+      this.m1 += (tail - this.m1) * a1; this.m2 += (this.m1 - this.m2) * a2;
+      this.lk += ((tail - this.m2) - this.lk) * leakK;
+      const ex = this.m2 * c.mufGain + this.lk * c.leak * 2;
+      // ---------- «тело» мотора: низкий гул блока и кузова ----------
+      this.body += (blowSum - this.body) * bodyK; this.body2 += (this.body - this.body2) * bodyK;
+      const body = this.body2 * c.bodyGain;
+      // ---------- впуск ----------
       this.inEnv *= 0.9985;
       const nz = this.rnd() * 2 - 1;
       const fi = Math.min(0.45, two * (c.inF + this.rpm * c.inK) / sr);
       this.ib1 += fi * (nz - this.ib1 - 0.7 * this.ib2); this.ib2 += fi * this.ib1;
-      const intake = this.ib1 * this.inEnv * (0.15 + this.thrS) * c.inGain * (this.on ? 1 : 0.3);
-      // --- дизельный стук ---
+      const intake = this.ib1 * this.inEnv * (0.12 + this.thrS) * c.inGain * (this.on ? 1 : 0.3);
+      // ---------- дизельный стук ----------
       let clat = 0;
       if (c.diesel) {
         this.clEnv *= 0.9955;
@@ -134,36 +170,41 @@ class EngineSynth {
         this.cb1 += fc2 * (nz - this.cb1 - 0.35 * this.cb2); this.cb2 += fc2 * this.cb1;
         clat = this.cb1 * this.clEnv * 0.22;
       }
-      // --- механика: шум ГРМ, растёт с оборотами ---
-      const mech = (this.rnd() * 2 - 1) * 0.004 * Math.min(1.5, this.rpm / 5000) * c.mechGain;
-      // --- стартер: мотор и шестерня бендикса ---
+      // ---------- механика: стук клапанов на каждом обороте распредвала ----------
+      this.tick += this.rpm / 60 / 2 * dt * N;
+      if (this.tick >= 1) { this.tick -= 1; this.tickEnv = 0.5 + 0.5 * this.rnd(); }
+      this.tickEnv *= 0.993;
+      const ft = Math.min(0.45, two * 3800 / sr);
+      this.tb1 += ft * (nz - this.tb1 - 0.3 * this.tb2); this.tb2 += ft * this.tb1;
+      const mech = (this.tb1 * this.tickEnv * (0.03 + 0.05 * (1 - this.thrS))) * Math.min(1.4, 0.35 + this.rpm / 6000) * c.mechGain * (this.rpm > 100 ? 1 : 0);
+      // ---------- стартер ----------
       let st = 0;
       if (this.crank > 0 || this.relT > 0) {
-        // частота якоря стартера: обороты вала × передаточное число венца (~13)
         let arm, fade = 1;
-        if (this.crank > 0) arm = Math.max(5, this.rpm * 13 / 60);
-        else { this.relT -= dt; this.armRel += (95 - this.armRel) * 0.0012; arm = this.armRel; fade = Math.max(0, this.relT / 0.2); fade *= fade; }
+        if (this.crank > 0) arm = Math.max(4, this.rpm * 13 / 60);
+        else { this.relT -= dt; this.armRel += (110 - this.armRel) * 0.0015; arm = this.armRel; fade = Math.max(0, this.relT / 0.25); fade *= fade; }
         this.stPh = (this.stPh + arm / sr) % 1000;
-        const commP = this.stPh * 12, meshP = this.stPh * 10;
-        const hum = ((this.stPh % 1) * 2 - 1) * 0.05 + Math.sin(two * this.stPh * 2) * 0.04;
-        const whine = Math.sin(two * commP) * 0.06 + Math.sin(two * meshP) * 0.045 + Math.sin(two * meshP * 2) * 0.02 + Math.sin(two * meshP * 3) * 0.008;
-        const fb2 = Math.min(0.45, two * 2300 / sr);
-        this.sb1 += fb2 * (nz - this.sb1 - 0.5 * this.sb2); this.sb2 += fb2 * this.sb1;
-        const brush = this.sb1 * (0.55 + 0.45 * Math.sin(two * commP)) * 0.07;
-        const strain = 0.7 + 0.6 * this.strain;
-        st = (hum * (1 + this.strain) + whine * strain + brush * strain) * fade * c.starterGain;
+        // шестерня бендикса (10 зубьев) и коллектор якоря: «пилообразный» вой с гармониками
+        const meshP = this.stPh * 10, commP = this.stPh * 12;
+        let gear = 0; for (let h = 1; h <= 6; h++) gear += Math.sin(two * meshP * h) / h;
+        const hum = Math.sin(two * this.stPh) * 0.5 + Math.sin(two * this.stPh * 2) * 0.35 + Math.sin(two * this.stPh * 3) * 0.15;
+        const fb2 = Math.min(0.45, two * 2100 / sr);
+        this.sb1 += fb2 * (nz - this.sb1 - 0.45 * this.sb2); this.sb2 += fb2 * this.sb1;
+        const brush = this.sb1 * (0.5 + 0.5 * Math.sin(two * commP));
+        const strain = 0.65 + 0.7 * this.strain, spin = Math.min(1, (this.stT || 1) / 0.08);
+        st = (gear * 0.05 * strain + hum * 0.07 * (0.8 + this.strain) + brush * 0.06 * strain) * fade * spin * c.starterGain;
       }
-      // щелчок втягивающего реле (включение) и выход бендикса (отключение)
       if (this.clickEnv > 0.001) {
         this.clickT += dt; this.clickEnv *= 0.9965;
         const fc3 = Math.min(0.45, two * 1700 / sr);
         this.kb1 += fc3 * (nz - this.kb1 - 0.25 * this.kb2); this.kb2 += fc3 * this.kb1;
         st += (this.kb1 * 0.6 + Math.sin(two * 190 * this.clickT) * 0.35 * Math.exp(-this.clickT / 0.02)) * this.clickEnv * c.starterGain;
       }
-      let s = (ex * c.loud + intake + clat + mech) ;
-      // убрать постоянную составляющую
+      const s = ex * c.loud + body + intake + clat + mech;
       const hpOut = s - this.hpx + 0.995 * this.hp; this.hpx = s; this.hp = hpOut;
-      out[k] = (hpOut + st) * this.volS;
+      // поглощение в воздухе: срезаем «шипящий» верх
+      const y = hpOut + st; this.air1 += (y - this.air1) * airK; this.air2 += (this.air1 - this.air2) * airK;
+      out[k] = this.air2 * this.volS;
     }
   }
 }
@@ -181,7 +222,17 @@ class EngineSound {
     // «кузов»: лёгкий подъём низа, чтобы мотор звучал плотно на маленьком динамике
     const low = c.createBiquadFilter(); low.type = 'peaking'; low.frequency.value = 140; low.Q.value = 0.8; low.gain.value = 4;
     this.master.connect(low); low.connect(comp); comp.connect(c.destination);
-    this.engIn = c.createGain(); this.engIn.gain.value = 1; this.engIn.connect(this.master);
+    // мягкое насыщение даёт гармоники низких частот — их слышно даже на маленьком динамике телефона;
+    // подъём середины — «присутствие» мотора
+    this.engIn = c.createGain(); this.engIn.gain.value = 1.6;
+    const sat = c.createWaveShaper(); const cv = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; cv[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); } sat.curve = cv; sat.oversample = '2x';
+    const pres = c.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 1000; pres.Q.value = 0.7; pres.gain.value = 5;
+    const outG = c.createGain(); outG.gain.value = 0.62;
+    this.engIn.connect(sat); sat.connect(pres); pres.connect(outG); outG.connect(this.master);
+    // реверберация: гараж со стендом или открытая трасса
+    this.verb = c.createConvolver(); this.verbG = c.createGain(); this.verbG.gain.value = 0.22;
+    outG.connect(this.verb); this.verb.connect(this.verbG); this.verbG.connect(this.master);
+    this.setRoom('garage');
     // шум для хлопков и сброса
     const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -233,6 +284,22 @@ registerProcessor('engine-proc', EngineProc);`;
       } else useSP();
     } catch (e) { useSP(); }
   }
+  setRoom(kind) {
+    if (!this.ctx || !this.verb || this.room === kind) return;
+    this.room = kind;
+    const c = this.ctx, sr = c.sampleRate, len = Math.round(sr * (kind === 'garage' ? 0.9 : 0.45));
+    const ir = c.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch); let lp = 0;
+      // ранние отражения (стены гаража / отбойник и трибуны) + затухающий «хвост»
+      const early = kind === 'garage' ? [0.007, 0.013, 0.019, 0.027, 0.041] : [0.018, 0.045, 0.09];
+      early.forEach((t, i) => { const k = Math.round(t * sr * (1 + ch * 0.07)); if (k < len) d[k] += (ch ? -1 : 1) * 0.55 / (i + 1); });
+      const decay = kind === 'garage' ? 0.28 : 0.12, damp = kind === 'garage' ? 0.35 : 0.2;
+      for (let i = 0; i < len; i++) { const n = Math.random() * 2 - 1; lp += (n - lp) * damp; d[i] += lp * Math.exp(-i / sr / decay) * 0.35; }
+    }
+    this.verb.buffer = ir;
+    if (this.verbG) this.verbG.gain.value = kind === 'garage' ? 0.24 : 0.12;
+  }
   send(m) {
     if (this.mode === 'worklet') this.node.port.postMessage(m);
     else if (this.mode === 'sp') { if (m.cfg) this.synth.setConfig(m.cfg); if (m.p) this.synth.setParams(m.p); }
@@ -280,14 +347,14 @@ registerProcessor('engine-proc', EngineProc);`;
     const muf = e.muffler || 'stock';
     const L = ({ stock: 3.8, sport: 3.3, straight: 2.7, none: 1.1 })[muf];
     const sr = this.ctx.sampleRate, cGas = 470;
-    const pipe0 = Math.round(sr * 2 * L / cGas), pipe1 = Math.round(sr * 2 * (L * (e.exhManifold === 'equal' ? 1.0 : 1.07)) / cGas);
-    let mufFc = ({ stock: 420, sport: 900, straight: 2100, none: 5200 })[muf];
-    let mufGain = ({ stock: 0.55, sport: 0.8, straight: 1.0, none: 1.15 })[muf];
+    const pipe0 = Math.round(sr * L / cGas), pipe1 = Math.round(sr * (L * (e.exhManifold === 'equal' ? 1.0 : 1.07)) / cGas);
+    let mufFc = ({ stock: 800, sport: 1150, straight: 2300, none: 5200 })[muf];
+    let mufGain = ({ stock: 0.42, sport: 0.75, straight: 1.0, none: 1.2 })[muf];
     let leak = ({ stock: 0.03, sport: 0.08, straight: 0.2, none: 0.45 })[muf];
     if (e.cat) { mufFc *= 0.82; mufGain *= 0.9; leak *= 0.7; }
     if (e.exhWrap) leak *= 0.85;
     const fb = ({ stock: 0.3, sport: 0.42, straight: 0.52, none: 0.18 })[muf] + (two && e.tunedPipe ? 0.25 : 0);
-    const loud = (0.55 + Math.min(0.35, (dia - 40) / 200)) * (e.exhLayout === 'dual' ? 1.1 : 1) * (two ? 0.7 : 1);
+    const loud = 2.3 * (0.55 + Math.min(0.35, (dia - 40) / 200)) * (e.exhLayout === 'dual' ? 1.1 : 1) * (two ? 0.7 : 1);
     const crackle = muf === 'stock' ? 0.004 : muf === 'sport' ? 0.02 : 0.05;
     const itb = e.manifold === 'itb';
     // прокрутка: большой объём и дизель крутятся медленнее и тяжелее, ротор — быстро и ровно
@@ -296,8 +363,15 @@ registerProcessor('engine-proc', EngineProc);`;
     if (diesel) { crankRpm *= 0.85; compDip = 0.55; }
     if (rot) { crankRpm = 260; compDip = 0.15; }
     if (n >= 10) compDip *= 0.6;
-    const starterGain = diesel || disp > 4.5 ? 1.25 : 1;
+    const starterGain = (diesel || disp > 4.5 ? 1.25 : 1) * 0.42;
+    // длины патрубков коллектора (волноводы): литой — короткие и разные, «паук» — длиннее, равнодлинный — одинаковые
+    const hdrL = ({ cast: 0.38, tubular: 0.75, equal: 0.85 })[e.exhManifold] || 0.5;
+    const hdrVar = ({ cast: 0.45, tubular: 0.25, equal: 0.02 })[e.exhManifold] || 0.3;
+    const hdr = phases.map(() => Math.max(8, Math.min(1000, Math.round(sr * hdrL * (1 + (r() - 0.5) * hdrVar) / cGas))));
+    const rTail = ({ stock: 0.25, sport: 0.45, straight: 0.6, none: 0.72 })[muf];
+    const flare = diesel ? 0.35 : rot ? 0.9 : 0.75;
     const cfg = {
+      hdr, airFc: ({ stock: 4200, sport: 5500, straight: 7000, none: 8500 })[muf], rValve: 0.72, rCol: -0.45, rJoin: 0.3 + (two && e.tunedPipe ? 0.35 : 0), rTail, tailFc: 1400, bodyGain: 0.2 * (diesel ? 1.4 : 1), flare,
       crankRpm, compDip, starterGain,
       cycle, phases, bank, delay, amp, fr, tau, rasp, jitter, jitterIdle, mechGain, diesel,
       pipe: [Math.min(8000, pipe0), Math.min(8000, pipe1)], dual: e.exhLayout === 'dual' && n > 1, fb, loopFc: 1800,
