@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '4.0';
+var APP_VERSION = '4.1';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -1308,7 +1308,7 @@ function renderSettings() {
   if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
   if (canUpdate()) st.append(h('button', { class: 'btn', onclick: () => checkUpdate(true) }, 'Проверить обновления'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж ' + APP_VERSION));
+  st.append(h('div', { class: 'hint' }, 'МоторСтудия ' + APP_VERSION));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

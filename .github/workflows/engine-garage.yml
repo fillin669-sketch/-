@@ -1,4 +1,4 @@
-name: Сборка APK «Мотор-Гараж»
+name: Сборка APK «МоторСтудия»
 
 on:
   push:
@@ -75,7 +75,7 @@ jobs:
           tag_name: motor-garage-latest
           name: Мотор-Гараж (последняя сборка)
           body: |
-            Свежая сборка игры «Мотор-Гараж» из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
+            Свежая сборка игры «МоторСтудия» из ветки ${{ github.ref_name }} (коммит ${{ github.sha }}).
             Скачайте MotorGarage.apk на телефон и установите.
           prerelease: true
           make_latest: false
