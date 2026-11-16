@@ -19,18 +19,19 @@ class EngineSynth {
     this.lpz = [0, 0]; this.m1 = 0; this.m2 = 0; this.m3 = 0; this.hp = 0; this.hpx = 0;
     this.inEnv = 0; this.ib1 = 0; this.ib2 = 0; this.clEnv = 0; this.cb1 = 0; this.cb2 = 0;
     this.stPh = 0; this.stPh2 = 0; this.mech = 0; this.tick = 0;
+    this.stT = 0; this.relT = 0; this.armRel = 0; this.strain = 0; this.clickEnv = 0; this.clickT = 0; this.sb1 = 0; this.sb2 = 0; this.kb1 = 0; this.kb2 = 0;
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
   setConfig(c) { this.cfg = c; }
   setParams(p) {
     this.rpmT = p.rpm; this.thr = p.throttle; this.load = p.load || 0; this.on = !!p.on; this.limiter = !!p.limiter; this.vol = p.vol;
-    if (p.crank) { this.crank = p.crank; }
+    if (p.crank) { this.crank = p.crank; this.stT = 0; this.relT = 0; }
   }
   trigger(i, combust) {
     const c = this.cfg; if (!c) return;
     let amp;
     const thr = this.thrS, idleish = this.rpm < c.idle * 1.4;
-    if (!combust) amp = 0.07;                                    // только сжатие (прокрутка стартером, глушение)
+    if (!combust) amp = this.crank > 0 ? 0.13 * c.compDip / 0.3 : 0.07;                                    // только сжатие (прокрутка стартером, глушение)
     else {
       amp = (0.4 + 0.6 * Math.max(thr, this.load * 0.8)) * c.amp[i];
       // нестабильность: у ротора и большого перекрытия на холостых — «брап»
@@ -61,12 +62,21 @@ class EngineSynth {
     for (let k = 0; k < n; k++) {
       // --- обороты: обычные, прокрутка стартером, глушение ---
       let target = this.rpmT;
+      let dip = 0;
       if (this.crank > 0) {
-        this.crank -= dt;
-        const comp = Math.cos(this.theta / cyc * N * two);
-        target = 210 + 45 * comp;
-        if (this.crank <= 0) this.catchT = 0.35;
+        // прокрутка: втягивающее реле щёлкает, стартер раскручивает вал; на каждом такте сжатия
+        // вал «упирается» — обороты проседают, стартер натужно гудит ниже и громче
+        if (this.stT === 0) { this.clickEnv = 1; this.clickT = 0; }
+        this.stT += dt; this.crank -= dt;
+        const spin = Math.min(1, this.stT / 0.14);
+        const ph = (this.theta / cyc * N) % 1;
+        const d = Math.cos(two * (ph - 0.08));
+        dip = d > 0 ? d * d * d : 0;
+        target = c.crankRpm * (0.25 + 0.75 * spin) * (1 - c.compDip * dip);
+        this.rpm = target;
+        if (this.crank <= 0) { this.catchT = 0.35; this.relT = 0.2; this.armRel = target * 13 / 60; this.stT = 0; this.clickEnv = 0.55; this.clickT = 0; }
       }
+      this.strain += (dip - this.strain) * 0.01;
       if (this.catchT > 0) this.catchT -= dt;
       const kR = target > this.rpm ? 0.0016 : 0.0009;
       this.rpm += (target - this.rpm) * (this.crank > 0 ? 0.02 : kR);
@@ -128,9 +138,27 @@ class EngineSynth {
       const mech = (this.rnd() * 2 - 1) * 0.004 * Math.min(1.5, this.rpm / 5000) * c.mechGain;
       // --- стартер: мотор и шестерня бендикса ---
       let st = 0;
-      if (this.crank > 0) {
-        this.stPh += 48 / sr; this.stPh2 += 460 / sr;
-        st = (((this.stPh % 1) * 2 - 1) * 0.12 + Math.sin(two * this.stPh2) * 0.05) * (0.7 + 0.3 * Math.sin(two * this.theta / cyc * N));
+      if (this.crank > 0 || this.relT > 0) {
+        // частота якоря стартера: обороты вала × передаточное число венца (~13)
+        let arm, fade = 1;
+        if (this.crank > 0) arm = Math.max(5, this.rpm * 13 / 60);
+        else { this.relT -= dt; this.armRel += (95 - this.armRel) * 0.0012; arm = this.armRel; fade = Math.max(0, this.relT / 0.2); fade *= fade; }
+        this.stPh = (this.stPh + arm / sr) % 1000;
+        const commP = this.stPh * 12, meshP = this.stPh * 10;
+        const hum = ((this.stPh % 1) * 2 - 1) * 0.05 + Math.sin(two * this.stPh * 2) * 0.04;
+        const whine = Math.sin(two * commP) * 0.06 + Math.sin(two * meshP) * 0.045 + Math.sin(two * meshP * 2) * 0.02 + Math.sin(two * meshP * 3) * 0.008;
+        const fb2 = Math.min(0.45, two * 2300 / sr);
+        this.sb1 += fb2 * (nz - this.sb1 - 0.5 * this.sb2); this.sb2 += fb2 * this.sb1;
+        const brush = this.sb1 * (0.55 + 0.45 * Math.sin(two * commP)) * 0.07;
+        const strain = 0.7 + 0.6 * this.strain;
+        st = (hum * (1 + this.strain) + whine * strain + brush * strain) * fade * c.starterGain;
+      }
+      // щелчок втягивающего реле (включение) и выход бендикса (отключение)
+      if (this.clickEnv > 0.001) {
+        this.clickT += dt; this.clickEnv *= 0.9965;
+        const fc3 = Math.min(0.45, two * 1700 / sr);
+        this.kb1 += fc3 * (nz - this.kb1 - 0.25 * this.kb2); this.kb2 += fc3 * this.kb1;
+        st += (this.kb1 * 0.6 + Math.sin(two * 190 * this.clickT) * 0.35 * Math.exp(-this.clickT / 0.02)) * this.clickEnv * c.starterGain;
       }
       let s = (ex * c.loud + intake + clat + mech) ;
       // убрать постоянную составляющую
@@ -262,7 +290,15 @@ registerProcessor('engine-proc', EngineProc);`;
     const loud = (0.55 + Math.min(0.35, (dia - 40) / 200)) * (e.exhLayout === 'dual' ? 1.1 : 1) * (two ? 0.7 : 1);
     const crackle = muf === 'stock' ? 0.004 : muf === 'sport' ? 0.02 : 0.05;
     const itb = e.manifold === 'itb';
+    // прокрутка: большой объём и дизель крутятся медленнее и тяжелее, ротор — быстро и ровно
+    const disp = displacement(e);
+    let crankRpm = clamp(290 - disp * 22, 150, 280), compDip = clamp(0.18 + e.cr / 60, 0.25, 0.55);
+    if (diesel) { crankRpm *= 0.85; compDip = 0.55; }
+    if (rot) { crankRpm = 260; compDip = 0.15; }
+    if (n >= 10) compDip *= 0.6;
+    const starterGain = diesel || disp > 4.5 ? 1.25 : 1;
     const cfg = {
+      crankRpm, compDip, starterGain,
       cycle, phases, bank, delay, amp, fr, tau, rasp, jitter, jitterIdle, mechGain, diesel,
       pipe: [Math.min(8000, pipe0), Math.min(8000, pipe1)], dual: e.exhLayout === 'dual' && n > 1, fb, loopFc: 1800,
       mufFc, mufGain, leak, loud, crackle, idle: e.idle || 900,

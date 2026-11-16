@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '3.7';
+var APP_VERSION = '3.8';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -442,9 +442,10 @@ function startEngine() {
   snd.init(); snd.resume(); snd.on = true; snd.configure(be); snd.volume = S.settings.vol;
   const test = engineAt(be, 1000, { throttle: 0.3 });
   if (test.flags.includes('nostart')) { toast('Не заводится: дизелю нужна степень сжатия от 14'); return; }
-  D.on = true; D.starting = 0.9; D.rpm = 150; D.cut = false; D.cause = {};
+  const crankDur = FUELS[be.fuel].diesel ? 1.5 : displacement(be) > 4.5 ? 1.25 : 1.05;
+  D.on = true; D.starting = crankDur; D.rpm = 150; D.cut = false; D.cause = {};
   if (D.coolT < 25) D.coolT = 25;
-  snd.starter(0.9); vibrate(40);
+  snd.starter(crankDur); vibrate(40);
   $('#btnStart').textContent = 'Заглушить'; $('#btnStart').classList.add('red');
 }
 function stopEngine() {
