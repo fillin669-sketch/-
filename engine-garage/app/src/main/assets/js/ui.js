@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '3.9';
+var APP_VERSION = '4.0';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -33,9 +33,22 @@ function freshState() {
   const e = makePreset(0); e.id = newId();
   e.built = hwSnapshot(e);
   const c = defaultCar(); c.id = newId(); c.engineId = e.id; c.built = carHw(c);
-  return { money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true, gfx: 'auto', autoShift: true }, view: '3d', xray: true, openSec: 'layout', openCarSec: 'body' };
+  return { rivalsV: 2, money: 20000, sandbox: false, engines: [e], cars: [c], curE: e.id, curC: c.id, done: {}, unlocked: 0, best: {}, settings: { vol: 0.8, vibro: true, gfx: 'auto', autoShift: true }, view: '3d', xray: true, openSec: 'layout', openCarSec: 'body' };
 }
 let loadProblem = null;
+// перенос побед и рекордов на новый список соперников (с трассами)
+function migrateRivals() {
+  if (S.rivalsV === 2) return;
+  const idx = (old) => RIVALS.findIndex(r => r.name === RIVALS_V1[old]);
+  const best = {}, beaten = {};
+  Object.keys(S.best || {}).forEach(k => { const j = idx(+k); if (j >= 0) best[j] = S.best[k]; });
+  Object.keys(S.beaten || {}).forEach(k => { const j = idx(+k); if (j >= 0 && S.beaten[k]) beaten[j] = true; });
+  // открыты все соперники до самого сильного побеждённого + следующий
+  let maxBeaten = -1; Object.keys(beaten).forEach(k => { maxBeaten = Math.max(maxBeaten, +k); });
+  const oldUnl = idx(Math.min(RIVALS_V1.length - 1, S.unlocked || 0));
+  S.best = best; S.beaten = beaten; S.unlocked = Math.max(maxBeaten + 1, Math.min(oldUnl, maxBeaten + 1), 0);
+  S.rivalsV = 2;
+}
 function load() {
   let raw = null;
   try { raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem(SAVE_KEY + '.bak'); } catch (_) { }
@@ -48,6 +61,7 @@ function load() {
         d.cars = (d.cars || []).map(c => Object.assign(defaultCar(), c));
         S = Object.assign(freshState(), d);
         S.settings = Object.assign(freshState().settings, d.settings || {});
+        migrateRivals();
         return;
       }
     }
@@ -890,8 +904,10 @@ function renderRace() {
   RIVALS.forEach((r, i) => {
     const locked = !S.sandbox && i > S.unlocked;
     const best = S.best[i];
+    const tr = TRACKS[r.track] || TRACKS.city;
     list.append(h('div', { class: 'item' + (locked ? ' done' : '') },
       h('div', { class: 'item-h' }, h('b', null, r.name), h('span', null, '≈' + r.hp + ' л.с. · ' + r.mass + ' кг')),
+      h('div', { class: 'track-tag t-' + tr.theme }, h('b', null, tr.name), ' · ' + tr.desc),
       h('div', { class: 'meta' }, 'Взнос ' + (r.fee ? money(r.fee) : 'нет') + ' · приз ' + money(r.prize) + (best ? ' · ваш лучший ' + num(best, 2) + ' с' : '') + (S.beaten && S.beaten[i] ? ' · ' : ''), S.beaten && S.beaten[i] ? h('span', { class: 'tag g' }, 'побеждён') : null),
       h('div', { class: 'acts' }, h('button', { class: 'btn accent', disabled: locked ? 'disabled' : false, onclick: () => startRace(i) }, locked ? 'Закрыто' : 'На старт'))));
   });
@@ -955,7 +971,9 @@ function startRace(i) {
   let auto = gbAuto || !!S.settings.autoShift;
   const myHp = Math.round((engRec.lastDyno || engineCurve(e).peak).hp), myMass = Math.round(carStats(bc, e).mass);
   modal((box, close) => {
-    box.append(h('h3', null, 'Заезд на 402 м'));
+    const tr = TRACKS[r.track] || TRACKS.city;
+    box.append(h('h3', null, tr.name + ' · ' + tr.dist + ' м'));
+    if (tr.grip < 0.9) box.append(h('p', { class: 'hint' }, 'Скользко: сцепление шин ' + Math.round(tr.grip * 100) + '%. Газ в пол на старте — пробуксовка.'));
     box.append(h('div', { class: 'vs' },
       h('div', null, h('b', null, c.name), h('span', null, myHp + ' л.с. · ' + myMass + ' кг')),
       h('div', { class: 'x' }, 'VS'),
@@ -980,13 +998,15 @@ function beginRace(i, auto) {
   const r = RIVALS[i];
   pay(r.fee);
   const bc = builtCar(c);
-  Object.assign(R, { on: true, idx: i, rival: r, me: newCarState(bc, e), op: rivalCar(r), phase: 'stage', t: 0, green: null, rt: null, opRt: 0.12 + Math.random() * 0.25 * (1 - i / RIVALS.length), done: false, thr: 0, e, c: bc, parts: new Particles(), cam: 0, myTime: null, opTime: null, fault: false });
+  const track = TRACKS[r.track] || TRACKS.city;
+  Object.assign(R, { on: true, idx: i, rival: r, track, dist: track.dist, me: newCarState(bc, e), op: rivalCar(r), phase: 'stage', t: 0, green: null, rt: null, opRt: 0.12 + Math.random() * 0.25 * (1 - i / RIVALS.length), done: false, thr: 0, e, c: bc, parts: new Particles(), cam: 0, myTime: null, opTime: null, fault: false });
   R.me.rpm = e.idle;
+  R.me.st.mu *= track.grip; R.op.mu *= track.grip;
   R.spMe = R.spOp = null; R.r3d = null;
   try {
     if (init3D()) {
       R.camMode = S.settings.raceCam || 0;
-      R.r3d = new Race3D({ c: bc, st: R.me.st, e }, { c: rivalLook(r), st: { rWheel: 0.31 } });
+      R.r3d = new Race3D({ c: bc, st: R.me.st, e }, { c: rivalLook(r), st: { rWheel: 0.31 } }, track);
       show3D($('#raceView'), R.r3d); G3.canvas.style.display = '';
       $('#cvRace').style.visibility = 'hidden';
     }
@@ -1019,7 +1039,7 @@ $('#btnShift').addEventListener('pointerdown', (ev) => { ev.preventDefault(); ra
 $('#raceView').addEventListener('pointerdown', () => raceShift());
 $('#cvRace').addEventListener('pointerdown', () => raceShift());
 $('#btnRaceExit').addEventListener('click', () => endRace(true));
-$('#btnRaceCam').addEventListener('click', (ev) => { ev.stopPropagation(); R.camMode = ((R.camMode || 0) + 1) % 3; S.settings.raceCam = R.camMode; save(); toast(['Камера: сзади', 'Камера: сбоку', 'Камера: с капота'][R.camMode]); });
+$('#btnRaceCam').addEventListener('click', (ev) => { ev.stopPropagation(); const order = [0, 3, 1, 2], names = { 0: 'сзади', 3: 'сбоку', 1: 'проезд', 2: 'с капота' }; R.camMode = order[(order.indexOf(R.camMode || 0) + 1) % order.length]; S.settings.raceCam = R.camMode; save(); toast('Камера: ' + names[R.camMode]); });
 ['pointerdown', 'touchstart'].forEach(x => $('#btnRaceCam').addEventListener(x, (ev) => ev.stopPropagation()));
 const rnBtn = $('#btnRaceNos');
 rnBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); if (R.me) R.me.nitrous = true; rnBtn.classList.add('on'); });
@@ -1046,10 +1066,10 @@ function tickRace(dt) {
       if (R.rt == null) { if (R.thr > 0.3) R.rt = R.t - R.green; else thr = 0; }
       stepCar(me, h2, thr, { autoShift: R.auto, shiftRpm: R.shiftAt });
       stepRival(op, h2);
-      if (R.myTime == null && me.x >= 402) { R.myTime = R.t - R.green; R.trap = me.v * 3.6; }
-      if (R.opTime == null && op.x >= 402) { R.opTime = op.t + R.opRt; }
+      if (R.myTime == null && me.x >= R.dist) { R.myTime = R.t - R.green; R.trap = me.v * 3.6; }
+      if (R.opTime == null && op.x >= R.dist) { R.opTime = op.t + R.opRt; }
       if (R.myTime != null && R.opTime != null) { R.phase = 'done'; setTimeout(showRaceResult, 600); }
-      if (me.t > 60 && R.myTime == null) { R.myTime = 99; R.trap = me.v * 3.6; }
+      if (me.t > 90 && R.myTime == null) { R.myTime = 99; R.trap = me.v * 3.6; }
     } else {
       // после финиша: сбросили газ и тормозим — мотор звучит на сбросе, потом на холостых
       stepCar(me, h2, 0, {}); stepRival(op, h2);
@@ -1135,10 +1155,10 @@ function drawRace(dt) {
     const px = sx(m);
     ctx.fillStyle = '#4a4e56'; ctx.fillRect(px, roadTop - H * 0.18, 3, H * 0.18);
     ctx.fillStyle = 'rgba(255,220,150,0.8)'; ctx.fillRect(px - 6, roadTop - H * 0.18, 14, 3);
-    if (m % 100 === 0 && m > 0 && m < 402) { ctx.fillStyle = '#e7e9ec'; ctx.font = '700 ' + Math.round(H * 0.06) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(m + ' м', px, roadTop - H * 0.2); }
+    if (m % 100 === 0 && m > 0 && m < R.dist) { ctx.fillStyle = '#e7e9ec'; ctx.font = '700 ' + Math.round(H * 0.06) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(m + ' м', px, roadTop - H * 0.2); }
   }
   // старт и финиш
-  [[0, '#e7e9ec'], [402, null]].forEach(([m, c]) => {
+  [[0, '#e7e9ec'], [R.dist, null]].forEach(([m, c]) => {
     const px = sx(m);
     if (px < -40 || px > W + 40) return;
     if (c) { ctx.fillStyle = c; ctx.fillRect(px - 2, roadTop + 6, 4, H - roadTop); }
@@ -1204,14 +1224,14 @@ function drawRaceHud() {
   ctx.textAlign = 'left'; ctx.font = '700 15px sans-serif';
   let msg = '';
   if (R.phase === 'stage' || R.phase === 'tree') msg = 'Старт на ' + Math.round(R.launchRpm / 100) * 100 + ' об/мин';
-  else if (R.phase === 'run') msg = me.wheelspin > 0.1 ? 'Пробуксовка!' : (me.x < 402 ? Math.round(402 - me.x) + ' м · ' + num(R.t - R.green, 1) + ' с' : 'Финиш!');
+  else if (R.phase === 'run') msg = me.wheelspin > 0.1 ? 'Пробуксовка!' : (me.x < R.dist ? Math.round(R.dist - me.x) + ' м · ' + num(R.t - R.green, 1) + ' с' : 'Финиш!');
   ctx.fillStyle = msg.startsWith('ЗЕЛ') ? '#3dff7a' : me.wheelspin > 0.1 ? COL.amber : COL.text;
   ctx.fillText(msg, 14, Rg * 2 + 36);
   // прогресс двух машин
   const py = Rg * 2 + 60, px = 14, pw = Math.max(80, W - 150 - px);
   ctx.fillStyle = '#1e2024'; ctx.fillRect(px, py, pw, 4); ctx.fillRect(px, py + 10, pw, 4);
-  ctx.fillStyle = R.rival.color; ctx.fillRect(px, py, pw * clamp(R.op.x / 402, 0, 1), 4);
-  ctx.fillStyle = R.c.color; ctx.fillRect(px, py + 10, pw * clamp(me.x / 402, 0, 1), 4);
+  ctx.fillStyle = R.rival.color; ctx.fillRect(px, py, pw * clamp(R.op.x / R.dist, 0, 1), 4);
+  ctx.fillStyle = R.c.color; ctx.fillRect(px, py + 10, pw * clamp(me.x / R.dist, 0, 1), 4);
 }
 
 // ================= ГАРАЖ =================

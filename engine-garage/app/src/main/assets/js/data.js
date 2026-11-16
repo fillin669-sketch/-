@@ -304,13 +304,45 @@ const CONTRACTS = [
 ];
 
 // ---------- Соперники в заездах на 402 м ----------
+// Трассы: длина, время суток, покрытие (сцепление) и пейзаж
+const TRACK_THEMES = {
+  city:     { sky: ['#03050c', '#0a1124', '#141c33'], fog: 0x0b1020, fogNear: 40, fogFar: 260, hemi: [0x9fb4e0, 0x2a2620, 0.75], sun: [0xbfd0ff, 0.95, -20, 40, 15], ground: '#1b1d22', road: '#26272b', roadRough: 0.85, line: 0xdedfe2, barrier: 0xc8312b, night: true, stand: true },
+  airfield: { sky: ['#4f8fd6', '#9cc6ee', '#dbe9f5'], fog: 0xc9dced, fogNear: 120, fogFar: 650, hemi: [0xdbe9ff, 0x6b6656, 1.0], sun: [0xfff4e0, 2.2, -60, 90, 40], ground: '#6f7f4a', road: '#5d6066', roadRough: 0.9, line: 0xf2f2f2, barrier: 0, night: false, stand: false },
+  desert:   { sky: ['#2b3f73', '#d8794a', '#f3b86b'], fog: 0xe0a070, fogNear: 80, fogFar: 520, hemi: [0xffd9b0, 0x7a4a2a, 0.95], sun: [0xffb070, 2.0, -200, 25, 40], ground: '#c99a62', road: '#3a3633', roadRough: 0.9, line: 0xf0e2c0, barrier: 0, night: false, stand: false, sunDisc: 0xffd28a, sunDiscY: 22 },
+  mountain: { sky: ['#3d7fd0', '#8ec0ea', '#d5e8f6'], fog: 0xb9d3e8, fogNear: 90, fogFar: 520, hemi: [0xe3f0ff, 0x3b4a32, 1.0], sun: [0xfff6e8, 2.0, -40, 80, 60], ground: '#4f6e3c', road: '#2f3134', roadRough: 0.85, line: 0xf2f2f2, barrier: 0xd8d8d8, night: false, stand: false },
+  port:     { sky: ['#14183a', '#5a3b5c', '#c9725a'], fog: 0x5a4458, fogNear: 50, fogFar: 380, hemi: [0xffc9a8, 0x2a2430, 0.85], sun: [0xff9a6a, 1.3, -200, 18, -60], ground: '#4a4d52', road: '#2b2c30', roadRough: 0.8, line: 0xf2d24a, barrier: 0xf2d24a, night: true, stand: true, sunDisc: 0xff9a6a, sunDiscY: 12 },
+  winter:   { sky: ['#9fb6cc', '#d6e2ec', '#eef3f7'], fog: 0xe4ebf2, fogNear: 50, fogFar: 330, hemi: [0xf0f6ff, 0x9aa6b2, 1.1], sun: [0xf4f8ff, 1.4, -40, 60, 40], ground: '#e9eff5', road: '#6c7177', roadRough: 0.6, line: 0x3a7bd5, barrier: 0, night: false, stand: false },
+};
+const TRACKS = {
+  city:     { name: 'Ночной город', theme: 'city', dist: 402, grip: 1.0, desc: '402 м · асфальт · ночь' },
+  sprint:   { name: 'Горная дорога', theme: 'mountain', dist: 201, grip: 1.0, desc: '201 м · короткий спринт · день' },
+  desert:   { name: 'Пустынное шоссе', theme: 'desert', dist: 402, grip: 0.94, desc: '402 м · пыльный асфальт · закат' },
+  port:     { name: 'Порт', theme: 'port', dist: 402, grip: 0.97, desc: '402 м · бетон · вечер' },
+  airfield: { name: 'Аэродром', theme: 'airfield', dist: 804, grip: 1.0, desc: '804 м · взлётная полоса · день' },
+  winter:   { name: 'Зимний трек', theme: 'winter', dist: 201, grip: 0.72, desc: '201 м · укатанный снег · скользко' },
+  mile:     { name: 'Аэродром · миля', theme: 'airfield', dist: 1609, grip: 1.0, desc: '1609 м · заезд на максималку' },
+};
 const RIVALS = [
-  { name: 'Сосед на седане', hp: 95, nm: 140, mass: 1150, peak: 5500, fee: 0, prize: 800, body: 'sedan', color: '#7d8590' },
-  { name: 'Студент на хэтче', hp: 140, nm: 180, mass: 1050, peak: 6500, fee: 300, prize: 1800, body: 'hatch', color: '#3a7bd5' },
-  { name: 'Таксист Гоша', hp: 200, nm: 300, mass: 1300, peak: 5800, fee: 800, prize: 3500, body: 'bizsedan', color: '#e8c33a' },
-  { name: 'Клуб «Турбо»', hp: 330, nm: 450, mass: 1300, peak: 6200, fee: 1500, prize: 6500, body: 'wagon', color: '#2f9e5a' },
-  { name: 'Маслкар Палыча', hp: 480, nm: 620, mass: 1550, peak: 5800, fee: 3000, prize: 11000, body: 'coupe', color: '#d8661f' },
-  { name: 'Уличный король', hp: 700, nm: 800, mass: 1400, peak: 6800, fee: 6000, prize: 20000, body: 'sport', color: '#7a3ad8' },
-  { name: 'Гиперкар', hp: 1200, nm: 1400, mass: 1600, peak: 6800, fee: 12000, prize: 40000, body: 'super', color: '#e0e4ea' },
-  { name: 'Топ-фьюел дрэгстер', hp: 3500, nm: 3500, mass: 1000, peak: 7500, fee: 25000, prize: 90000, body: 'dragster', color: '#e33b3b' },
+  { name: 'Сосед на седане', track: 'city', hp: 95, nm: 140, mass: 1150, peak: 5500, fee: 0, prize: 800, body: 'sedan', color: '#7d8590' },
+  { name: 'Студент на хэтче', track: 'sprint', hp: 140, nm: 180, mass: 1050, peak: 6500, fee: 300, prize: 1800, body: 'hatch', color: '#3a7bd5' },
+  { name: 'Дальнобой на пикапе', track: 'desert', hp: 190, nm: 330, mass: 1900, peak: 4800, fee: 500, prize: 2400, body: 'pickup', color: '#5b6b4a' },
+  { name: 'Таксист Гоша', track: 'city', hp: 200, nm: 300, mass: 1300, peak: 5800, fee: 800, prize: 3500, body: 'bizsedan', color: '#e8c33a' },
+  { name: 'Фермер на внедорожнике', track: 'winter', hp: 240, nm: 420, mass: 1950, peak: 5000, fee: 900, prize: 3800, body: 'suv', color: '#2c4a3a' },
+  { name: 'Грузчик на кроссовере', track: 'port', hp: 270, nm: 380, mass: 1500, peak: 5600, fee: 1100, prize: 4800, body: 'crossover', color: '#e0e2e6' },
+  { name: 'Клуб «Турбо»', track: 'airfield', hp: 330, nm: 450, mass: 1300, peak: 6200, fee: 1500, prize: 6500, body: 'wagon', color: '#2f9e5a' },
+  { name: 'Горный гонщик', track: 'sprint', hp: 360, nm: 400, mass: 1050, peak: 7400, fee: 1800, prize: 7200, body: 'roadster', color: '#d84a2a' },
+  { name: 'Ралли-ветеран', track: 'winter', hp: 420, nm: 520, mass: 1250, peak: 6500, fee: 2200, prize: 8800, body: 'hatch', color: '#f2f3f5' },
+  { name: 'Маслкар Палыча', track: 'desert', hp: 480, nm: 620, mass: 1550, peak: 5800, fee: 3000, prize: 11000, body: 'coupe', color: '#d8661f' },
+  { name: 'Ночной дрифтер', track: 'port', hp: 540, nm: 600, mass: 1350, peak: 7200, fee: 4000, prize: 14000, body: 'sport', color: '#8a3fa8' },
+  { name: 'Уличный король', track: 'city', hp: 700, nm: 800, mass: 1400, peak: 6800, fee: 6000, prize: 20000, body: 'sport', color: '#7a3ad8' },
+  { name: 'Пилот выходного дня', track: 'airfield', hp: 800, nm: 860, mass: 1450, peak: 7000, fee: 8000, prize: 26000, body: 'coupe', color: '#1f5fbf' },
+  { name: 'Контрабандист', track: 'port', hp: 950, nm: 1150, mass: 1700, peak: 6200, fee: 10000, prize: 32000, body: 'bizsedan', color: '#14161a' },
+  { name: 'Королева пустыни', track: 'desert', hp: 1000, nm: 1050, mass: 1450, peak: 7200, fee: 11000, prize: 36000, body: 'super', color: '#e8b04a' },
+  { name: 'Гиперкар', track: 'city', hp: 1200, nm: 1400, mass: 1600, peak: 6800, fee: 12000, prize: 40000, body: 'super', color: '#e0e4ea' },
+  { name: 'Король склона', track: 'sprint', hp: 1300, nm: 1350, mass: 1400, peak: 7800, fee: 15000, prize: 48000, body: 'super', color: '#c8241f' },
+  { name: 'Шипованный монстр', track: 'winter', hp: 1400, nm: 1700, mass: 1700, peak: 6500, fee: 17000, prize: 55000, body: 'suv', color: '#e36414' },
+  { name: 'Рекорд мили', track: 'mile', hp: 1800, nm: 1900, mass: 1500, peak: 7500, fee: 20000, prize: 70000, body: 'super', color: '#2a8f4a' },
+  { name: 'Топ-фьюел дрэгстер', track: 'city', hp: 3500, nm: 3500, mass: 1000, peak: 7500, fee: 25000, prize: 90000, body: 'dragster', color: '#e33b3b' },
 ];
+// старые номера соперников (версии до 4.0) -> новые: прогресс сохраняется
+const RIVALS_V1 = ['Сосед на седане', 'Студент на хэтче', 'Таксист Гоша', 'Клуб «Турбо»', 'Маслкар Палыча', 'Уличный король', 'Гиперкар', 'Топ-фьюел дрэгстер'];

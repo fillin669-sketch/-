@@ -10,8 +10,8 @@ android {
         applicationId = "com.enginegarage.game"
         minSdk = 21
         targetSdk = 35
-        versionCode = 12
-        versionName = "3.9"
+        versionCode = 13
+        versionName = "4.0"
     }
 
     // Ключ подписи передаётся через переменные окружения (в GitHub Actions).
