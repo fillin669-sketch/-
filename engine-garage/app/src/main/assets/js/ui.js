@@ -883,7 +883,7 @@ function renderRace() {
 }
 const R = { on: false, thr: 0 };
 function rivalLook(r) {
-  return Object.assign(defaultCar(), { body: r.hp > 2000 ? 'dragster' : r.hp > 900 ? 'super' : r.hp > 400 ? 'coupe' : r.hp > 150 ? 'sedan' : 'hatch', color: r.color, rim: r.hp > 300 ? 18 : 15, tireWidth: r.hp > 300 ? 245 : 195, profile: r.hp > 300 ? 40 : 55, rimStyle: r.hp > 600 ? 'forged' : r.hp > 150 ? 'alloy' : 'steel', tire: 'sport', spoiler: r.hp > 300 ? 'wing' : 'none', rideHeight: r.hp > 300 ? -25 : 0, kit: r.hp > 600 ? 'wide' : r.hp > 300 ? 'sport' : 'stock', lights: r.hp > 300 ? 'led' : 'stock', tips: r.hp > 300 ? 'quad' : 'single', caliper: r.hp > 300 ? 'red' : 'black', hood: r.hp > 450 ? 'carbon' : 'stock' });
+  return Object.assign(defaultCar(), { body: r.body || (r.hp > 2000 ? 'dragster' : r.hp > 900 ? 'super' : r.hp > 400 ? 'coupe' : r.hp > 150 ? 'sedan' : 'hatch'), color: r.color, rim: r.hp > 300 ? 18 : 15, tireWidth: r.hp > 300 ? 245 : 195, profile: r.hp > 300 ? 40 : 55, rimStyle: r.hp > 600 ? 'forged' : r.hp > 150 ? 'alloy' : 'steel', tire: 'sport', spoiler: r.hp > 300 ? 'wing' : 'none', rideHeight: r.hp > 300 ? -25 : 0, kit: r.hp > 600 ? 'wide' : r.hp > 300 ? 'sport' : 'stock', lights: r.hp > 300 ? 'led' : 'stock', tips: r.hp > 300 ? 'quad' : 'single', caliper: r.hp > 300 ? 'red' : 'black', hood: r.hp > 450 ? 'carbon' : 'stock' });
 }
 function drawSprite(ctx, sp, frontX, groundY, ppm, dist) {
   const k = ppm / sp.ppm;
@@ -1132,8 +1132,8 @@ function drawRace(dt) {
     ctx.fillStyle = R.green != null ? '#3dff7a' : '#123a20'; ctx.beginPath(); ctx.arc(tx, roadTop - H * 0.28 + 3 * H * 0.07, 6, 0, Math.PI * 2); ctx.fill();
   }
   // машины
-  const opCar = { body: R.rival.hp > 2000 ? 'dragster' : R.rival.hp > 900 ? 'super' : R.rival.hp > 400 ? 'coupe' : 'sedan', color: R.rival.color, rim: 17, tireWidth: 235, profile: 45, rimStyle: 'alloy', tire: 'sport', spoiler: R.rival.hp > 300 ? 'wing' : 'none', rideHeight: -20 };
-  const opB = BODY_SHAPE[opCar.body], meB = BODY_SHAPE[R.c.body];
+  const opCar = { body: R.rival.body || (R.rival.hp > 2000 ? 'dragster' : R.rival.hp > 900 ? 'super' : R.rival.hp > 400 ? 'coupe' : 'sedan'), color: R.rival.color, rim: 17, tireWidth: 235, profile: 45, rimStyle: 'alloy', tire: 'sport', spoiler: R.rival.hp > 300 ? 'wing' : 'none', rideHeight: -20 };
+  const opB = BODY_SHAPE[opCar.body] || BODY_SHAPE.sedan, meB = BODY_SHAPE[R.c.body] || BODY_SHAPE.sedan;
   if (R.spOp && R.spMe) {
     drawSprite(ctx, R.spOp, sx(op.x), laneOp, ppm, op.x);
     drawSprite(ctx, R.spMe, sx(me.x), laneMe, ppm, me.x);
@@ -1266,7 +1266,7 @@ function renderSettings() {
     h('button', { class: 'btn', onclick: importSave }, 'Загрузить код')));
   if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.3'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.4'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

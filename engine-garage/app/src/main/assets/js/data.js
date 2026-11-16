@@ -305,12 +305,12 @@ const CONTRACTS = [
 
 // ---------- Соперники в заездах на 402 м ----------
 const RIVALS = [
-  { name: 'Сосед на седане', hp: 95, nm: 140, mass: 1150, peak: 5500, fee: 0, prize: 800, color: '#7d8590' },
-  { name: 'Студент на хэтче', hp: 140, nm: 180, mass: 1050, peak: 6500, fee: 300, prize: 1800, color: '#3a7bd5' },
-  { name: 'Таксист Гоша', hp: 200, nm: 300, mass: 1300, peak: 5800, fee: 800, prize: 3500, color: '#e8c33a' },
-  { name: 'Клуб «Турбо»', hp: 330, nm: 450, mass: 1300, peak: 6200, fee: 1500, prize: 6500, color: '#2f9e5a' },
-  { name: 'Маслкар Палыча', hp: 480, nm: 620, mass: 1550, peak: 5800, fee: 3000, prize: 11000, color: '#d8661f' },
-  { name: 'Уличный король', hp: 700, nm: 800, mass: 1400, peak: 6800, fee: 6000, prize: 20000, color: '#7a3ad8' },
-  { name: 'Гиперкар', hp: 1200, nm: 1400, mass: 1600, peak: 6800, fee: 12000, prize: 40000, color: '#e0e4ea' },
-  { name: 'Топ-фьюел дрэгстер', hp: 3500, nm: 3500, mass: 1000, peak: 7500, fee: 25000, prize: 90000, color: '#e33b3b' },
+  { name: 'Сосед на седане', hp: 95, nm: 140, mass: 1150, peak: 5500, fee: 0, prize: 800, body: 'sedan', color: '#7d8590' },
+  { name: 'Студент на хэтче', hp: 140, nm: 180, mass: 1050, peak: 6500, fee: 300, prize: 1800, body: 'hatch', color: '#3a7bd5' },
+  { name: 'Таксист Гоша', hp: 200, nm: 300, mass: 1300, peak: 5800, fee: 800, prize: 3500, body: 'bizsedan', color: '#e8c33a' },
+  { name: 'Клуб «Турбо»', hp: 330, nm: 450, mass: 1300, peak: 6200, fee: 1500, prize: 6500, body: 'wagon', color: '#2f9e5a' },
+  { name: 'Маслкар Палыча', hp: 480, nm: 620, mass: 1550, peak: 5800, fee: 3000, prize: 11000, body: 'coupe', color: '#d8661f' },
+  { name: 'Уличный король', hp: 700, nm: 800, mass: 1400, peak: 6800, fee: 6000, prize: 20000, body: 'sport', color: '#7a3ad8' },
+  { name: 'Гиперкар', hp: 1200, nm: 1400, mass: 1600, peak: 6800, fee: 12000, prize: 40000, body: 'super', color: '#e0e4ea' },
+  { name: 'Топ-фьюел дрэгстер', hp: 3500, nm: 3500, mass: 1000, peak: 7500, fee: 25000, prize: 90000, body: 'dragster', color: '#e33b3b' },
 ];

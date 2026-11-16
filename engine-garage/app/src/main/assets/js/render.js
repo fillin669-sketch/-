@@ -944,6 +944,11 @@ const BODY_SHAPE = {
   super:    { L: 4.5, wb: [0.95, 3.6], pts: [[0, .26], [0, .44], [.2, .54], [1.3, .7], [1.85, 1.12], [2.65, 1.14], [4.2, .86], [4.5, .78], [4.5, .26]], win: [[1.92, 1.08], [2.6, 1.1], [3.05, .92], [1.7, .76]] },
   dragster: { L: 6.0, wb: [0.5, 5.2], pts: [[0, .3], [0, .38], [3.6, .5], [4.1, .9], [4.6, .9], [4.8, .6], [6.0, .55], [6.0, .3]], win: [[4.15, .88], [4.5, .88], [4.6, .62], [4.0, .6]] },
 };
+(function () {
+  const up = (B, dy) => ({ L: B.L, wb: B.wb, pts: B.pts.map(([x, y]) => [x, y < 0.4 ? y : y + dy]), win: B.win.map(([x, y]) => [x, y + dy]) });
+  BODY_SHAPE.bizsedan = BODY_SHAPE.sedan; BODY_SHAPE.sport = BODY_SHAPE.coupe;
+  BODY_SHAPE.crossover = up(BODY_SHAPE.wagon, 0.12); BODY_SHAPE.suv = up(BODY_SHAPE.wagon, 0.25);
+})();
 function drawCar(ctx, c, W, H, opt) {
   opt = opt || {};
   const B = BODY_SHAPE[c.body] || BODY_SHAPE.hatch;

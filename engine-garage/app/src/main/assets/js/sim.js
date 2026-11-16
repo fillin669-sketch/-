@@ -475,11 +475,15 @@ function inertia(e) {
 // ---------- МАШИНА ----------
 const BODIES = {
   hatch:    { name: 'Хэтчбек', mass: 880, cd: 0.34, area: 2.0, front: 0.62, price: 3000, len: 3.9 },
-  sedan:    { name: 'Седан', mass: 1120, cd: 0.30, area: 2.1, front: 0.56, price: 6000, len: 4.6 },
+  sedan:    { name: 'Городской седан', mass: 1120, cd: 0.30, area: 2.1, front: 0.56, price: 6000, len: 4.6 },
+  bizsedan: { name: 'Бизнес-седан', mass: 1480, cd: 0.27, area: 2.25, front: 0.53, price: 15000, len: 5.0 },
   coupe:    { name: 'Купе', mass: 1060, cd: 0.29, area: 1.95, front: 0.54, price: 9000, len: 4.4 },
   wagon:    { name: 'Универсал', mass: 1220, cd: 0.32, area: 2.2, front: 0.55, price: 7000, len: 4.7 },
   roadster: { name: 'Родстер', mass: 920, cd: 0.36, area: 1.8, front: 0.52, price: 12000, len: 4.0 },
+  crossover: { name: 'Кроссовер', mass: 1380, cd: 0.33, area: 2.45, front: 0.57, price: 9000, len: 4.5 },
+  suv:      { name: 'Внедорожник', mass: 1780, cd: 0.37, area: 2.75, front: 0.54, price: 14000, len: 4.9 },
   pickup:   { name: 'Пикап', mass: 1480, cd: 0.45, area: 2.7, front: 0.58, price: 8000, len: 5.2 },
+  sport:    { name: 'Спорткар', mass: 1240, cd: 0.31, area: 1.9, front: 0.5, price: 22000, len: 4.5 },
   super:    { name: 'Суперкар (мотор в базе)', mass: 1100, cd: 0.30, area: 1.85, front: 0.42, price: 40000, len: 4.5 },
   dragster: { name: 'Дрэгстер', mass: 650, cd: 0.55, area: 1.5, front: 0.25, price: 60000, len: 6.0 },
 };
