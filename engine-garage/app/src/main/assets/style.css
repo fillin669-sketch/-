@@ -222,3 +222,5 @@ canvas.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 @keyframes spb { from { transform: translateX(-20%); } to { transform: translateX(170%); } }
 .sp-t { font: 600 12px var(--f-head); color: var(--dim); letter-spacing: .06em; }
 textarea.code { width: 100%; min-height: 90px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 8px; font: 12px var(--f-num); resize: vertical; overflow-wrap: anywhere; }
+.upd-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; margin: 10px 0 4px; }
+.upd-bar i { display: block; height: 100%; width: 0; background: var(--accent, #f2a93b); transition: width .2s; }

@@ -1,4 +1,5 @@
 'use strict';
+var APP_VERSION = '3.6';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -1278,7 +1279,8 @@ function renderSettings() {
     h('button', { class: 'btn', onclick: importSave }, 'Загрузить код')));
   if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.5'));
+  if (canUpdate()) st.append(h('button', { class: 'btn', onclick: () => checkUpdate(true) }, 'Проверить обновления'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж ' + APP_VERSION));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================
@@ -1331,7 +1333,43 @@ setTimeout(() => {
   if (loadProblem) modal((box, close) => { box.append(h('h3', null, 'Проблема с сохранением'), h('p', null, loadProblem), h('button', { class: 'btn accent', onclick: close }, 'Понятно')); });
   const crash = getNativeCrash() || (function () { try { const t = localStorage.getItem('motorGarage.crash'); localStorage.removeItem('motorGarage.crash'); return t; } catch (_) { return null; } })();
   if (crash) modal((box, close) => { box.append(h('h3', null, 'В прошлый раз игра закрылась с ошибкой'), h('p', { class: 'hint' }, 'Прогресс сохранён. Если ошибка повторяется, пришлите этот текст:'), h('textarea', { class: 'code', readonly: 'readonly' }, crash), h('button', { class: 'btn accent', onclick: close }, 'Продолжить')); });
+  if (canUpdate()) setTimeout(() => checkUpdate(false), 2500);
 }, 600);
+
+// ================= ОБНОВЛЕНИЕ ВНУТРИ ИГРЫ =================
+// Игра спрашивает у телефона (Java) последнюю версию в релизе GitHub,
+// показывает, что нового, скачивает APK и открывает установку поверх текущей версии.
+var updManual = false, updBox = null;
+function canUpdate() { try { return !!(window.Android && Android.checkUpdate); } catch (_) { return false; } }
+function checkUpdate(manual) {
+  updManual = manual;
+  if (manual) toast('Проверяю обновления…');
+  try { Android.checkUpdate(); } catch (e) { if (manual) toast('Не удалось проверить обновления'); }
+}
+window.onUpdateInfo = function (info) {
+  if (!info) { if (updManual) toast('Нет связи с сервером обновлений'); return; }
+  let mine = 0; try { mine = Android.appVersion(); } catch (_) { }
+  if (!(info.code > mine)) { if (updManual) toast('У вас последняя версия ' + APP_VERSION); return; }
+  if (!updManual && S.settings.skipUpd === info.code) return;
+  modal((box, close) => {
+    updBox = box;
+    box.append(h('h3', null, 'Доступно обновление ' + (info.name || '')),
+      h('p', null, info.notes || 'Новая версия игры.'),
+      h('p', { class: 'hint' }, 'Прогресс сохранится: новая версия ставится поверх текущей.'),
+      h('div', { class: 'upd-bar' }, h('i', { id: 'updFill' })),
+      h('p', { class: 'hint', id: 'updState' }, ''),
+      h('button', { class: 'btn accent', id: 'btnUpd', onclick: () => { save(); $('#btnUpd').disabled = true; $('#updState').textContent = 'Скачиваю…'; try { Android.downloadUpdate(); } catch (e) { $('#updState').textContent = 'Не удалось начать загрузку'; } } }, 'Обновить'),
+      h('button', { class: 'btn', onclick: () => { S.settings.skipUpd = info.code; save(); close(); } }, 'Позже'));
+  });
+};
+window.onUpdateProgress = function (p) {
+  const f = $('#updFill'), st = $('#updState'); if (!f || !st) return;
+  if (p < 0) { st.textContent = 'Ошибка загрузки. Проверьте интернет и попробуйте ещё раз.'; const b = $('#btnUpd'); if (b) b.disabled = false; return; }
+  f.style.width = Math.round(p * 100) + '%';
+  st.textContent = p >= 1 ? 'Готово. Подтвердите установку в окне Android.' : 'Скачиваю… ' + Math.round(p * 100) + '%';
+  const b = $('#btnUpd'); if (p >= 1 && b) { b.disabled = false; b.textContent = 'Установить'; b.onclick = () => { try { Android.installUpdate(); } catch (_) { } }; }
+};
+window.onUpdatePermission = function () { const st = $('#updState'); if (st) st.textContent = 'Разрешите установку из этого приложения и вернитесь в игру — установка продолжится.'; };
 
 
 // ================= НАДЁЖНОСТЬ =================

@@ -55,6 +55,14 @@ jobs:
           ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk ../MotorGarage.apk
 
+      - name: Файл версии для обновления внутри игры
+        run: |
+          CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          jq -n --argjson code "$CODE" --arg name "$NAME" --rawfile notes update-notes.txt \
+            '{code: $code, name: $name, notes: ($notes | rtrimstr("\n"))}' > ../version.json
+          cat ../version.json
+
       - name: Сохранить APK как артефакт сборки
         uses: actions/upload-artifact@v4
         with:
@@ -71,4 +79,6 @@ jobs:
             Скачайте MotorGarage.apk на телефон и установите.
           prerelease: true
           make_latest: false
-          files: MotorGarage.apk
+          files: |
+            MotorGarage.apk
+            version.json

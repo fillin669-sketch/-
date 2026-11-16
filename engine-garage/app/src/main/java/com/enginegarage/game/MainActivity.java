@@ -21,10 +21,21 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
+import org.json.JSONObject;
 
 /** Вся игра — HTML/JS в assets/index.html, здесь только окно WebView. */
 public class MainActivity extends Activity {
     private WebView web;
+    private static final String UPD_BASE = "https://github.com/fillin669-sketch/-/releases/download/motor-garage-latest/";
+    private boolean pendingInstall = false;
+    private volatile boolean downloading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,6 +131,75 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         web.onResume();
+        // вернулись из настроек «Установка неизвестных приложений» — продолжаем установку
+        if (pendingInstall && (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls())) {
+            pendingInstall = false;
+            installApk();
+        }
+    }
+
+    private void js(final String code) {
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(code, null); });
+    }
+
+    private HttpURLConnection open(String url) throws Exception {
+        // GitHub отдаёт файлы релиза через перенаправление на другой адрес
+        for (int i = 0; i < 6; i++) {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(15000); c.setReadTimeout(30000);
+            c.setInstanceFollowRedirects(false);
+            c.setRequestProperty("User-Agent", "MotorGarage-Android");
+            int code = c.getResponseCode();
+            if (code >= 300 && code < 400) { String loc = c.getHeaderField("Location"); c.disconnect(); url = new URL(new URL(url), loc).toString(); continue; }
+            if (code != 200) { c.disconnect(); throw new Exception("HTTP " + code); }
+            return c;
+        }
+        throw new Exception("too many redirects");
+    }
+
+    private int versionCode() {
+        try {
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= 28 ? (int) pi.getLongVersionCode() : pi.versionCode;
+        } catch (Throwable e) { return 0; }
+    }
+
+    private void installApk() {
+        File f = ApkProvider.apkFile(this);
+        if (!f.exists()) { js("window.onUpdateProgress&&onUpdateProgress(-1)"); return; }
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            pendingInstall = true;
+            js("window.onUpdatePermission&&onUpdatePermission()");
+            try { startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()))); }
+            catch (Throwable e) { pendingInstall = false; }
+            return;
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            Uri uri;
+            if (Build.VERSION.SDK_INT >= 24) {
+                uri = Uri.parse("content://" + ApkProvider.AUTH + "/MotorGarage.apk");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } else {
+                // старые Android: установщик читает файл напрямую
+                File ext = new File(getExternalCacheDir() != null ? getExternalCacheDir() : getCacheDir(), "MotorGarage.apk");
+                copy(f, ext);
+                ext.setReadable(true, false);
+                uri = Uri.fromFile(ext);
+            }
+            i.setDataAndType(uri, "application/vnd.android.package-archive");
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Throwable e) {
+            js("window.onUpdateProgress&&onUpdateProgress(-1)");
+        }
+    }
+
+    private static void copy(File a, File b) throws Exception {
+        InputStream in = new java.io.FileInputStream(a); OutputStream out = new FileOutputStream(b);
+        byte[] buf = new byte[65536]; int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        in.close(); out.close();
     }
 
     @Override
@@ -143,6 +223,60 @@ public class MainActivity extends Activity {
                 return new String(b, 0, Math.max(0, n), "UTF-8");
             } catch (Throwable e) { return null; }
         }
+
+        @JavascriptInterface
+        public int appVersion() { return versionCode(); }
+
+        @JavascriptInterface
+        public void checkUpdate() {
+            new Thread(() -> {
+                try {
+                    HttpURLConnection c = open(UPD_BASE + "version.json?t=" + System.currentTimeMillis());
+                    InputStream in = c.getInputStream();
+                    java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[8192]; int n;
+                    while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                    in.close(); c.disconnect();
+                    JSONObject o = new JSONObject(bo.toString("UTF-8"));
+                    js("window.onUpdateInfo&&onUpdateInfo(" + o.toString() + ")");
+                } catch (Throwable e) {
+                    js("window.onUpdateInfo&&onUpdateInfo(null)");
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void downloadUpdate() {
+            if (downloading) return;
+            downloading = true;
+            new Thread(() -> {
+                File f = ApkProvider.apkFile(MainActivity.this);
+                File tmp = new File(f.getParentFile(), "part.tmp");
+                try {
+                    HttpURLConnection c = open(UPD_BASE + "MotorGarage.apk");
+                    long total = c.getContentLength();
+                    InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(tmp);
+                    byte[] buf = new byte[65536]; int n; long got = 0, lastT = 0;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n); got += n;
+                        long now = System.currentTimeMillis();
+                        if (total > 0 && now - lastT > 150) { lastT = now; js("window.onUpdateProgress&&onUpdateProgress(" + Math.min(0.99, (double) got / total) + ")"); }
+                    }
+                    in.close(); out.close(); c.disconnect();
+                    if (got < 10000) throw new Exception("file too small");
+                    if (f.exists()) f.delete();
+                    if (!tmp.renameTo(f)) throw new Exception("rename");
+                    js("window.onUpdateProgress&&onUpdateProgress(1)");
+                    runOnUiThread(MainActivity.this::installApk);
+                } catch (Throwable e) {
+                    tmp.delete();
+                    js("window.onUpdateProgress&&onUpdateProgress(-1)");
+                } finally { downloading = false; }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void installUpdate() { runOnUiThread(MainActivity.this::installApk); }
 
         @JavascriptInterface
         public void vibrate(int ms) {
