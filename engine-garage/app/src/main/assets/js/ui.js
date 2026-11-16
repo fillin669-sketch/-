@@ -1,5 +1,5 @@
 'use strict';
-var APP_VERSION = '3.6';
+var APP_VERSION = '3.7';
 // ================= ИНТЕРФЕЙС И ИГРОВОЙ ЦИКЛ =================
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
