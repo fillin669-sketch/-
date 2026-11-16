@@ -785,6 +785,8 @@ function carCost(c) {
 function carBuildPrice(c) { const nc = carCost(c); if (!c.built) return nc; const d = nc - carCost(builtCar(c)); return d >= 0 ? d : Math.round(d * 0.5); }
 function carEngineOf(c) { const e = S.engines.find(x => x.id === c.engineId); return e ? builtEngine(e) : null; }
 let perfT = 0;
+// штатные колёса для каждого кузова: [диаметр, профиль, ширина]
+const WHEEL_STOCK = { hatch: [15, 55, 195], sedan: [16, 55, 205], bizsedan: [18, 45, 245], coupe: [17, 45, 225], wagon: [16, 55, 205], roadster: [16, 50, 205], crossover: [17, 60, 225], suv: [18, 60, 255], pickup: [18, 65, 265], sport: [19, 35, 255], super: [20, 30, 285], dragster: [15, 55, 195] };
 function renderCarTab() {
   const c = curCar();
   $('#carName').innerHTML = ''; $('#carName').append(h('span', null, c.name), h('small', null, BODIES[c.body].name));
@@ -795,8 +797,18 @@ function renderCarTab() {
   box.append(sel);
   renderSpec($('#carSections'), CAR_SPEC, c, {
     open: () => S.openCarSec, setOpen: (id) => { S.openCarSec = id; save(); },
-    onChange: (k, structural) => { save(); if (structural) updateCarStats(); else scheduleCar(); },
+    onChange: (k, structural) => {
+      if (k === 'body') {
+        // штатные колёса кузова, если игрок их ещё не менял
+        const prev = WHEEL_STOCK[carView.lastBody || 'hatch'] || WHEEL_STOCK.hatch, nw = WHEEL_STOCK[c.body];
+        if (nw && c.rim === prev[0] && c.profile === prev[1] && c.tireWidth === prev[2]) { c.rim = nw[0]; c.profile = nw[1]; c.tireWidth = nw[2]; }
+        carView.lastBody = c.body;
+        const sm = $('#carName small'); if (sm) sm.textContent = BODIES[c.body].name;
+      }
+      save(); if (structural) updateCarStats(); else scheduleCar();
+    },
   });
+  carView.lastBody = c.body;
   updateCarStats();
 }
 let carRaf = 0;
@@ -1266,7 +1278,7 @@ function renderSettings() {
     h('button', { class: 'btn', onclick: importSave }, 'Загрузить код')));
   if (lastErrorText()) st.append(h('button', { class: 'btn', onclick: showLastError }, 'Последняя ошибка'));
   st.append(h('button', { class: 'btn red', onclick: () => confirmDel('весь прогресс (деньги, двигатели, машины)', () => { S = freshState(); save(); location.reload(); }) }, 'Сбросить прогресс'));
-  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.4'));
+  st.append(h('div', { class: 'hint' }, 'Мотор-Гараж 3.5'));
 }
 
 // ================= ВКЛАДКИ И ЦИКЛ =================

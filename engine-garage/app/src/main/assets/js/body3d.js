@@ -96,15 +96,15 @@ const DESIGNS = {
     tail: { kind: 'twin', poly: [[0.58, 0.76], [0.94, 0.76], [0.95, 0.83], [0.62, 0.84]] },
   },
   pickup: {
-    L: 5.38, W: 1.99, wb: [1.0, 4.27], sill: 0.38, doors: 4, rear: 'bed', bed: [3.68, 5.32], clad: false,
-    top: [[0, 0.5], [0.01, 0.72], [0.04, 0.92], [0.13, 1.04], [0.5, 1.09], [1.5, 1.14], [2.02, 1.18], [3.2, 1.21], [5.26, 1.21], [5.33, 1.17], [5.36, 1.0], [5.38, 0.6]],
-    cab: [[2.02, 1.18], [2.36, 1.52], [2.6, 1.79], [2.82, 1.87], [3.42, 1.88], [3.54, 1.82], [3.6, 1.6], [3.62, 1.21]],
-    ws: 2.8, bl: 3.5, gh: 0.8, gb: 0.92, sh: 0.22, crown: 0.025, noseR: 0.35, noseK: 0.12, tailR: 0.15, tailK: 0.06, taper: 0.02, flare: 0.03,
-    pillars: [{ x: 3.02, w: 0.05, k: 2 }], dlo: [2.4, 3.55], blW: 0.62, hoodX: 0.16, bumpY: 0.78, plateF: 0.6, plateR: 0.62,
-    head: { kind: 'block', poly: [[0.56, 0.9], [0.92, 0.9], [0.95, 0.94], [0.94, 1.02], [0.58, 1.01]], eyes: [[0.68, 0.955], [0.82, 0.955]] },
-    grille: { kind: 'truck', poly: [[0, 0.66], [0.52, 0.66], [0.56, 0.8], [0.56, 1.01], [0, 1.02]] },
-    intake: { poly: [[0, 0.46], [0.6, 0.47], [0.64, 0.58], [0, 0.59]] }, fog: [0.82, 0.54, 0.04], skid: true,
-    tail: { kind: 'vertical', poly: [[0.82, 0.86], [0.97, 0.86], [0.97, 1.16], [0.84, 1.16]] },
+    L: 5.62, W: 2.0, wb: [1.02, 4.4], sill: 0.4, doors: 4, rear: 'bed', bed: [4.07, 5.56], seat: 2.84, rowGap: 0.8, doorRear: 3.93, mirror: 1.25,
+    top: [[0, 0.52], [0.01, 0.74], [0.04, 0.94], [0.13, 1.06], [0.5, 1.11], [1.4, 1.16], [1.95, 1.2], [3.2, 1.23], [5.5, 1.23], [5.57, 1.19], [5.6, 1.02], [5.62, 0.62]],
+    cab: [[1.95, 1.2], [2.3, 1.54], [2.55, 1.82], [2.78, 1.9], [3.82, 1.91], [3.93, 1.85], [3.98, 1.6], [4.0, 1.23]],
+    ws: 2.74, bl: 3.86, gh: 0.8, gb: 0.92, sh: 0.22, crown: 0.025, noseR: 0.35, noseK: 0.12, tailR: 0.15, tailK: 0.06, taper: 0.02, flare: 0.03,
+    pillars: [{ x: 3.18, w: 0.05, k: 2 }], dlo: [2.36, 3.86], blW: 0.62, hoodX: 0.16, bumpY: 0.8, plateF: 0.62, plateR: 0.64,
+    head: { kind: 'block', poly: [[0.56, 0.92], [0.92, 0.92], [0.95, 0.96], [0.94, 1.04], [0.58, 1.03]], eyes: [[0.68, 0.975], [0.82, 0.975]] },
+    grille: { kind: 'truck', poly: [[0, 0.68], [0.52, 0.68], [0.56, 0.82], [0.56, 1.03], [0, 1.04]] },
+    intake: { poly: [[0, 0.48], [0.6, 0.49], [0.64, 0.6], [0, 0.61]] }, fog: [0.8, 0.56, 0.04], skid: true,
+    tail: { kind: 'vertical', poly: [[0.82, 0.88], [0.97, 0.88], [0.97, 1.18], [0.84, 1.18]] },
   },
   sport: {
     L: 4.5, W: 1.92, wb: [0.96, 3.56], sill: 0.14, doors: 2, rear: 'trunk',
@@ -532,10 +532,11 @@ Car3D.prototype.build = function (c, stats, eng) {
       if (D.doors === 4) {
         gap(m, [[bx + 0.02, belt(bx)], [bx + 0.02, doorBot]]);                                // стык дверей
         const xr = D.wb[1] - F.archR - 0.02;
-        gap(m, [[xr + 0.06, belt(xr + 0.06)], [xr + 0.06, rW + F.archR + 0.09]].concat(rearArch(xr + 0.06)));
-        gap(m, [[dF + 0.04, doorBot], [Math.max(bx + 0.3, xr - 0.1), doorBot]]);
+        if (D.doorRear) gap(m, [[D.doorRear, belt(D.doorRear)], [D.doorRear, doorBot]]);
+        else gap(m, [[xr + 0.06, belt(xr + 0.06)], [xr + 0.06, rW + F.archR + 0.09]].concat(rearArch(xr + 0.06)));
+        gap(m, [[dF + 0.04, doorBot], [D.doorRear || Math.max(bx + 0.3, xr - 0.1), doorBot]]);
         doorsX.push(bx + 0.02);
-        this.handles = [bx - 0.2, xr - 0.08];
+        this.handles = [bx - 0.2, (D.doorRear || xr) - 0.12];
       } else {
         const de = D.doorEnd || bx;
         gap(m, [[de, belt(de)], [de + 0.02, doorBot + 0.04], [de - 0.03, doorBot]]);
@@ -746,7 +747,8 @@ Car3D.prototype.build = function (c, stats, eng) {
       const shellM = c.kit === 'wide' || red >= 3 ? carbon : paintSolid;
       add(new THREE.BoxGeometry(0.12, 0.05, 0.05), black, V3(X(mx) + 0.02, t0 + 0.03, s * (gz + 0.01)));
       const arm = add(new THREE.BoxGeometry(0.05, 0.022, 0.08), black, V3(X(mx) + 0.04, my - 0.025, s * (gz + 0.05)));
-      const shell = add(new THREE.SphereGeometry(1, 22, 14), shellM, V3(X(mx) + 0.03, my, s * (gz + 0.13))); shell.scale.set(0.065, 0.062, 0.105);
+      const ms = D.mirror || (D.clad ? 1.12 : 1);
+      const shell = add(new THREE.SphereGeometry(1, 22, 14), shellM, V3(X(mx) + 0.03, my, s * (gz + 0.13))); shell.scale.set(0.065 * ms, 0.062 * ms, 0.105 * ms);
       const mg = add(new THREE.CircleGeometry(1, 24), std(0x8fa2b4, 1, 0.03), V3(X(mx) + 0.083, my, s * (gz + 0.13)), [0, Math.PI / 2, 0]); mg.scale.set(0.095, 0.05, 1);
       if (D.chrome || D.clad) add(new THREE.BoxGeometry(0.012, 0.01, 0.12), new THREE.MeshStandardMaterial({ color: 0x8a4a00, emissive: 0xff8a10, emissiveIntensity: 0.5 }), V3(X(mx) - 0.025, my - 0.045, s * (gz + 0.15)));
     });
@@ -818,9 +820,9 @@ Car3D.prototype.build = function (c, stats, eng) {
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
     root.add(new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: 0x050506, side: THREE.DoubleSide })));
   }
-  const seatX = D.open ? F.cab1 + 0.35 : F.cab0 + 1.0;
+  const seatX = D.open ? F.cab1 + 0.35 : (D.seat || F.cab0 + 1.0), rowGap = D.rowGap || 0.9;
   const belt = top(seatX);
-  const rows = isDrag ? [0] : (red >= 2 || D.doors === 2 || D.open ? [0] : [0, 0.9]);
+  const rows = isDrag ? [0] : (red >= 2 || D.doors === 2 || D.open || seatX + rowGap + 0.32 > F.cab1 ? [0] : [0, rowGap]);
   const seatCol = c.seats === 'bucket' ? 0x121316 : (D.chrome ? 0x2a211a : 0x17181b);
   rows.forEach((dx, ri) => [1, -1].forEach(s => {
     if (isDrag && s < 0) return;
@@ -924,9 +926,18 @@ Car3D.prototype.wheel = function (c, R, w, rimR, side, wire) {
   const style = wire ? 'wire' : c.rimStyle;
   let nSp = { steel: 0, alloy: 5, mesh: 10, forged: 10, black: 6, gold: 7, wire: 24 }[style]; if (nSp === undefined) nSp = 5;
   if (nSp === 0) {
-    const d = new THREE.Mesh(new THREE.CylinderGeometry(ri * 0.96, ri * 0.9, 0.03, 36), rimM); d.rotation.x = Math.PI / 2; face.add(d);
-    for (let k = 0; k < 8; k++) { const h = new THREE.Mesh(new THREE.CircleGeometry(ri * 0.1, 12), std(0x0b0b0c, 0, 0.9)); h.position.set(Math.cos(k / 8 * Math.PI * 2) * ri * 0.66, Math.sin(k / 8 * Math.PI * 2) * ri * 0.66, side * 0.016); if (side < 0) h.rotation.y = Math.PI; face.add(h); }
-    const cover = new THREE.Mesh(new THREE.SphereGeometry(ri * 0.38, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), std(0xb7bcc2, 0.9, 0.3)); cover.rotation.x = side * Math.PI / 2; cover.scale.y = 0.25; face.add(cover);
+    // стальной диск под пластиковым колпаком: выпуклый колпак с прорезями
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(ri * 0.97, ri * 0.92, 0.028, 40), std(0xb9bec5, 0.55, 0.32)); d.rotation.x = Math.PI / 2; face.add(d);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(ri * 0.62, 28, 10, 0, Math.PI * 2, 0, Math.PI / 2), std(0xc3c8ce, 0.6, 0.3)); dome.rotation.x = side * Math.PI / 2; dome.scale.y = 0.12; dome.position.z = side * 0.012; face.add(dome);
+    const slotM = std(0x0d0d0e, 0, 0.9);
+    for (let k = 0; k < 12; k++) {
+      const a = k / 12 * Math.PI * 2, sh = new THREE.Shape();
+      const r0 = ri * 0.5, r1 = ri * 0.86, w0 = 0.012, w1 = 0.03;
+      sh.moveTo(r0, -w0 / 2); sh.lineTo(r1, -w1 / 2); sh.lineTo(r1, w1 / 2); sh.lineTo(r0, w0 / 2);
+      const sl = new THREE.Mesh(new THREE.ShapeGeometry(sh), slotM); sl.rotation.z = a + 0.12; sl.position.z = side * 0.0145; if (side < 0) { sl.rotation.y = Math.PI; sl.rotation.z = -a; }
+      face.add(sl);
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(ri * 0.9, 0.006, 6, 40), std(0x8e949b, 0.7, 0.3)); ring.position.z = side * 0.015; face.add(ring);
   } else {
     // спица — трапеция, расширяется к ободу, с фаской
     for (let k = 0; k < nSp; k++) {
