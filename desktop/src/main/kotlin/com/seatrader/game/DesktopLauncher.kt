@@ -352,6 +352,30 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        if (System.getenv("SEA_FORT") != null) {
+            val p = g.player
+            val fo = g.systems.fortresses[0]
+            fun hold() { p!!.x = fo.x - 45f; p.z = fo.z; p.vx = 0f; p.vz = 0f; p.h = 0f; p.desired = 0f; p.throttle = 0f; p.hp = p.maxHp }
+            if (f in 111..1200) { hold(); if (g.state != SeaGame.State.PLAY) g.menus.close() }
+            when (f) {
+                108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; g.systems.autoFire = true }
+                110 -> { tp(fo.x - 45f, fo.z); hold(); log.append("форт ${fo.idx}: hp ${fo.hp.toInt()}, захвачен=${fo.idx in g.adv.captured}\n") }
+                300 -> shot("f1_fort")
+                420 -> { log.append("через 310 кадров: hp форта ${fo.hp.toInt()}/${fo.maxHp.toInt()}, жив=${fo.alive}\n")
+                    fo.destroyedT = 0f; fo.hp = fo.maxHp; g.adv.captured += fo.idx; clearArea()
+                    featE = g.spawnEnemy("sloop", fo.x + 60f, fo.z).also { it.vx = 0f; it.vz = 0f; it.hp = it.maxHp * 20; it.maxHp *= 20 }; storeT = featE!!.hp.toInt() }
+                in 421..700 -> featE?.let { it.x = fo.x + 60f; it.z = fo.z; it.vx = 0f; it.vz = 0f; it.throttle = 0f }
+            }
+            when (f) {
+                700 -> { log.append("захваченный форт по пирату: hp ${storeT} → ${featE!!.hp.toInt()}\n"); clearArea()
+                    g.adv.debugCreature(1, p!!.x + 20f, p.z); storeT = 0 }
+                in 701..999 -> g.adv.creatures.firstOrNull { it.kind == 1 && it.deadT <= 0f }?.let { it.x = p!!.x + 20f; it.z = p.z; it.fleeT = 0f }
+                720 -> shot("f2_shark")
+                1000 -> { val c = g.adv.creatures.filter { it.kind == 1 }; log.append("акулы: " + c.joinToString { "hp=${it.hp.toInt()} мертва=${it.deadT > 0f}" } + "\n") }
+                1001 -> { log.append("ошибка=${Gdx.app.getPreferences("seawolves").getString("lastError", "нет")}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_SONGS") != null) {
             when (f) {
                 108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; for (i in SHANTIES.indices) g.systems.shanties += i }

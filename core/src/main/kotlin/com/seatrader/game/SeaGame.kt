@@ -1280,6 +1280,25 @@ class SeaGame : ApplicationAdapter() {
             }
             val kind = when { s === p -> ammo; s.trait == "fire" -> Ammo.FIRE; s.trait == "chain" -> Ammo.CHAIN; else -> Ammo.NORMAL }
             if (best != null) { fireBroadside(s, si, best.x, best.z, best.vx, best.vz, kind); continue }
+            if (s.faction == Faction.PLAYER) {
+                // форт: целимся в ближний к кораблю край стен
+                val fort = systems.fortresses.firstOrNull { f -> f.alive && f.idx !in adv.captured && run {
+                    val dx = f.x - s.x; val dz = f.z - s.z; val d = hypot(dx, dz)
+                    d < s.stats.range + f.r * 0.8f && d > 2f && (dx * rx + dz * rz) / d > 0.42f
+                } }
+                if (fort != null) {
+                    val dx = fort.x - s.x; val dz = fort.z - s.z; val d = hypot(dx, dz)
+                    fireBroadside(s, si, fort.x - dx / d * fort.r * 0.5f, fort.z - dz / d * fort.r * 0.5f, 0f, 0f, kind); continue
+                }
+                // канониры сами бьют по акулам (китов не трогают — охота на них прицелом)
+                var shark: Creature? = null; var sd = s.stats.range
+                for (c in adv.creatures) {
+                    if (c.kind != 1 || c.deadT > 0f) continue
+                    val dx = c.x - s.x; val dz = c.z - s.z; val d = hypot(dx, dz)
+                    if (d < sd && d > 2f && (dx * rx + dz * rz) / d > 0.42f) { sd = d; shark = c }
+                }
+                if (shark != null) { fireBroadside(s, si, shark.x, shark.z, sin(shark.h) * 6f, -cos(shark.h) * 6f, kind); continue }
+            }
             // по змею стреляют игрок и союзники
             if (s.faction == Faction.PLAYER && sp != null && !sp.dead && !sp.diving) {
                 val dx = sp.x - s.x; val dz = sp.z - s.z; val d = hypot(dx, dz)
@@ -1308,7 +1327,7 @@ class SeaGame : ApplicationAdapter() {
                 b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h
                 b.age += h
                 if (checkBallHit(b)) { if (b.ammo == Ammo.MORTAR) mortarBlast(b); remove = true; break }
-                if (b.faction != Faction.NEUTRAL && systems.hitStatic(b.x, b.y, b.z, b.dmg * (if (b.faction == Faction.PLAYER) 1f else 0f)) && b.faction == Faction.PLAYER) {
+                if (b.faction == Faction.PLAYER && systems.hitStatic(b.x, b.y, b.z, b.dmg)) {
                     if (b.ammo == Ammo.MORTAR) mortarBlast(b); remove = true; break
                 }
                 val wy = waveHeight(b.x, b.z, now)

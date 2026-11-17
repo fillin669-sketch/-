@@ -473,8 +473,10 @@ class Systems(private val g: SeaGame) {
     /** Попадание ядра (или взрыв) по крепости или кракену. */
     fun hitStatic(x: Float, y: Float, z: Float, dmg: Float, radius: Float = 0f): Boolean {
         for (f in fortresses) {
-            if (!f.alive) continue
-            if (hypot(x - f.x, z - f.z) < f.r * 0.85f + radius && y < 16f) { g.fx.explosion(x, y, z, 0.6f); if (f.idx !in g.adv.captured) damageFortress(f, dmg); return true }
+            // свой (захваченный) форт ядра пролетают насквозь
+            if (!f.alive || f.idx in g.adv.captured) continue
+            // радиус — по всему острову форта: иначе низкое ядро разбивалось о берег, не долетев до стен
+            if (hypot(x - f.x, z - f.z) < f.r + radius && y < 16f) { g.fx.explosion(x, y, z, 0.6f); damageFortress(f, dmg); return true }
         }
         val k = kraken ?: return false
         if (k.dead || k.diving) return false
