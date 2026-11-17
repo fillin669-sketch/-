@@ -259,6 +259,29 @@ class TestScript(private val g: SeaGame, private val out: String) {
                     Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() } }
             return
         }
+        if (System.getenv("SEA_UPD2") != null) {
+            val fake = fakeUpd
+            fake.log = log
+            when (f) {
+                108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; g.updater = fake; g.appVersion = "11.2.2" }
+                110 -> { g.menus.close(); g.debugOfferUpdate("11.3") }
+                130 -> { shot("w1_offer"); press("Обновить") }
+                150 -> { fake.done = 7_600_000L }
+                160 -> shot("w2_loading")
+                170 -> { fake.done = fake.total; fake.stage = UPD_INSTALL }
+                180 -> shot("w3_install")
+                190 -> { fake.stage = UPD_ERROR; fake.error = "нет связи с сервером" }
+                200 -> shot("w4_error")
+                201 -> press("Повторить")
+                210 -> { log.append("после «Повторить»: stage=${fake.stage}\n"); fake.stage = UPD_PERMISSION }
+                220 -> shot("w5_permission")
+                221 -> { g.menus.close(); g.debugOfferUpdate("11.3") }
+                235 -> press("Обновить")
+                240 -> { press("Отмена"); log.append("после «Отмена»: stage=${fake.stage} state=${g.state}\n") }
+                250 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_UPD") != null) {
             when (f) { 3 -> press("Вступить"); 5 -> press("Забрать"); 8 -> { g.menus.close(); g.debugOfferUpdate("10.6") }
                 20 -> { shot("u1_update"); log.append("окно: state=${g.state}\n") }; 22 -> press("Позже")
@@ -919,6 +942,7 @@ class TestScript(private val g: SeaGame, private val out: String) {
     }
 
     private var featE: Ship? = null
+    private val fakeUpd = FakeUpdater()
     private var featN: Ship? = null
     private fun prologueTest(f: Int) {
         // сценка идёт сама; снимки ключевых кадров, в конце — повтор из паузы
@@ -1028,4 +1052,12 @@ class TestScript(private val g: SeaGame, private val out: String) {
         val b = find(g.stage.root) ?: run { log.append("tab not found\n"); return }
         b.toggle()
     }
+}
+
+/** Подделка установщика для проверки окна обновления на ПК. */
+class FakeUpdater : Updater {
+    var log: StringBuilder? = null
+    override var stage = UPD_IDLE; override var done = 0L; override var total = 0L; override var error = ""
+    override fun start(url: String) { stage = UPD_LOADING; done = 0L; total = 18_270_000L; log?.append("start $url\n") }
+    override fun cancel() { stage = UPD_IDLE; log?.append("cancel\n") }
 }

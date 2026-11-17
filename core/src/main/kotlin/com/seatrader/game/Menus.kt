@@ -96,7 +96,7 @@ class Menus(private val g: SeaGame) {
         it.add(ui.label(fmt(g.gems), ui.mid))
     }
 
-    private class Bar(val ui: Ui, val frac: Float, val color: Int = 0x3ddc84) : Actor() {
+    private class Bar(val ui: Ui, var frac: Float, val color: Int = 0x3ddc84) : Actor() {
         override fun draw(batch: Batch, parentAlpha: Float) {
             ui.pill(batch, x, y + height / 2 - 4, width, 8f, rgb(0x0b2238))
             if (frac > 0) ui.pill(batch, x, y + height / 2 - 4, max(8f, width * frac.coerceIn(0f, 1f)), 8f, rgb(color))
@@ -1002,17 +1002,67 @@ class Menus(private val g: SeaGame) {
         root.add(panel).width(panelW).height(h)
     }
 
-    /** Вышла новая версия: скачать APK со страницы релиза. */
-    fun showUpdate(v: String) = open(SeaGame.State.DIALOG) {
+    /** Вышла новая версия: игра сама скачивает APK и запускает установку. */
+    fun showUpdate(v: String) = open(SeaGame.State.DIALOG) { buildUpdate(v, false) }
+
+    private fun mb(b: Long) = "%.1f".format(b / 1048576f).replace('.', ',')
+
+    private fun buildUpdate(v: String, running: Boolean) {
         stage.clear()
         val root = overlay()
         val panel = panelTable()
-        panel.add(ui.label("Доступно обновление", ui.big, align = Align.center, wrap = true)).growX().row()
-        panel.add(ui.label("Вышла версия $v (у вас ${g.appVersion}). Скачайте новый APK и установите его поверх игры — прогресс сохранится.",
-            ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 10f, 0f).row()
-        panel.add(ui.green("⬆  Скачать").also { it.onClick { try { Gdx.net.openURI(UPDATE_APK) } catch (_: Exception) { }; close() } }).growX().height(50f).row()
-        panel.add(ui.gray("Позже").also { it.onClick { close() } }).growX().height(44f).padTop(6f).row()
-        root.add(panel).width(min(g.wDp - 24, 440f))
+        val w = min(g.wDp - 24, 440f)
+        val up = g.updater
+        fun browser() { try { Gdx.net.openURI(UPDATE_APK) } catch (_: Exception) { } }
+        fun startUpd() { if (up == null) { browser(); close() } else { up.start(UPDATE_APK); buildUpdate(v, true) } }
+        if (!running || up == null) {
+            panel.add(ui.label("Доступно обновление", ui.big, align = Align.center, wrap = true)).growX().row()
+            panel.add(ui.label("Вышла версия $v (у вас ${g.appVersion}). " +
+                (if (up != null) "Игра сама скачает и установит её — прогресс сохранится." else "Скачайте новый APK и установите его поверх игры — прогресс сохранится."),
+                ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)).growX().pad(8f, 0f, 10f, 0f).row()
+            panel.add(ui.green("⬆  Обновить").also { it.onClick { startUpd() } }).growX().height(50f).row()
+            panel.add(ui.gray("Позже").also { it.onClick { close() } }).growX().height(44f).padTop(6f).row()
+            root.add(panel).width(w)
+            return
+        }
+        panel.add(ui.label("Обновление до $v", ui.big, align = Align.center, wrap = true)).growX().row()
+        val bar = Bar(ui, 0f)
+        val status = ui.label("Подключение…", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center)
+        panel.add(bar).growX().height(20f).padTop(10f).row()
+        panel.add(status).growX().pad(6f, 0f, 10f, 0f).row()
+        val buttons = Table()
+        panel.add(buttons).growX().row()
+        var shown = -1
+        fun refreshButtons(st: Int) {
+            buttons.clear()
+            when (st) {
+                UPD_LOADING -> buttons.add(ui.gray("Отмена").also { it.onClick { up.cancel(); close() } }).growX().height(44f).row()
+                UPD_INSTALL -> buttons.add(ui.gray("Закрыть").also { it.onClick { close() } }).growX().height(44f).row()
+                UPD_PERMISSION -> {
+                    buttons.add(ui.green("⬆  Обновить").also { it.onClick { startUpd() } }).growX().height(50f).row()
+                    buttons.add(ui.gray("Позже").also { it.onClick { close() } }).growX().height(44f).padTop(6f).row()
+                }
+                else -> {
+                    buttons.add(ui.green("↺  Повторить").also { it.onClick { startUpd() } }).growX().height(50f).row()
+                    buttons.add(ui.blue("Скачать через браузер").also { it.onClick { browser(); close() } }).growX().height(44f).padTop(6f).row()
+                    buttons.add(ui.gray("Позже").also { it.onClick { close() } }).growX().height(44f).padTop(6f).row()
+                }
+            }
+        }
+        panel.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.forever(com.badlogic.gdx.scenes.scene2d.actions.Actions.run {
+            val st = up.stage
+            val done = up.done; val total = up.total
+            bar.frac = when (st) { UPD_INSTALL -> 1f; UPD_LOADING -> if (total > 0) done.toFloat() / total else 0f; else -> bar.frac }
+            status.setText(when (st) {
+                UPD_LOADING -> if (total > 0) "Загрузка… ${(done * 100 / total)}%  (${mb(done)} из ${mb(total)} МБ)" else if (done > 0) "Загрузка… ${mb(done)} МБ" else "Подключение…"
+                UPD_INSTALL -> "Готово! Подтвердите установку в окне Android.\nИгра перезапустится уже новой версией."
+                UPD_PERMISSION -> "Android просит разрешить установку обновлений из игры.\nВключите «Разрешить из этого источника» в открывшихся настройках, вернитесь и нажмите «Обновить»."
+                UPD_ERROR -> "Не получилось: ${up.error.ifEmpty { "нет связи" }}"
+                else -> "Подключение…"
+            })
+            if (st != shown) { shown = st; refreshButtons(st) }
+        }))
+        root.add(panel).width(w)
     }
 
     /** Злодей появляется: портрет и угроза. */

@@ -3,6 +3,25 @@ package com.seatrader.game
 const val UPDATE_API = "https://api.github.com/repos/fillin669-sketch/-/releases/tags/latest"
 const val UPDATE_APK = "https://github.com/fillin669-sketch/-/releases/download/latest/SeaTrader.apk"
 
+/** Скачивание и установка обновления прямо из игры (на телефоне; на ПК его нет). */
+interface Updater {
+    /** Скачать APK и запустить установку поверх игры. */
+    fun start(url: String)
+    fun cancel()
+    /** 0 — ничего, 1 — загрузка, 2 — установка (окно Android), 3 — ошибка, 4 — нужно разрешение на установку. */
+    val stage: Int
+    /** Скачано и всего байт (всего ≤ 0 — размер неизвестен). */
+    val done: Long
+    val total: Long
+    val error: String
+}
+
+const val UPD_IDLE = 0
+const val UPD_LOADING = 1
+const val UPD_INSTALL = 2
+const val UPD_ERROR = 3
+const val UPD_PERMISSION = 4
+
 /** Версия [a] новее [b] (сравнение по числам: 10.10 > 10.9). */
 fun isNewer(a: String, b: String): Boolean {
     val x = a.split(".").map { it.toIntOrNull() ?: 0 }; val y = b.split(".").map { it.toIntOrNull() ?: 0 }
@@ -12,6 +31,9 @@ fun isNewer(a: String, b: String): Boolean {
 
 /** Что нового в версиях (сверху — самая свежая). Показывается один раз после обновления. */
 val CHANGELOG = listOf(
+    "11.3" to listOf(
+        "Обновление прямо из игры: нажмите «Обновить» — игра сама скачает новую версию и предложит установить её, без браузера и папки «Загрузки»",
+    ),
     "11.2.2" to listOf(
         "Ядра снова наносят урон фортам, автоогонь сам бьёт по форту",
         "Захваченные форты по-настоящему попадают по пиратам",

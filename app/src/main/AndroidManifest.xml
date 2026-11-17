@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- только для проверки обновлений: один запрос к странице релиза при запуске -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- обновление из игры: установить скачанную новую версию поверх (Android спросит подтверждение) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="true"

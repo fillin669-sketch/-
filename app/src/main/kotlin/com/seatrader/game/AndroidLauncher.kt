@@ -34,6 +34,6 @@ class AndroidLauncher : AndroidApplication() {
             }
         }
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
-        initialize(SeaGame().also { it.appVersion = version }, config)
+        initialize(SeaGame().also { it.appVersion = version; it.updater = ApkUpdater(this) }, config)
     }
 }
