@@ -22,7 +22,7 @@ class Hud(private val g: SeaGame) {
     private val ui get() = g.ui
     private val cTmp = Color()
     private val cTmp2 = Color()
-    private val abilityIcons by lazy { listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon) }
+    private val abilityIcons by lazy { listOf(ui.fireIcon, ui.chainIcon, ui.repairIcon, ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon, ui.harpoonIcon) }
     private var visCache: List<Int> = emptyList()
     private var visKey = -1
     private fun c(hex: Int, a: Float = 1f): Color = cTmp.set(rgb(hex, a))
@@ -126,6 +126,7 @@ class Hud(private val g: SeaGame) {
                         val pulse = 1f + sin(g.now * 14f) * 0.12f
                         ui.icon(b, ui.disc, sx, sy, 30f * pulse, 30f * pulse, 0f, c(0xd50000, 0.9f))
                         ui.text(b, ui.big, "!", sx - 15, sy + 13, Align.center, 30f)
+                        g.living.callout("volley", "Залп по нам! Укрыться!", 1)
                         if (!volleyHintShown && g.braceCd <= 0f) {
                             volleyHintShown = true
                             g.toast("Красный «!» — враг готовит залп по вам.\nЖмите щит «Укрыться!», чтобы снизить урон", 3.5f)

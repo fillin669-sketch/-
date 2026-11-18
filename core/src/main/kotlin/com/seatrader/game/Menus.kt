@@ -516,6 +516,7 @@ class Menus(private val g: SeaGame) {
         val resume = ui.green("▶  Продолжить").also { it.onClick { close() } }
         val captain = ui.blue("★  Капитан" + if (g.systems.skillPts > 0) " (+${g.systems.skillPts})" else "").also { it.onClick { current = { buildCaptain() }; buildCaptain() } }
         val ach = ui.blue("✓  Достижения").also { it.onClick { current = { buildAchievements() }; buildAchievements() } }
+        val trophies = ui.blue("⚑  Каюта трофеев").also { it.onClick { current = { buildTrophies() }; buildTrophies() } }
         val map = ui.blue("⚓  Карта мира").also { it.onClick { mapFromPause = true; current = { buildMap() }; buildMap() } }
         val story = ui.blue("☠  Предыстория").also { it.onClick { close(); g.startPrologue(false) } }
         val news = ui.blue("✦  Что нового").also { it.onClick { showWhatsNew(CHANGELOG.take(4), false) } }
@@ -528,7 +529,7 @@ class Menus(private val g: SeaGame) {
             }
         }
         val list = Table()
-        for (bt in listOf(resume, captain, ach, map, story, news, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
+        for (bt in listOf(resume, captain, ach, trophies, map, story, news, songs, help, settings, reset)) list.add(bt).growX().height(46f).padTop(6f).row()
         fitPanel(root, panel, list, 420f)
     }
 
@@ -663,7 +664,7 @@ class Menus(private val g: SeaGame) {
     }
 
     // ===================== Арсенал =====================
-    private val weaponIcons get() = listOf(ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon)
+    private val weaponIcons get() = listOf(ui.mortarIcon, ui.rocketIcon, ui.mineIcon, ui.barrelIcon, ui.harpoonIcon)
 
     private fun arsenalCards(content: Table) {
         val head = card()
@@ -1983,6 +1984,134 @@ class Menus(private val g: SeaGame) {
             panel.add(side2).growX().row()
         }
         root.add(panel)
+    }
+
+    // ===================== Каюта трофеев =====================
+    private fun buildTrophies() {
+        stage.clear()
+        val root = overlay()
+        val panel = panelTable()
+        panel.add(ui.label("⚑ Каюта трофеев", ui.big, align = Align.center)).growX().row()
+        panel.add(ui.label("Всё, чем гордится капитан: поверженные легенды, чертежи, крепости и рекорды.", ui.small, rgb(0xb9d6f2), wrap = true, align = Align.center))
+            .growX().pad(4f, 0f, 8f, 0f).row()
+        val list = Table()
+        val adv = g.adv; val sy = g.systems
+        fun section(title: String, sub: String) {
+            val c = card(0x3e2a1a)
+            c.add(ui.label(title, ui.mid, rgb(0xffc93c))).left().row()
+            if (sub.isNotEmpty()) c.add(ui.label(sub, ui.small, rgb(0xd7ccc8), wrap = true)).growX().row()
+            list.add(c).growX().padBottom(6f).row()
+        }
+        fun line(done: Boolean, name: String, desc: String) {
+            val c = card(if (done) 0x1d5a46 else 0x164266)
+            c.add(ui.label((if (done) "✓ " else "? ") + name, ui.mid, if (done) rgb(0xffffff) else rgb(0x90a4ae))).left().row()
+            c.add(ui.label(desc, ui.small, rgb(0xb9d6f2), wrap = true)).growX().row()
+            list.add(c).growX().padBottom(6f).row()
+        }
+        section("Легендарные корабли · ${adv.legendsDown.size} из ${LEGENDS.size}", "Потопите легенду — получите артефакт и элитный чертёж.")
+        for ((i, l) in LEGENDS.withIndex()) line(i in adv.legendsDown, l.name, if (i in adv.legendsDown) l.story else "Логово отмечено на карте мира.")
+        section("Элитные чертежи · ${adv.elite.size} из ${ELITE.size}", "Выпадают с легенд, захваченных крепостей и иногда со дна (колокол).")
+        for (e in ELITE) line(e.id in adv.elite, if (e.id in adv.elite) e.name else "Неизвестный чертёж", if (e.id in adv.elite) e.desc else "Ещё не найден.")
+        val st = { k: String -> sy.stats[k] ?: 0 }
+        section("Рекорды", listOf(
+            "Крепостей захвачено: ${adv.captured.size} из ${FORTRESSES.size}",
+            "Песен найдено: ${sy.shanties.size} из ${SHANTIES.size}",
+            "Потоплено пиратов: ${g.kills}",
+            "Таранов: ${st("rams")} · абордажей: ${st("boards")}",
+            "Кладов: ${st("treasures")} · погружений к обломкам: ${st("wrecks")}",
+            "Добыто зверей: ${st("beasts")} · кракенов: ${st("krakens")}",
+            "Пройдено: ${"%.1f".format(st("distance") / 1000f).replace('.', ',')} км",
+        ).joinToString("\n"))
+        val back = ui.blue("Назад").also { it.onClick { current = { buildPause() }; buildPause() } }
+        fitPanel(root, panel, list, 440f, listOf(back))
+    }
+
+    // ===================== Колокол: погружение к обломкам =====================
+    fun showDiveBell(w: Wreck) = open(SeaGame.State.DIALOG) { buildDiveBell(w) }
+
+    private val diveSpots = listOf("Трюм", "Капитанская каюта", "Пушечная палуба", "Пороховой погреб", "Камбуз", "Кормовая надстройка", "Канатный ящик", "Сундук штурмана")
+
+    /**
+     * Колокол опускают к обломку: в нём запас воздуха. Каждый заплыв — выбор отсека: добыча,
+     * пусто или акула. Воздух кончился — ныряльщики выныривают и теряют половину добычи.
+     */
+    private fun buildDiveBell(w: Wreck) {
+        val r = kotlin.random.Random
+        var air = 100f
+        var coins = 0; var gems = 0; val mats = IntArray(4); var blueprint: String? = null
+        var log = "Колокол лёг на дно рядом с обломком. В нём — запас воздуха на несколько заплывов."
+        val sharksNear = g.adv.creatures.count { it.kind == 1 && it.deadT <= 0f && hypot(it.x - w.x, it.z - w.z) < 160f }
+        var spots = diveSpots.shuffled().take(3)
+        var hint = r.nextInt(3)
+        var over = false
+        fun haul(): String {
+            val parts = ArrayList<String>()
+            if (coins > 0) parts += "$coins монет"
+            if (gems > 0) parts += "$gems крист."
+            for (i in 0..3) if (mats[i] > 0) parts += "${MATERIALS[i]} ${mats[i]}"
+            return if (parts.isEmpty()) "пока пусто" else parts.joinToString(", ")
+        }
+        fun finish(lost: Boolean) {
+            if (lost) { coins /= 2; gems /= 2; for (i in 0..3) mats[i] /= 2 }
+            g.coins += coins; g.gems += gems
+            for (i in 0..3) g.adv.mats[i] += mats[i]
+            g.systems.wreckDone(w)
+            g.sfx.play("treasure")
+            g.toast((if (lost) "Воздух кончился — половина добычи утонула.\n" else "Колокол поднят!\n") + haul() + (blueprint ?: ""), 3f)
+            g.save(); close()
+        }
+        fun build() {
+            stage.clear()
+            val root = overlay()
+            val panel = panelTable()
+            panel.add(ui.label("Водолазный колокол", ui.big, align = Align.center)).growX().row()
+            val ar = Table()
+            ar.add(ui.label("Воздух", ui.small, rgb(0xcfe3f7))).padRight(8f)
+            ar.add(Bar(ui, air / 100f, if (air > 35f) 0x4fc3f7 else 0xff7043)).growX().height(16f)
+            ar.add(ui.label("${air.roundToInt()}%", ui.small, align = Align.right)).width(44f)
+            panel.add(ar).growX().padTop(6f).row()
+            panel.add(ui.label("Добыча: ${haul()}", ui.small, rgb(0xffe082), wrap = true, align = Align.center)).growX().padTop(4f).row()
+            if (sharksNear > 0) panel.add(ui.label("Рядом кружат акулы ($sharksNear) — опаснее!", ui.small, rgb(0xff8a80), align = Align.center)).growX().row()
+            panel.add(ui.label(log, ui.small, rgb(0xfff3e0), wrap = true, align = Align.center)).growX().pad(8f, 0f, 8f, 0f).row()
+            if (!over) {
+                panel.add(ui.label("Куда плыть? Пузыри поднимаются от отсека «${spots[hint]}»…", ui.small, rgb(0x90caf9), wrap = true, align = Align.center)).growX().padBottom(6f).row()
+                for ((k, name) in spots.withIndex()) {
+                    val b = ui.button(name, 0x0d47a1, 0x1565c0, ui.mid)
+                    b.onClick {
+                        air -= r.nextInt(18, 28).toFloat()
+                        val sharkP = 0.12f + 0.08f * sharksNear
+                        val good = if (k == hint) 0.85f else 0.55f
+                        val roll = r.nextFloat()
+                        log = when {
+                            roll < sharkP -> { air -= 15f; g.sfx.play("splash"); "$name: акула! Ныряльщик еле ушёл, наглотавшись воды." }
+                            roll < sharkP + good -> {
+                                when (r.nextInt(10)) {
+                                    in 0..3 -> { val c = (r.nextInt(120, 320) * g.systems.luckMul()).roundToInt(); coins += c; "$name: горсть дублонов — +$c монет." }
+                                    in 4..7 -> { val m = r.nextInt(3); val n = r.nextInt(2, 6); mats[m] += n; "$name: уцелевшие припасы — ${MATERIALS[m]} +$n." }
+                                    8 -> { gems += 1; "$name: в иле блеснул кристалл!" }
+                                    else -> {
+                                        val c = (r.nextInt(400, 800) * g.systems.luckMul()).roundToInt(); coins += c; gems += 1
+                                        val bp = if (blueprint == null) g.adv.grantElite(0.15f) else null
+                                        if (bp != null) blueprint = bp
+                                        "$name: окованный сундук! +$c монет и кристалл" + (if (bp != null) ". Внутри — свёрток с чертежом!" else ".")
+                                    }
+                                }
+                            }
+                            else -> "$name: пусто, только крабы и ил."
+                        }
+                        g.sfx.play(if (log.contains("акула")) "hit" else "click")
+                        if (air <= 0f) { air = 0f; over = true; build(); stage.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.delay(1.2f, com.badlogic.gdx.scenes.scene2d.actions.Actions.run { finish(true) })); return@onClick }
+                        spots = diveSpots.shuffled().take(3); hint = r.nextInt(3)
+                        build()
+                    }
+                    panel.add(b).growX().height(48f).padTop(4f).row()
+                }
+                panel.add(ui.green("⬆  Поднять колокол").also { it.onClick { finish(false) } }).growX().height(50f).padTop(10f).row()
+            }
+            root.add(panel).width(min(g.wDp - 24, 440f))
+        }
+        current = { build() }
+        build()
     }
 
     // ===================== Песни и справка =====================

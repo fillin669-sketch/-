@@ -375,6 +375,43 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        if (System.getenv("SEA_V114") != null) {
+            val p = g.player
+            val spotNames = listOf("Трюм", "Капитанская каюта", "Пушечная палуба", "Пороховой погреб", "Камбуз", "Кормовая надстройка", "Канатный ящик", "Сундук штурмана")
+            fun dive() { spotNames.firstOrNull { findButton(it) != null }?.let { press(it) } }
+            val w = g.systems.wrecks[0]
+            when (f) {
+                108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size }
+                110 -> { g.menus.close(); tp(w.x, w.z + 6f); p!!.h = 0f; p.throttle = 0f }
+                in 111..125 -> { p!!.x = w.x; p.z = w.z + 6f; p.vx = 0f; p.vz = 0f; p.throttle = 0f }
+                126 -> { shot("v0_wreck_button"); log.append("кнопка у обломка: ${g.living.actionText} / ${g.living.actionSub}\n")
+                    storeT = g.coins; g.menus.showDiveBell(w) }
+                140 -> shot("v1_bell")
+                141 -> dive(); 150 -> shot("v2_bell_after1"); 151 -> dive(); 160 -> dive()
+                170 -> { shot("v3_bell_after3"); log.append("после 3 заплывов: окно=${g.state}\n") }
+                171 -> { if (findButton("Поднять") != null) press("Поднять") }
+                185 -> { log.append("колокол: монеты ${storeT} → ${g.coins}, материалы ${g.adv.mats.joinToString()}, погружений ${g.systems.stats["wrecks"]}, обломок перенесён=${w.x.toInt()},${w.z.toInt()} state=${g.state}\n"); g.menus.close()
+                    log.append("корпус до чертежа: ${p!!.maxHp.toInt()}\n"); repeat(3) { g.adv.grantElite(1f) } }
+                190 -> log.append("чертежи ${g.adv.elite}, корпус после: ${g.player!!.maxHp.toInt()}, скорость ${"%.1f".format(g.player!!.stats.speed)}\n")
+                200 -> { g.menus.showPause(); press("Каюта") }
+                215 -> shot("v4_trophies")
+                216 -> g.menus.fitScroll?.let { it.scrollY = it.maxY; it.updateVisualScroll() }
+                230 -> shot("v5_trophies_end")
+                231 -> { g.menus.close(); g.systems.ownedWeapons += 7; g.adv.debugCreature(0, g.player!!.x + 30f, g.player!!.z) }
+                235 -> { val c = g.adv.creatures.last(); log.append("кит hp до гарпуна ${c.hp.toInt()}\n"); g.abilityCd[7] = 0f; g.useAbility(7) }
+                in 236..300 -> g.adv.creatures.lastOrNull()?.let { it.x = g.player!!.x + 30f; it.z = g.player!!.z; it.fleeT = 0f }
+            }
+            when (f) {
+                240 -> shot("v6_harpoon")
+                300 -> { val c = g.adv.creatures.last(); log.append("кит hp после гарпуна ${c.hp.toInt()} (урон гарпуна x4)\n")
+                    g.living.callout("hole", "Пробоина в трюме! Конопатим!", 0) }
+                305 -> shot("v7_callout_sailor")
+                306 -> { g.living.crew[0] = OFFICERS.first { it.role == 0 }.id; g.living.callout("sinking", "Капитан, мы тонем! Нужен ремонт!", 0) }
+                312 -> shot("v8_callout_officer")
+                320 -> { log.append("ошибка=${Gdx.app.getPreferences("seawolves").getString("lastError", "нет")}\n"); Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_FORT") != null) {
             val p = g.player
             val fo = g.systems.fortresses[0]

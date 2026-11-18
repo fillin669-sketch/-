@@ -143,6 +143,19 @@ class Adventure(private val g: SeaGame) {
 
     // ---------- Легенды ----------
     val legendsDown = HashSet<Int>()
+    /** Найденные элитные чертежи (индексы ELITE). */
+    val elite = HashSet<Int>()
+
+    /** С шансом [chance] — новый элитный чертёж. Возвращает строку для сообщения или null. */
+    fun grantElite(chance: Float): String? {
+        val left = ELITE.indices.filter { it !in elite }
+        if (left.isEmpty() || Random.nextFloat() > chance) return null
+        val e = ELITE[left.random()]
+        elite += e.id
+        g.rebuildPlayerKeepState()
+        g.sfx.play("quest")
+        return "\n★ Элитный чертёж: ${e.name}! (${e.desc})"
+    }
     private val legendLair = Array(LEGENDS.size) { floatArrayOf(LEGENDS[it].lx, LEGENDS[it].lz) }
 
     fun lair(i: Int) = legendLair[i]
@@ -299,8 +312,9 @@ class Adventure(private val g: SeaGame) {
         if (i < 0 || i in legendsDown) return
         legendsDown += i
         val art = g.extras.grantArtifact(g.extras.monsterArts + g.extras.bountyArts, 1f)
+        val bp = grantElite(1f)
         g.systems.addStat("legends")
-        g.toast("Легенда повержена: ${LEGENDS[i].name}!" + (art ?: ""), 3.5f)
+        g.toast("Легенда повержена: ${LEGENDS[i].name}!" + (art ?: "") + (bp ?: ""), 4f)
         g.sfx.play("quest")
         g.save()
     }
@@ -507,6 +521,7 @@ class Adventure(private val g: SeaGame) {
             s.weakCd -= dt
             if (s.weakCd > 0f || s.hp > s.maxHp * 0.6f || hypot(s.x - p.x, s.z - p.z) > 220f) continue
             s.weakT = 6f; s.weakCd = rand(9f, 14f)
+            g.living.callout("weak", "Вон слабина у них в борту — бейте туда!", 1)
             s.weakSide = if (kotlin.random.Random.nextBoolean()) 1 else -1
             s.weakLf = rand(-0.28f, 0.28f) * s.len
         }
@@ -645,6 +660,7 @@ class Adventure(private val g: SeaGame) {
         p.putString("mats", mats.joinToString(","))
         p.putFloat("wanted", wanted)
         p.putString("legendsDown", legendsDown.joinToString(","))
+        p.putString("elite", elite.joinToString(","))
         p.putString("captured", captured.joinToString(","))
         p.putString("caravans", caravans.joinToString(";") { "${it.amount}:${it.timeLeft}:${it.total}:${it.port}" })
     }
@@ -655,6 +671,7 @@ class Adventure(private val g: SeaGame) {
         for (i in 0..3) mats[i] = m.getOrNull(i)?.coerceAtLeast(0) ?: 0
         wanted = p.getFloat("wanted", 0f).coerceIn(0f, 5.4f)
         legendsDown.clear(); legendsDown += p.getString("legendsDown", "").split(",").mapNotNull { it.toIntOrNull() }
+        elite.clear(); elite += p.getString("elite", "").split(",").mapNotNull { it.toIntOrNull() }.filter { it in ELITE.indices }
         captured.clear(); captured += p.getString("captured", "").split(",").mapNotNull { it.toIntOrNull() }
         caravans.clear()
         for (part in p.getString("caravans", "").split(";")) {

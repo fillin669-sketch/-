@@ -667,9 +667,9 @@ class SeaGame : ApplicationAdapter() {
         val sk = systems
         val ex = extras
         return Stats(
-            hp = Math.round(b.hp * (1 + 0.06f * sk.skill("carpenter")) * guilds.shipStatMul()),
-            speed = b.speed * (1 + 0.03f * sk.skill("navigator") + ex.artSpeed() + guilds.speedBonus()),
-            turn = b.turn * (1 + 0.05f * sk.skill("navigator")),
+            hp = Math.round(b.hp * (1 + 0.06f * sk.skill("carpenter")) * guilds.shipStatMul() * (if (0 in adv.elite) 1.2f else 1f)),
+            speed = b.speed * (1 + 0.03f * sk.skill("navigator") + ex.artSpeed() + guilds.speedBonus()) * (if (2 in adv.elite) 1.08f else 1f),
+            turn = b.turn * (1 + 0.05f * sk.skill("navigator")) * (if (2 in adv.elite) 1.06f else 1f),
             cannons = b.cannons,
             dmg = b.dmg * sk.gunMul() * (1 + ex.artDmg()) * guilds.shipStatMul(),
             reload = b.reload * (1 - 0.05f * sk.skill("boatswain")) * ex.reloadMul() * (1 - ex.artReload()),
@@ -850,6 +850,7 @@ class SeaGame : ApplicationAdapter() {
                 Input.Keys.NUM_5 -> useAbility(4)
                 Input.Keys.NUM_6 -> useAbility(5)
                 Input.Keys.NUM_7 -> useAbility(6)
+                Input.Keys.NUM_8 -> useAbility(7)
                 Input.Keys.Q -> tryBrace()
                 Input.Keys.B -> systems.boardTarget?.let { systems.throwGrapples(it) }
                 Input.Keys.M -> if (state == State.PLAY) menus.showMap()
@@ -918,6 +919,7 @@ class SeaGame : ApplicationAdapter() {
             "rockets" -> fireRockets(p)
             "mines" -> { systems.dropMines(p); sfx.play("splash") }
             "barrels" -> { systems.dropBarrels(p); sfx.play("splash"); sfx.play("fire", 0.6f) }
+            "harpoon" -> fireHarpoon(p)
         }
         // особые ядра сразу перезаряжают пушки
         if (a.id == "fire" || a.id == "chain") { p.reload[0] = min(p.reload[0], 0.2f); p.reload[1] = min(p.reload[1], 0.2f) }
@@ -945,6 +947,21 @@ class SeaGame : ApplicationAdapter() {
             70f * systems.gunMul(), Ammo.MORTAR, 0f)
         sfx.play("cannon"); shake = max(shake, 0.3f)
         p.rollVel += 0.3f
+    }
+
+    /** Гарпун: в ближайшего зверя в 90 м (с вертлюга — в любую сторону), иначе во врага впереди. */
+    private fun fireHarpoon(p: Ship) {
+        val beast = adv.creatures.filter { it.deadT <= 0f && hypot(it.x - p.x, it.z - p.z) < 90f }.minByOrNull { hypot(it.x - p.x, it.z - p.z) }
+        val (tx, tz, tvx, tvz) = when {
+            beast != null -> listOf(beast.x, beast.z, sin(beast.h) * 6f, -cos(beast.h) * 6f)
+            else -> nearestFoe(p, 90f, cone = true)?.let { listOf(it.x, it.z, it.vx, it.vz) }
+                ?: listOf(p.x + sin(p.h) * 60f, p.z - cos(p.h) * 60f, 0f, 0f)
+        }
+        val sx = p.x + sin(p.h) * p.len * 0.45f; val sz = p.z - cos(p.h) * p.len * 0.45f
+        launchBall(p, Faction.PLAYER, sx, p.y + p.deckTop + 0.8f, sz, tx, tz, tvx, tvz, 30f * systems.gunMul(), Ammo.NORMAL, 0f, 0.25f)
+        balls.lastOrNull()?.harpoon = true
+        sfx.play("chain")
+        if (beast != null) living.callout("harpoon", "Гарпун пошёл! Держи линь!", 0)
     }
 
     private fun fireRockets(p: Ship) {
@@ -1178,10 +1195,13 @@ class SeaGame : ApplicationAdapter() {
                 val base = rel * 3.2f
                 val ramA = fax * nx + faz * nz > 0.5f
                 val ramB = -(fbx * nx + fbz * nz) > 0.5f
-                if (ramA) damage(b, base * ma * (if (a.boostT > 0) 2f else 1f) / sqrt(mb), a, true)
-                if (ramB) damage(a, base * mb * (if (b.boostT > 0) 2f else 1f) / sqrt(ma), b, true)
-                if (ramA) damage(a, base * 0.2f, null, false)
-                if (ramB) damage(b, base * 0.2f, null, false)
+                // элитный таран-шпирон: бьёт сильнее, свой корпус страдает меньше
+                val spurA = if (a === player && 1 in adv.elite) 1.6f else 1f
+                val spurB = if (b === player && 1 in adv.elite) 1.6f else 1f
+                if (ramA) damage(b, base * ma * (if (a.boostT > 0) 2f else 1f) / sqrt(mb) * spurA, a, true)
+                if (ramB) damage(a, base * mb * (if (b.boostT > 0) 2f else 1f) / sqrt(ma) * spurB, b, true)
+                if (ramA) damage(a, base * 0.2f / (spurA * 1.25f).coerceAtLeast(1f), null, false)
+                if (ramB) damage(b, base * 0.2f / (spurB * 1.25f).coerceAtLeast(1f), null, false)
                 if (!ramA && !ramB) { damage(a, base * 0.35f, b, true); damage(b, base * 0.35f, a, true) }
                 fx.explosion((a.x + b.x) / 2, 2f, (a.z + b.z) / 2, 0.7f)
                 fx.splash((a.x + b.x) / 2, (a.z + b.z) / 2, 1.3f)
@@ -1422,7 +1442,7 @@ class SeaGame : ApplicationAdapter() {
                         s.brokenMasts++
                         for (k in 0..1) s.sails.getOrNull(mi * 2 + k)?.scale?.set(0.01f, 0.01f, 0.01f)
                         repeat(8) { fx.spawn(fx.WOOD, b.x, b.y, b.z, rand(-6f, 6f), rand(2f, 8f), rand(-6f, 6f), rand(0.3f, 0.6f), 1.4f, Fx.Mode.SHRINK, 20f, sq = true) }
-                        if (s === player) toast("Мачта сбита!", 1.2f) else floatText(s.x, s.y + 10, s.z, "Мачта сбита!", rgb(0xffc93c), ui.mid)
+                        if (s === player) { toast("Мачта сбита!", 1.2f); living.callout("mast", "Мачта рухнула! Теряем ход!", 2) } else floatText(s.x, s.y + 10, s.z, "Мачта сбита!", rgb(0xffc93c), ui.mid)
                     }
                 }
             }
@@ -1442,7 +1462,7 @@ class SeaGame : ApplicationAdapter() {
             if (Random.nextFloat() < 0.4f) sfx.play("hit", volumeAt(b.x, b.z) * 0.7f)
             return true
         }
-        if (b.faction == Faction.PLAYER && adv.hitCreature(b.x, b.y, b.z, b.dmg)) return true
+        if (b.faction == Faction.PLAYER && adv.hitCreature(b.x, b.y, b.z, b.dmg * (if (b.harpoon) 4f else 1f))) return true
         val sp = serpent
         if (sp != null && b.faction == Faction.PLAYER && !sp.dead && !sp.diving) {
             for (seg in sp.segPos) {
@@ -1477,7 +1497,8 @@ class SeaGame : ApplicationAdapter() {
         if (s === player) amount *= (1f - extras.armor())
         val braced = s === player && braceT > 0f
         if (braced) amount *= BRACE_MUL
-        if (s === player && amount > s.maxHp * 0.12f) extras.addMorale(-2f)
+        if (s === player && amount > s.maxHp * 0.12f) { extras.addMorale(-2f); living.callout("hole", "Пробоина в трюме! Конопатим!", 0) }
+        if (s === player && s.hp - amount < s.maxHp * 0.3f && s.hp >= s.maxHp * 0.3f) living.callout("sinking", "Капитан, мы тонем! Нужен ремонт!", 0)
         if (s === player && !silent && src != null) adv.onPlayerHit(amount, s)
         if (s.surrendered && src === player && !s.sinking) {
             s.surrendered = false

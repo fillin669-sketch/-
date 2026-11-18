@@ -54,6 +54,7 @@ class Ui(val scale: Float) : Disposable {
     val rocketIcon: TextureRegion
     val mineIcon: TextureRegion
     val barrelIcon: TextureRegion
+    val harpoonIcon: TextureRegion
     val shieldIcon: TextureRegion
     val aimIcon: TextureRegion
     val swordsIcon: TextureRegion
@@ -200,6 +201,11 @@ class Ui(val scale: Float) : Disposable {
             p.setColor(rgb(0x37474f)); p.fillRectangle(14, 24, 36, 4); p.fillRectangle(14, 44, 36, 4)
             p.setColor(rgb(0xff6d00)); p.fillCircle(32, 8, 7); p.fillTriangle(25, 8, 39, 8, 32, 0)
             p.setColor(rgb(0xffeb3b)); p.fillCircle(32, 9, 3)
+        })
+        harpoonIcon = region(pix(64, 64) { p ->
+            p.setColor(rgb(0x8d6e63)); for (k in -2..2) p.drawLine(10 + k, 56, 46 + k, 20)
+            p.setColor(rgb(0xcfd8dc)); p.fillTriangle(40, 14, 56, 4, 52, 26); p.fillTriangle(44, 22, 36, 24, 46, 30)
+            p.setColor(rgb(0xb0bec5)); for (k in 0..2) p.drawCircle(14 - k, 50 + k, 6)
         })
         shieldIcon = region(pix(64, 64) { p ->
             p.setColor(rgb(0x90a4ae)); p.fillRectangle(10, 6, 44, 28); p.fillTriangle(10, 34, 54, 34, 32, 60)

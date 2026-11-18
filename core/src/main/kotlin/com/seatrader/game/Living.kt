@@ -149,6 +149,20 @@ class Living(private val g: SeaGame) {
 
     fun say(id: Int, text: String) { sayOfficer = id; sayText = text; sayT = 4f; talkCd = 25f }
 
+    private val calloutAt = HashMap<String, Float>()
+    /**
+     * Реплика команды на событие боя. Говорит офицер нужной должности (с портретом),
+     * а если его нет — матрос (строчка над кораблём). Каждая реплика не чаще раза в 15 с.
+     */
+    fun callout(key: String, text: String, role: Int) {
+        if (g.state != SeaGame.State.PLAY) return
+        if ((calloutAt[key] ?: -99f) > g.now) return
+        calloutAt[key] = g.now + 15f
+        val id = crew.getOrElse(role) { -1 }
+        if (id >= 0) { sayOfficer = id; sayText = text; sayT = 3f; talkCd = max(talkCd, 8f) }
+        else g.player?.let { p -> g.floatText(p.x, p.y + 12f + p.width * 0.5f, p.z, "«$text»", rgb(0xffe082), g.ui.small) }
+    }
+
     /** Случайная реплика офицера нужной должности. */
     fun quip(role: Int, chance: Float = 1f) {
         val id = crew[role]
@@ -592,6 +606,11 @@ class Living(private val g: SeaGame) {
             actionFn = { landOn(li) }
             return
         }
+        g.systems.wreckNear(p)?.let { w ->
+            actionText = "Нырнуть"; actionSub = "затонувший корабль · колокол"
+            actionFn = { g.joyActive = false; p.vx = 0f; p.vz = 0f; g.menus.showDiveBell(w) }
+            return
+        }
         val r = nearRuin(p)
         if (r != null) { actionText = "Нырнуть"; actionSub = "затонувший храм"; actionFn = { g.joyActive = false; g.menus.showEpisode(DIVE) { act -> resolve(act, r.idx) } } }
     }
@@ -820,8 +839,9 @@ class Living(private val g: SeaGame) {
         if (sayT > 0 && sayOfficer >= 0) {
             val o = OFFICERS[sayOfficer]
             val a = min(1f, sayT * 2f)
-            val w = min(g.wDp - 24f, 360f)
-            val x = (g.wDp - w) / 2; val y = g.hDp * 0.3f
+            // не заходим на столбец кнопок способностей
+            val w = min(g.wDp - 104f, 360f)
+            val x = if (g.leftHanded) g.wDp - w - 12f else 12f; val y = g.hDp * 0.3f
             ui.round(b, x, y, w, 64f, rgb(0x2b1d12, 0.85f * a))
             Portraits.draw(b, ui, o, x + 6, y + 6, 52f, a)
             ui.text(b, ui.small, o.name + " · " + ROLES[o.role].lowercase(), x + 66, y + 56, Align.left, w - 74, c = rgb(0xffc93c, a))

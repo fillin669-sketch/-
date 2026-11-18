@@ -111,6 +111,8 @@ class Ball(
     var bounced = false
     var trailT = 0f
     var fired = false
+    /** Китобойный гарпун: по зверям вчетверо сильнее. */
+    var harpoon = false
 }
 
 class Island(val x: Float, val z: Float, val r: Float, val port: Int, val inst: ModelInstance, val foam: ModelInstance, val lights: List<Vector3>, val glows: List<Vector3> = emptyList())

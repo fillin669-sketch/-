@@ -465,7 +465,7 @@ class Systems(private val g: SeaGame) {
             g.adv.captured += f.idx
             f.destroyedT = 25f
             explored.reveal(f.x, f.z, 450f)
-            g.toast("Крепость захвачена!\nПираты обходят эти воды стороной", 2.6f)
+            g.toast("Крепость захвачена!\nПираты обходят эти воды стороной" + (g.adv.grantElite(0.5f) ?: ""), 3.2f)
             g.save()
         }
     }
@@ -720,24 +720,18 @@ class Systems(private val g: SeaGame) {
                     if (Random.nextFloat() < 0.3f) g.fx.spawn(g.fx.FOAM, w.x + rand(-3f, 3f), 0.6f, w.z + rand(-3f, 3f), 0f, 0f, 0f, 1.2f, 1f, Fx.Mode.FOAM, flat = true)
                 }
             }
-            if (d < 13 && abs(p.speed) < 4 && !p.sinking) {
-                w.searchT += dt
-                if (w.searchT >= 1.6f) {
-                    w.searchT = 0f
-                    val c = (Random.nextInt(300, 700) * luckMul()).roundToInt()
-                    val gm = Random.nextInt(1, 4)
-                    g.coins += c; g.gems += gm
-                    val gi = Random.nextInt(GOODS.size)
-                    val got = addCargo(gi, Random.nextInt(3, 9))
-                    g.sfx.play("treasure")
-                    g.toast("Ныряльщики подняли:\n+$c монет, +$gm кристалла" + (if (got > 0) ", ${GOODS[gi].name} ×$got" else ""), 2.6f)
-                    gainXp(60, w.x, w.z)
-                    addStat("wrecks")
-                    g.questEvent(QType.WRECK, "", false)
-                    placeWreck(w) { x, z, m -> g.isWaterPublic(x, z, m) }
-                }
-            } else w.searchT = 0f
         }
+    }
+
+    /** Обломок у корабля (стоим почти на месте) — можно спустить колокол. */
+    fun wreckNear(p: Ship): Wreck? = if (abs(p.speed) > 5f || p.sinking) null else wrecks.firstOrNull { hypot(p.x - it.x, p.z - it.z) < 16f }
+
+    /** Погружение окончено: обломок исчерпан, новый появится в другом месте. */
+    fun wreckDone(w: Wreck) {
+        addStat("wrecks")
+        g.questEvent(QType.WRECK, "", false)
+        gainXp(60, w.x, w.z)
+        placeWreck(w) { x, z, m -> g.isWaterPublic(x, z, m) }
     }
 
     // ---------- Купцы и рыбаки ----------

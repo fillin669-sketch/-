@@ -199,6 +199,7 @@ class Extras(private val g: SeaGame) {
         s.surrenderChecked = true
         if (Random.nextFloat() < 0.4f) {
             s.surrendered = true
+            g.living.callout("flag", "Враг спускает флаг! Подходите принять сдачу!", 3)
             s.ai = AiState.WANDER; s.target = null
             g.floatText(s.x, s.y + 12f, s.z, "⚐ Сдаёмся!", Color.WHITE, g.ui.mid)
         }
