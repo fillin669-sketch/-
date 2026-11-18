@@ -5,6 +5,13 @@ import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 
 class AndroidLauncher : AndroidApplication() {
+    private var updater: ApkUpdater? = null
+
+    override fun onResume() {
+        super.onResume()
+        try { updater?.onResume() } catch (_: Exception) { }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // при вылете сохраняем причину: игра покажет её при следующем запуске
@@ -34,6 +41,6 @@ class AndroidLauncher : AndroidApplication() {
             }
         }
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
-        initialize(SeaGame().also { it.appVersion = version; it.updater = ApkUpdater(this) }, config)
+        initialize(SeaGame().also { it.appVersion = version; it.updater = ApkUpdater(this).also { u -> updater = u } }, config)
     }
 }

@@ -584,7 +584,7 @@ class Menus(private val g: SeaGame) {
         for (bt in listOf(hand, quality)) list.add(bt).growX().height(44f).padTop(6f).row()
         list.add(gfxHint).growX().padTop(2f).row()
         for (bt in listOf(auto, vib, saveBtn, tut)) list.add(bt).growX().height(44f).padTop(6f).row()
-        fitPanel(root, panel, list, 420f, listOf(back))
+        fitPanel(root, panel, list, 420f, listOf(back), bottomGap = 26f)
         // версия приложения — в правом нижнем углу экрана
         val ver = ui.label("Версия " + g.appVersion.ifEmpty { "для ПК" }, ui.small, rgb(0x90a4ae))
         ver.pack()
@@ -598,14 +598,14 @@ class Menus(private val g: SeaGame) {
      * Список — с прокруткой, кнопки [footer] — под ним и всегда на экране.
      * Короткий список панель не растягивает, длинный листается.
      */
-    private fun fitPanel(root: Table, panel: Table, list: Table, maxW: Float, footer: List<Actor> = emptyList()) {
+    private fun fitPanel(root: Table, panel: Table, list: Table, maxW: Float, footer: List<Actor> = emptyList(), bottomGap: Float = 0f) {
         val w = min(g.wDp - 32, maxW)
         fitList(list, w)
         val scroll = ScrollPane(list, ui.scrollStyle).also { it.setScrollingDisabled(true, false); it.setOverscroll(false, true); it.setFadeScrollBars(false) }
         fitScroll = scroll
         panel.add(scroll).grow().row()
         for (f in footer) panel.add(f).growX().height(46f).padTop(6f).row()
-        root.add(panel).width(w).maxHeight(g.hDp - g.safeTop - g.safeBottom - 24)
+        root.add(panel).width(w).maxHeight(g.hDp - g.safeTop - g.safeBottom - 24 - bottomGap * 2).padBottom(bottomGap)
     }
 
     // ===================== Гибель =====================

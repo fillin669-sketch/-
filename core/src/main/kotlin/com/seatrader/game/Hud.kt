@@ -143,10 +143,17 @@ class Hud(private val g: SeaGame) {
             val w = 262f; val h = 116f
             // карточка не заходит на верхнюю панель (валюта, задание, мини-карта)
             val topLimit = g.hDp - g.safeTop - questHeight - 120f - h
-            var y = sp.y + 14f
-            if (y > topLimit) y = (g.toScreen(t.x, t.y, t.z)?.y ?: sp.y) - h - 30f
-            y = y.coerceIn(g.safeBottom + 10f, topLimit)
-            val x = (sp.x - w / 2).coerceIn(6f, g.wDp - w - 6f)
+            val bottomLimit = g.safeBottom + 260f   // выше кнопок управления
+            val bodyY = g.toScreen(t.x, t.y, t.z)?.y ?: sp.y
+            val ps = g.toScreen(p.x, p.y + p.deckTop, p.z)
+            val pxs = ps?.x ?: -999f; val pys = ps?.y ?: -999f
+            fun clear(cx: Float, cy: Float) = cy in bottomLimit..topLimit && !(pxs > cx - 40f && pxs < cx + w + 40f && pys > cy - 50f && pys < cy + h + 50f)
+            val cx0 = (sp.x - w / 2).coerceIn(6f, g.wDp - w - 6f)
+            // над целью, под целью; если мешает свой корабль — в угол под верхней панелью
+            val (x, y) = listOf(cx0 to sp.y + 14f, cx0 to bodyY - h - 30f).firstOrNull { clear(it.first, it.second) }
+                ?: ((if (pxs > g.wDp / 2) 6f else g.wDp - w - 6f) to topLimit)
+            // цель отмечена кольцом
+            g.toScreen(t.x, t.y + 0.5f, t.z)?.let { rp -> ui.icon(b, ui.ring, rp.x, rp.y, 70f, 34f, 0f, c(0xffc93c, 0.8f)) }
             val a = min(1f, g.scopeT / 0.4f)
             val mine = p.maxHp * p.stats.dmg * p.stats.cannons
             val theirs = t.maxHp * t.stats.dmg * t.stats.cannons
@@ -587,7 +594,7 @@ class Hud(private val g: SeaGame) {
             g.toastT -= dt
             val a = min(1f, g.toastT * 3)
             val font = if (g.toastText.length > 30) ui.mid else ui.big
-            ui.text(b, font, g.toastText, 20f, hDp * 0.6f, Align.center, wDp - 40, true, cTmp2.set(1f, 1f, 1f, a))
+            ui.text(b, font, g.toastText, 20f, hDp * 0.66f, Align.center, wDp - 40, true, cTmp2.set(1f, 1f, 1f, a))
         }
         b.color = Color.WHITE
     }

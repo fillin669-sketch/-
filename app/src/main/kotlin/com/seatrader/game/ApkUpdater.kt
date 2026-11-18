@@ -50,8 +50,16 @@ class ApkUpdater(private val act: Activity) : Updater {
 
     private fun fail(msg: String) { error = msg; stage = UPD_ERROR }
 
+    private var lastUrl = ""
+
+    /** Вернулись из настроек Android: если разрешение дали — сразу продолжаем загрузку. */
+    fun onResume() {
+        if (stage == UPD_PERMISSION && lastUrl.isNotEmpty() && (Build.VERSION.SDK_INT < 26 || act.packageManager.canRequestPackageInstalls())) start(lastUrl)
+    }
+
     override fun start(url: String) {
         if (stage == UPD_LOADING) return
+        lastUrl = url
         // Android 8+: игре нужно разрешение «Установка из этого источника»
         if (Build.VERSION.SDK_INT >= 26 && !act.packageManager.canRequestPackageInstalls()) {
             stage = UPD_PERMISSION
