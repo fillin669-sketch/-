@@ -14,8 +14,8 @@ android {
         applicationId = "com.seatrader.game"
         minSdk = 21
         targetSdk = 35
-        versionCode = 56
-        versionName = "11.4"
+        versionCode = 57
+        versionName = "11.4.1"
     }
 
     // Подпись: ключ передаётся через переменные окружения (в GitHub Actions — из кеша или секретов).

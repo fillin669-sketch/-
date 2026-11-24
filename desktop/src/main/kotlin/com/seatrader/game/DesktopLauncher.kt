@@ -375,6 +375,31 @@ class TestScript(private val g: SeaGame, private val out: String) {
             }
             return
         }
+        if (System.getenv("SEA_MARKET") != null) {
+            when (f) {
+                108 -> { g.menus.close(); g.tutorial = g.tutorialTexts.size; g.coins = 5000
+                    // все торговые бонусы на максимум
+                    g.systems.skills[SKILLS.indexOfFirst { it.id == "trader" }] = 5
+                    g.living.rep[0] = 100; g.living.crew[3] = OFFICERS.first { it.trade > 0f }.id
+                    // груз сверх трюма
+                    g.systems.cargo[0] = 30; g.systems.cargoCost[0] = 300f; g.systems.cargo[5] = 10; g.systems.cargoCost[5] = 600f
+                    log.append("до порта: трюм ${g.systems.cargoUsed()} из ${g.systems.capacity()}, монеты ${g.coins}\n") }
+                110 -> { g.menus.close(); g.openPort(0); press("Рынок")
+                    log.append("в порту: трюм ${g.systems.cargoUsed()} из ${g.systems.capacity()}, монеты ${g.coins}, зерно ${g.systems.cargo[0]}, порох ${g.systems.cargo[5]}\n")
+                    for (pi in PORTS.indices) for (gi in GOODS.indices) { val b = g.systems.buyPrice(pi, gi); val sl = g.systems.sellPrice(pi, gi); if (sl >= b) log.append("ОШИБКА: порт $pi товар $gi покупка $b продажа $sl\n") }
+                    log.append("Гавань Ветров: " + GOODS.indices.joinToString { "${GOODS[it].name} ${g.systems.buyPrice(0, it)}/${g.systems.sellPrice(0, it)}" } + "\n")
+                    val c0 = g.coins; g.systems.buy(0, 3, 5); g.systems.sell(0, 3, 5); log.append("купить и сразу продать 5 специй: ${g.coins - c0} монет\n") }
+                130 -> shot("m1")
+                131 -> g.menus.scrollPortBy(700f)
+                145 -> shot("m2")
+                146 -> g.menus.scrollPortBy(700f)
+                160 -> shot("m3")
+                161 -> g.menus.scrollPortBy(700f)
+                175 -> shot("m4")
+                180 -> { Gdx.files.absolute("$out/log.txt").writeString(log.toString(), false); Gdx.app.exit() }
+            }
+            return
+        }
         if (System.getenv("SEA_V114") != null) {
             val p = g.player
             val spotNames = listOf("Трюм", "Капитанская каюта", "Пушечная палуба", "Пороховой погреб", "Камбуз", "Кормовая надстройка", "Канатный ящик", "Сундук штурмана")

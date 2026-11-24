@@ -29,6 +29,8 @@ class Menus(private val g: SeaGame) {
     private var portIndex = 0
     private var portTab = 0
     private var portScroll = 0f
+    /** Для тестов: прокрутить экран порта. */
+    fun scrollPortBy(dy: Float) { scrollRef?.let { it.scrollY = (it.scrollY + dy).coerceAtMost(it.maxY); it.updateVisualScroll() } }
     private var scrollRef: ScrollPane? = null
     /** Прокрутка последнего списка из fitPanel (для тестов). */
     var fitScroll: ScrollPane? = null

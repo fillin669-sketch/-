@@ -2243,6 +2243,7 @@ class SeaGame : ApplicationAdapter() {
         p.burnT = 0f
         homePort = i
         extras.addMorale(5f)
+        systems.trimCargo(i).let { if (it > 0) toast("Трюм переполнен — лишний груз продан: +$it монет", 2.4f) }
         questEvent(QType.REACH, "", false, port = i)
         if (tutorial == 5) advanceTutorial()
         save()

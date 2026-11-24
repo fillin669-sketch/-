@@ -273,8 +273,33 @@ class Systems(private val g: SeaGame) {
     fun capacity() = (CARGO[g.shipId] ?: 20) + g.living.extraCargo() + g.guilds.cargoBonus()
     fun cargoUsed() = cargo.sum()
     private fun basePrice(port: Int, gi: Int) = GOODS[gi].base * PORT_PRICES[port][gi] * fluct[port][gi]
-    fun buyPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (1.06f - 0.02f * skill("trader")) * g.living.buyMul()).roundToInt())
-    fun sellPrice(port: Int, gi: Int) = max(1, (basePrice(port, gi) * (0.94f + 0.02f * skill("trader")) * g.living.sellMul()).roundToInt())
+    // торговые бонусы (навык, офицер, капитан, гильдия, репутация) складываются — ограничиваем их,
+    // а продажа в том же порту всегда хотя бы на 8% дешевле покупки: иначе товар можно было
+    // купить и тут же продать дороже — бесконечные деньги
+    fun buyPrice(port: Int, gi: Int) = max(2, (basePrice(port, gi) * ((1.06f - 0.02f * skill("trader")) * g.living.buyMul()).coerceAtLeast(0.78f)).roundToInt())
+    fun sellPrice(port: Int, gi: Int): Int {
+        val raw = (basePrice(port, gi) * ((0.94f + 0.02f * skill("trader")) * g.living.sellMul()).coerceAtMost(1.22f)).roundToInt()
+        val buy = buyPrice(port, gi)
+        return raw.coerceAtMost(min(buy - 1, (buy * 0.92f).toInt())).coerceAtLeast(1)
+    }
+
+    /** Груз сверх вместимости (после пересадки на корабль поменьше) продаётся в порту. Возвращает выручку. */
+    fun trimCargo(port: Int): Int {
+        var extra = cargoUsed() - capacity()
+        var revenue = 0
+        while (extra > 0) {
+            // сначала самый дешёвый товар
+            val gi = cargo.indices.filter { cargo[it] > 0 }.minByOrNull { sellPrice(port, it) } ?: break
+            val k = min(extra, cargo[gi])
+            val avg = cargoCost[gi] / cargo[gi]
+            revenue += sellPrice(port, gi) * k
+            cargoCost[gi] -= avg * k; cargo[gi] -= k
+            if (cargo[gi] == 0) cargoCost[gi] = 0f
+            extra -= k
+        }
+        g.coins += revenue
+        return revenue
+    }
 
     fun buy(port: Int, gi: Int, n: Int): Int {
         var k = 0
